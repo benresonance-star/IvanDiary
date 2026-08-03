@@ -1,0 +1,186 @@
+import {
+  DOCUMENT_SCHEMA_VERSION,
+  type JournalSnapshot,
+  type PageObject,
+} from "./models";
+
+function localDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function createInitialJournalSnapshot(
+  now = new Date(),
+): JournalSnapshot {
+  const timestamp = now.toISOString();
+  const date = localDateKey(now);
+  const dayId = `day-${date}`;
+  const pageId = `page-${date}-1`;
+
+  const objects: PageObject[] = [
+    {
+      id: "welcome-voice",
+      type: "voice",
+      pageId,
+      position: { x: 0.38, y: 0.23 },
+      frame: { width: 0.28, height: 0.23 },
+      createdAt: timestamp,
+      revision: 0,
+      asset: {
+        id: "welcome-voice-asset",
+        localUri: "demo://welcome-voice",
+        mimeType: "audio/mp4",
+        byteLength: 0,
+        checksum: "browser-demonstration",
+      },
+      durationMs: 58_000,
+      transcriptionStatus: "complete",
+    },
+    {
+      id: "welcome-transcript",
+      type: "transcript",
+      pageId,
+      position: { x: 0.38, y: 0.31 },
+      createdAt: timestamp,
+      revision: 0,
+      recordingId: "welcome-voice",
+      rawText:
+        "Saw this owl in the tree outside this morning. So quiet and still.",
+      locale: "en-AU",
+      engine: "apple-speech",
+    },
+    {
+      id: "childhood-voice",
+      type: "voice",
+      pageId,
+      position: { x: 0.31, y: 0.59 },
+      frame: { width: 0.29, height: 0.2 },
+      createdAt: timestamp,
+      revision: 0,
+      asset: {
+        id: "childhood-voice-asset",
+        localUri: "demo://childhood-voice",
+        mimeType: "audio/mp4",
+        byteLength: 0,
+        checksum: "browser-demonstration",
+      },
+      durationMs: 66_000,
+      transcriptionStatus: "complete",
+    },
+    {
+      id: "childhood-transcript",
+      type: "transcript",
+      pageId,
+      position: { x: 0.31, y: 0.68 },
+      createdAt: timestamp,
+      revision: 0,
+      recordingId: "childhood-voice",
+      rawText: "This was the house we lived in when I was a boy.",
+      locale: "en-AU",
+      engine: "apple-speech",
+    },
+    {
+      id: "garden-photo",
+      type: "photo",
+      pageId,
+      position: { x: 0.73, y: 0.22 },
+      frame: { width: 0.22, height: 0.3 },
+      createdAt: timestamp,
+      revision: 0,
+      asset: {
+        id: "garden-photo-asset",
+        localUri: "demo://garden-flowers",
+        mimeType: "image/jpeg",
+        byteLength: 0,
+        checksum: "browser-demonstration",
+      },
+      size: { width: 800, height: 900 },
+      altText: "Yellow flowers from Mum’s garden",
+    },
+    {
+      id: "garden-voice",
+      type: "voice",
+      pageId,
+      position: { x: 0.73, y: 0.61 },
+      frame: { width: 0.24, height: 0.18 },
+      createdAt: timestamp,
+      revision: 0,
+      asset: {
+        id: "garden-voice-asset",
+        localUri: "demo://garden-voice",
+        mimeType: "audio/mp4",
+        byteLength: 0,
+        checksum: "browser-demonstration",
+      },
+      durationMs: 32_000,
+      transcriptionStatus: "complete",
+    },
+    {
+      id: "garden-transcript",
+      type: "transcript",
+      pageId,
+      position: { x: 0.73, y: 0.69 },
+      createdAt: timestamp,
+      revision: 0,
+      recordingId: "garden-voice",
+      rawText: "Mum’s flowers from the garden.",
+      locale: "en-AU",
+      engine: "apple-speech",
+    },
+  ];
+
+  return {
+    schemaVersion: DOCUMENT_SCHEMA_VERSION,
+    id: "ivan-journal",
+    days: [
+      {
+        id: dayId,
+        date,
+        pageIds: [pageId],
+        favourite: false,
+        revision: 0,
+      },
+    ],
+    pages: [
+      {
+        schemaVersion: DOCUMENT_SCHEMA_VERSION,
+        id: pageId,
+        journalDayId: dayId,
+        paperStyle: "warm-journal",
+        drawingDocumentId: `drawing-${pageId}`,
+        objects,
+        revision: 0,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+    sketchbooks: [
+      {
+        id: "sketchbook-favourite-places",
+        name: "Favourite Places",
+        pageIds: [],
+        favourite: false,
+        revision: 0,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+    favourites: [],
+    settings: {
+      simpleMode: true,
+      textScale: "standard",
+      contrast: "warm",
+      reducedMotion: false,
+      penColor: "#171410",
+      penWidth: 4.2,
+      welcomeGreeting: "Welcome back Ivan!",
+      welcomeTagline: "It's a Wonderful World!",
+      welcomeMessage: "",
+    },
+    appliedOperationIds: [],
+    revision: 0,
+    updatedAt: timestamp,
+  };
+}

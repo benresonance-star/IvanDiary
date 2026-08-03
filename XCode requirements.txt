@@ -1,0 +1,12 @@
+That Mac is suitable for the MVP.
+
+Recommended setup before the drawing hardware gate:
+
+Back up the Mac.
+Upgrade to macOS Tahoe 26.2 or later.
+Install the Universal build of Xcode 26—not the Apple-silicon-only download.
+Install Xcode Command Line Tools.
+Sign into Xcode with a free Apple ID.
+Connect and trust the target iPad; enable Developer Mode.
+Keep roughly 60–80 GB free for Xcode, SDKs, simulators and build data.
+The spec and implementation plan now record this confirmed model. Apple-silicon hardware will only become necessary when moving beyond Xcode 26.
