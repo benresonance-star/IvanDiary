@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { renderDocument } from "../sketch/renderer";
+import { NativeSketchPreview } from "../sketch/NativeSketchPreview";
 import type { SketchRepository } from "../sketch/types";
 
 const THUMBNAIL_WIDTH = 240;
@@ -53,10 +54,16 @@ export function SketchThumbnail({
   }, [documentId, repository]);
 
   return (
-    <canvas
-      aria-hidden="true"
-      className="sketch-thumbnail"
-      ref={canvasRef}
-    />
+    <>
+      <canvas
+        aria-hidden="true"
+        className="sketch-thumbnail"
+        ref={canvasRef}
+      />
+      <NativeSketchPreview
+        className="native-sketch-thumbnail"
+        documentId={documentId}
+      />
+    </>
   );
 }

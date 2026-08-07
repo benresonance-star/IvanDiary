@@ -4,13 +4,40 @@ import UIKit
 public protocol PencilDrawingStore: Sendable {
     func load(documentID: String) throws -> Data?
     func save(_ data: Data, documentID: String) throws
+    func loadPreview(documentID: String) throws -> PencilDrawingPreview?
+    func savePreview(_ data: Data, documentID: String) throws
+}
+
+public struct PencilDrawingPreview: Sendable {
+    public let fileURL: URL
+    public let modifiedAt: Date
+
+    public init(fileURL: URL, modifiedAt: Date) {
+        self.fileURL = fileURL
+        self.modifiedAt = modifiedAt
+    }
+}
+
+public struct NativeDrawingResult: Sendable {
+    public let saved: Bool
+    public let preview: PencilDrawingPreview?
+
+    public init(saved: Bool, preview: PencilDrawingPreview?) {
+        self.saved = saved
+        self.preview = preview
+    }
+}
+
+public enum NativeDrawingTool: String, Sendable {
+    case pen
+    case eraser
 }
 
 public struct ApplicationSupportPencilDrawingStore: PencilDrawingStore {
     public init() {}
 
     public func load(documentID: String) throws -> Data? {
-        let url = try drawingURL(documentID: documentID)
+        let url = try fileURL(documentID: documentID, extension: "pkdrawing")
         guard FileManager.default.fileExists(atPath: url.path) else {
             return nil
         }
@@ -18,14 +45,39 @@ public struct ApplicationSupportPencilDrawingStore: PencilDrawingStore {
     }
 
     public func save(_ data: Data, documentID: String) throws {
-        let url = try drawingURL(documentID: documentID)
+        let url = try fileURL(documentID: documentID, extension: "pkdrawing")
         try data.write(
             to: url,
             options: [.atomic, .completeFileProtectionUnlessOpen]
         )
     }
 
-    private func drawingURL(documentID: String) throws -> URL {
+    public func loadPreview(
+        documentID: String
+    ) throws -> PencilDrawingPreview? {
+        let url = try fileURL(documentID: documentID, extension: "png")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        let values = try url.resourceValues(forKeys: [.contentModificationDateKey])
+        return PencilDrawingPreview(
+            fileURL: url,
+            modifiedAt: values.contentModificationDate ?? Date.distantPast
+        )
+    }
+
+    public func savePreview(_ data: Data, documentID: String) throws {
+        let url = try fileURL(documentID: documentID, extension: "png")
+        try data.write(
+            to: url,
+            options: [.atomic, .completeFileProtectionUnlessOpen]
+        )
+    }
+
+    private func fileURL(
+        documentID: String,
+        extension fileExtension: String
+    ) throws -> URL {
         let root = try FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
@@ -47,17 +99,19 @@ public struct ApplicationSupportPencilDrawingStore: PencilDrawingStore {
         }
         return directory
             .appendingPathComponent(String(safeID))
-            .appendingPathExtension("pkdrawing")
+            .appendingPathExtension(fileExtension)
     }
 }
 
 @MainActor
 public final class NativeDrawingViewController: UIViewController, PKCanvasViewDelegate {
-    public var onDone: ((Bool) -> Void)?
+    public var onDone: ((NativeDrawingResult) -> Void)?
 
+    private let backgroundImage: UIImage?
     private let canvasView = PKCanvasView()
     private let color: UIColor
     private let documentID: String
+    private let initialTool: NativeDrawingTool
     private let store: any PencilDrawingStore
     private let width: CGFloat
     private var loadError: Error?
@@ -65,14 +119,22 @@ public final class NativeDrawingViewController: UIViewController, PKCanvasViewDe
     private var persistenceError: Error?
     private var presentedLoadError = false
 
+    private enum DrawingPersistenceError: Error {
+        case previewUnavailable
+    }
+
     public init(
         documentID: String,
         color: UIColor,
         width: CGFloat,
+        initialTool: NativeDrawingTool = .pen,
+        backgroundImage: UIImage? = nil,
         store: any PencilDrawingStore = ApplicationSupportPencilDrawingStore()
     ) {
+        self.backgroundImage = backgroundImage
         self.documentID = documentID
         self.color = color
+        self.initialTool = initialTool
         self.width = width
         self.store = store
         super.init(nibName: nil, bundle: nil)
@@ -96,7 +158,26 @@ public final class NativeDrawingViewController: UIViewController, PKCanvasViewDe
         canvasView.translatesAutoresizingMaskIntoConstraints = false
         canvasView.backgroundColor = .clear
         canvasView.drawingPolicy = .anyInput
-        canvasView.tool = PKInkingTool(.pen, color: color, width: width)
+        switch initialTool {
+        case .pen:
+            canvasView.tool = PKInkingTool(.pen, color: color, width: width)
+        case .eraser:
+            canvasView.tool = PKEraserTool(.vector)
+        }
+
+        if let backgroundImage {
+            let backgroundView = UIImageView(image: backgroundImage)
+            backgroundView.translatesAutoresizingMaskIntoConstraints = false
+            backgroundView.contentMode = .scaleToFill
+            backgroundView.isUserInteractionEnabled = false
+            view.addSubview(backgroundView)
+            NSLayoutConstraint.activate([
+                backgroundView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                backgroundView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                backgroundView.topAnchor.constraint(equalTo: view.topAnchor),
+                backgroundView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            ])
+        }
         view.addSubview(canvasView)
 
         NSLayoutConstraint.activate([
@@ -169,7 +250,9 @@ public final class NativeDrawingViewController: UIViewController, PKCanvasViewDe
         alert.addAction(UIAlertAction(title: "Close", style: .default) {
             [weak self] _ in
             self?.navigationController?.dismiss(animated: true) {
-                self?.onDone?(false)
+                self?.onDone?(
+                    NativeDrawingResult(saved: false, preview: nil)
+                )
             }
         })
         present(alert, animated: true)
@@ -191,14 +274,29 @@ public final class NativeDrawingViewController: UIViewController, PKCanvasViewDe
         }
     }
 
-    private func saveDrawing() throws {
+    private func saveDrawing() throws -> PencilDrawingPreview {
         if let loadError {
             throw loadError
+        }
+        let bounds = canvasView.bounds.isEmpty
+            ? CGRect(x: 0, y: 0, width: 1200, height: 820)
+            : canvasView.bounds
+        let previewImage = canvasView.drawing.image(
+            from: bounds,
+            scale: UIScreen.main.scale
+        )
+        guard let previewData = previewImage.pngData() else {
+            throw DrawingPersistenceError.previewUnavailable
         }
         try store.save(
             canvasView.drawing.dataRepresentation(),
             documentID: documentID
         )
+        try store.savePreview(previewData, documentID: documentID)
+        guard let preview = try store.loadPreview(documentID: documentID) else {
+            throw DrawingPersistenceError.previewUnavailable
+        }
+        return preview
     }
 
     public func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
@@ -214,7 +312,7 @@ public final class NativeDrawingViewController: UIViewController, PKCanvasViewDe
 
     private func saveAndRememberFailure() {
         do {
-            try saveDrawing()
+            _ = try saveDrawing()
             persistenceError = nil
         } catch {
             persistenceError = error
@@ -256,10 +354,12 @@ public final class NativeDrawingViewController: UIViewController, PKCanvasViewDe
     @objc private func done() {
         pendingSave?.cancel()
         do {
-            try saveDrawing()
+            let preview = try saveDrawing()
             persistenceError = nil
             dismiss(animated: true) { [weak self] in
-                self?.onDone?(true)
+                self?.onDone?(
+                    NativeDrawingResult(saved: true, preview: preview)
+                )
             }
         } catch {
             let alert = UIAlertController(

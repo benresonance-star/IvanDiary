@@ -45,6 +45,7 @@ import {
   SketchSurface,
   type SketchSurfaceHandle,
 } from "../sketch/SketchSurface";
+import { NativeSketchPreview } from "../sketch/NativeSketchPreview";
 import type { SketchTool } from "../sketch/types";
 import { browserFileToAsset } from "../utils/assets";
 import { createId } from "../utils/id";
@@ -309,21 +310,24 @@ export function PageWorkspace({
       )
       .map((transcript) => [transcript.recordingId, transcript]),
   );
+  const nativePencilKit = hasNativePencilKit();
 
-  const openPencilKit = async () => {
+  const openPencilKit = async (initialTool: "pen" | "eraser") => {
     setTool("view");
     setPenHudOpen(false);
     setSelectedObjectId(undefined);
     try {
       const result = await openNativeDrawing({
-        documentId: `pencilkit-test-${page.drawingDocumentId}`,
+        documentId: page.drawingDocumentId,
         color: penSettings.color,
         width: penSettings.width,
+        initialTool,
+        backgroundDataUrl: sketchRef.current?.exportPreviewDataUrl(),
       });
       setNotice(
         result.saved
-          ? "Native Pencil test saved. Reopen it to check the marks."
-          : "The native Pencil test was closed without saving.",
+          ? "Drawing saved on this iPad."
+          : "The drawing was closed without saving.",
       );
     } catch (error) {
       setNotice(
@@ -608,7 +612,7 @@ export function PageWorkspace({
     setNotice("Browser demonstration only. Tap Voice again to stop.");
   };
 
-  const closePenSettings = () => {
+  const closePenSettings = (launchNative = false) => {
     setPenHudOpen(false);
     if (
       penSettings.color !== penColor ||
@@ -621,6 +625,9 @@ export function PageWorkspace({
           penWidth: penSettings.width,
         },
       });
+    }
+    if (launchNative && nativePencilKit) {
+      void openPencilKit("pen");
     }
   };
 
@@ -653,6 +660,11 @@ export function PageWorkspace({
           aria-pressed={tool === "pen"}
           className={tool === "pen" ? "tool selected" : "tool"}
           onClick={() => {
+            if (nativePencilKit) {
+              setPenHudOpen(true);
+              setSelectedObjectId(undefined);
+              return;
+            }
             if (tool === "pen") {
               setPenHudOpen(true);
               return;
@@ -673,22 +685,14 @@ export function PageWorkspace({
             style={{ backgroundColor: penSettings.color }}
           />
         </button>
-        {hasNativePencilKit() ? (
-          <button
-            aria-pressed={false}
-            className="tool"
-            onClick={() => void openPencilKit()}
-            title="Test responsive native PencilKit drawing"
-            type="button"
-          >
-            <PenLine aria-hidden="true" />
-            <span>Pencil Test</span>
-          </button>
-        ) : null}
         <button
           aria-pressed={tool === "eraser"}
           className={tool === "eraser" ? "tool selected" : "tool"}
           onClick={() => {
+            if (nativePencilKit) {
+              void openPencilKit("eraser");
+              return;
+            }
             setTool("eraser");
             setSelectedObjectId(undefined);
             if (document.activeElement instanceof HTMLElement) {
@@ -760,12 +764,12 @@ export function PageWorkspace({
           <button
             aria-label="Close pen settings"
             className="pen-hud-backdrop"
-            onClick={closePenSettings}
+            onClick={() => closePenSettings(false)}
             type="button"
           />
           <PenSettingsHud
             onChange={setPenSettings}
-            onDone={closePenSettings}
+            onDone={() => closePenSettings(nativePencilKit)}
             settings={penSettings}
             simpleMode={simpleMode}
           />
@@ -790,7 +794,7 @@ export function PageWorkspace({
       >
         <SketchSurface
           capabilities={
-            tool === "arrange" || tool === "view"
+            nativePencilKit || tool === "arrange" || tool === "view"
               ? {
                   kind: "readonly",
                   tools: [],
@@ -816,6 +820,7 @@ export function PageWorkspace({
           repository={sketchRepository}
           tool={tool === "eraser" ? "eraser" : "pen"}
         />
+        <NativeSketchPreview documentId={page.drawingDocumentId} />
 
         <header className="page-date">
           {context.kind === "sketchbook" ? (

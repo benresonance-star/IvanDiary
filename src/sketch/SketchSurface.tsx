@@ -32,6 +32,7 @@ type HistoryEntry =
   | { type: "stroke-delete"; stroke: SketchStroke; index: number };
 
 export interface SketchSurfaceHandle {
+  exportPreviewDataUrl(): string | undefined;
   undo(): void;
 }
 
@@ -251,7 +252,16 @@ function SketchSurfaceComponent(
     });
   }, [replaceDocument]);
 
-  useImperativeHandle(ref, () => ({ undo }), [undo]);
+  const exportPreviewDataUrl = useCallback(
+    () => sceneCanvasRef.current?.toDataURL("image/png"),
+    [],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({ exportPreviewDataUrl, undo }),
+    [exportPreviewDataUrl, undo],
+  );
 
   useEffect(() => {
     let cancelled = false;

@@ -74,5 +74,15 @@ export interface PencilKitPlugin {
     documentId: EntityId;
     color: string;
     width: number;
-  }): Promise<{ saved: boolean }>;
+    initialTool: "pen" | "eraser";
+    backgroundDataUrl?: string;
+  }): Promise<PencilKitPreview>;
+  getPreview(options: { documentId: EntityId }): Promise<PencilKitPreview>;
 }
+
+export type PencilKitPreview = {
+  saved: boolean;
+  available: boolean;
+  previewUri?: string;
+  modifiedAt?: number;
+};

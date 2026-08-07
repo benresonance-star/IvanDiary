@@ -7,7 +7,8 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "PencilKitPlugin"
     public let jsName = "PencilKit"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getPreview", returnType: CAPPluginReturnPromise)
     ]
 
     @objc public func open(_ call: CAPPluginCall) {
@@ -21,6 +22,12 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             hexRGB: call.getString("color") ?? "#244A60"
         ) ?? UIColor.label
         let width = max(1, min(call.getDouble("width") ?? 4, 30))
+        let initialTool = NativeDrawingTool(
+            rawValue: call.getString("initialTool") ?? ""
+        ) ?? .pen
+        let backgroundImage = image(
+            fromDataURL: call.getString("backgroundDataUrl")
+        )
 
         DispatchQueue.main.async { [weak self] in
             guard let host = self?.bridge?.viewController else {
@@ -35,17 +42,66 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             let editor = NativeDrawingViewController(
                 documentID: documentID,
                 color: color,
-                width: CGFloat(width)
+                width: CGFloat(width),
+                initialTool: initialTool,
+                backgroundImage: backgroundImage
             )
             let navigationController = UINavigationController(
                 rootViewController: editor
             )
             navigationController.modalPresentationStyle = .fullScreen
-            editor.onDone = { saved in
-                call.resolve(["saved": saved])
+            editor.onDone = { [weak self] result in
+                call.resolve(
+                    self?.response(
+                        saved: result.saved,
+                        preview: result.preview
+                    ) ?? ["saved": result.saved, "available": false]
+                )
             }
             host.present(navigationController, animated: true)
         }
+    }
+
+    @objc public func getPreview(_ call: CAPPluginCall) {
+        guard let documentID = call.getString("documentId"),
+              !documentID.isEmpty else {
+            call.reject("A documentId is required.")
+            return
+        }
+        do {
+            let preview = try ApplicationSupportPencilDrawingStore()
+                .loadPreview(documentID: documentID)
+            call.resolve(response(saved: true, preview: preview))
+        } catch {
+            call.reject("The drawing preview could not be loaded.", nil, error)
+        }
+    }
+
+    private func image(fromDataURL value: String?) -> UIImage? {
+        guard let value,
+              let separator = value.firstIndex(of: ",") else {
+            return nil
+        }
+        let encoded = String(value[value.index(after: separator)...])
+        guard let data = Data(base64Encoded: encoded) else {
+            return nil
+        }
+        return UIImage(data: data)
+    }
+
+    private func response(
+        saved: Bool,
+        preview: PencilDrawingPreview?
+    ) -> JSObject {
+        guard let preview else {
+            return ["saved": saved, "available": false]
+        }
+        return [
+            "saved": saved,
+            "available": true,
+            "previewUri": preview.fileURL.absoluteString,
+            "modifiedAt": preview.modifiedAt.timeIntervalSince1970 * 1000
+        ]
     }
 }
 
