@@ -142,6 +142,18 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         return preview
     }
 
+    /// Persist the current canvas without dismissing the overlay.
+    public func flushSave() throws -> PencilDrawingPreview? {
+        pendingSave?.cancel()
+        guard isPresented else {
+            return nil
+        }
+        if loadError != nil {
+            throw DrawingPersistenceError.loadFailed
+        }
+        return try saveDrawing()
+    }
+
     public func undo() {
         canvasView.undoManager?.undo()
     }
@@ -187,12 +199,16 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         canvasView.isUserInteractionEnabled = true
     }
 
-    private func saveDrawing() throws -> PencilDrawingPreview {
+    private func saveDrawing() throws -> PencilDrawingPreview? {
         guard let documentID else {
             throw DrawingPersistenceError.notPresented
         }
         if let loadError {
             throw loadError
+        }
+        if canvasView.drawing.strokes.isEmpty {
+            try store.remove(documentID: documentID)
+            return nil
         }
         let bounds = canvasView.bounds.isEmpty
             ? CGRect(x: 0, y: 0, width: max(frame.width, 1), height: max(frame.height, 1))

@@ -33,7 +33,7 @@ describe("sketch migrations", () => {
 
     expect(migrated.changed).toBe(true);
     expect(migrated.document.strokes).toEqual([
-      { ...legacyStroke, color: "#171410", width: 4.2 },
+      { ...legacyStroke, color: "#171410", width: 4.2, opacity: 1 },
       styledStroke,
     ]);
     expect(migrated.document.revision).toBe(2);

@@ -35,6 +35,7 @@ describe("journal migrations", () => {
       reducedMotion: false,
       penColor: "#171410",
       penWidth: 4.2,
+      penOpacity: 1,
       welcomeGreeting: "Welcome back Ivan!",
       welcomeTagline: "It's a Wonderful World!",
       welcomeMessage: "",

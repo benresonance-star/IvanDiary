@@ -100,6 +100,7 @@ export interface PencilKitPlugin {
     documentId: EntityId;
     color: string;
     width: number;
+    opacity?: number;
     initialTool: "pen" | "eraser";
     backgroundDataUrl?: string;
   }): Promise<PencilKitPreview>;
@@ -107,6 +108,7 @@ export interface PencilKitPlugin {
     documentId: EntityId;
     color: string;
     width: number;
+    opacity?: number;
     tool: "pen" | "eraser";
     rect: PencilKitOverlayRect;
     legacyInk?: LegacyInkDocument;
@@ -114,10 +116,12 @@ export interface PencilKitPlugin {
   updateOverlay(options: {
     color?: string;
     width?: number;
+    opacity?: number;
     tool?: "pen" | "eraser";
     rect?: PencilKitOverlayRect;
   }): Promise<{ visible: boolean }>;
   hideOverlay(options?: { save?: boolean }): Promise<PencilKitPreview>;
+  flushOverlay(): Promise<PencilKitPreview>;
   undoOverlay(): Promise<{ undone: boolean }>;
   getPreview(options: { documentId: EntityId }): Promise<PencilKitPreview>;
 }

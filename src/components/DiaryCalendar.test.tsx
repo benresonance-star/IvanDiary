@@ -34,6 +34,23 @@ describe("DiaryCalendar", () => {
     expect(onSelectDate).toHaveBeenCalledWith("2026-08-03");
   });
 
+  it("refreshes entry markers when the calendar opens", () => {
+    const onOpen = vi.fn();
+    render(
+      <DiaryCalendar
+        entryDates={new Set()}
+        onOpen={onOpen}
+        onSelectDate={vi.fn()}
+        selectedDate="2026-08-07"
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open diary calendar" }),
+    );
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
   it("jumps back to today from the calendar footer", () => {
     const onSelectDate = vi.fn();
     const today = new Date();

@@ -11,6 +11,7 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "showOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "updateOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "hideOverlay", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "flushOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "undoOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPreview", returnType: CAPPluginReturnPromise)
     ]
@@ -35,10 +36,12 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
+        let opacity = max(0, min(call.getDouble("opacity") ?? 1, 1))
         let color = PencilInkColor.fromHexRGB(
-            call.getString("color") ?? "#244A60"
+            call.getString("color") ?? "#244A60",
+            alpha: opacity
         )
-        let width = max(1, min(call.getDouble("width") ?? 4, 30))
+        let width = max(1, min(call.getDouble("width") ?? 4, 28))
         let initialTool = NativeDrawingTool(
             rawValue: call.getString("initialTool") ?? ""
         ) ?? .pen
@@ -90,10 +93,12 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
+        let opacity = max(0, min(call.getDouble("opacity") ?? 1, 1))
         let color = PencilInkColor.fromHexRGB(
-            call.getString("color") ?? "#244A60"
+            call.getString("color") ?? "#244A60",
+            alpha: opacity
         )
-        let width = max(1, min(call.getDouble("width") ?? 4, 30))
+        let width = max(1, min(call.getDouble("width") ?? 4, 28))
         let tool = NativeDrawingTool(
             rawValue: call.getString("tool") ?? ""
         ) ?? .pen
@@ -131,8 +136,11 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc public func updateOverlay(_ call: CAPPluginCall) {
         let colorValue = call.getString("color")
-        let color = colorValue.map { PencilInkColor.fromHexRGB($0) }
-        let width = call.getDouble("width").map { max(1, min($0, 30)) }
+        let opacity = call.getDouble("opacity").map { max(0, min($0, 1)) }
+        let color = colorValue.map {
+            PencilInkColor.fromHexRGB($0, alpha: opacity ?? 1)
+        }
+        let width = call.getDouble("width").map { max(1, min($0, 28)) }
         let tool = call.getString("tool").flatMap(NativeDrawingTool.init(rawValue:))
         let frame = call.getObject("rect") == nil ? nil : rect(from: call)
 
@@ -174,6 +182,27 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @objc public func flushOverlay(_ call: CAPPluginCall) {
+        Task { @MainActor [weak self] in
+            guard let self else {
+                call.reject("The PencilKit plugin is unavailable.")
+                return
+            }
+            do {
+                let overlay = self.drawingOverlay()
+                let preview = try overlay.flushSave()
+                call.resolve(
+                    self.response(
+                        saved: overlay.isPresented,
+                        preview: preview
+                    )
+                )
+            } catch {
+                call.reject("The drawing could not be saved.", nil, error)
+            }
+        }
+    }
+
     @objc public func undoOverlay(_ call: CAPPluginCall) {
         Task { @MainActor [weak self] in
             self?.drawingOverlay().undo()
@@ -189,7 +218,7 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         do {
             let preview = try ApplicationSupportPencilDrawingStore()
-                .loadPreview(documentID: documentID)
+                .loadContentPreview(documentID: documentID)
             call.resolve(response(saved: true, preview: preview))
         } catch {
             call.reject("The drawing preview could not be loaded.", nil, error)

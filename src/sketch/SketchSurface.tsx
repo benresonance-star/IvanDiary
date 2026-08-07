@@ -41,6 +41,7 @@ type SketchSurfaceProps = {
   documentId: string;
   penColor: string;
   penWidth: number;
+  penOpacity?: number;
   repository: SketchRepository;
   tool: SketchTool;
   onError?: (error: SketchSurfaceError) => void;
@@ -94,6 +95,7 @@ function SketchSurfaceComponent(
     documentId,
     penColor,
     penWidth,
+    penOpacity = 1,
     repository,
     tool,
     onError,
@@ -374,6 +376,7 @@ function SketchSurfaceComponent(
         points: [point],
         color: penColor,
         width: penWidth,
+        opacity: penOpacity,
         createdAt: new Date().toISOString(),
       };
       renderLiveStroke();
@@ -383,6 +386,7 @@ function SketchSurfaceComponent(
       inputAllowed,
       loading,
       penColor,
+      penOpacity,
       penWidth,
       renderLiveStroke,
       tool,

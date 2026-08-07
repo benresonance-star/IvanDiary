@@ -6,6 +6,7 @@ public protocol PencilDrawingStore: Sendable {
     func save(_ data: Data, documentID: String) throws
     func loadPreview(documentID: String) throws -> PencilDrawingPreview?
     func savePreview(_ data: Data, documentID: String) throws
+    func remove(documentID: String) throws
 }
 
 public struct PencilDrawingPreview: Sendable {
@@ -72,6 +73,31 @@ public struct ApplicationSupportPencilDrawingStore: PencilDrawingStore {
             to: url,
             options: [.atomic, .completeFileProtectionUnlessOpen]
         )
+    }
+
+    public func remove(documentID: String) throws {
+        for fileExtension in ["pkdrawing", "png"] {
+            let url = try fileURL(documentID: documentID, extension: fileExtension)
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
+    /// Returns a preview only when the drawing still has strokes.
+    public func loadContentPreview(
+        documentID: String
+    ) throws -> PencilDrawingPreview? {
+        guard let data = try load(documentID: documentID) else {
+            try remove(documentID: documentID)
+            return nil
+        }
+        let drawing = try PKDrawing(data: data)
+        guard !drawing.strokes.isEmpty else {
+            try remove(documentID: documentID)
+            return nil
+        }
+        return try loadPreview(documentID: documentID)
     }
 
     private func fileURL(
@@ -280,9 +306,13 @@ public final class NativeDrawingViewController: UIViewController, PKCanvasViewDe
         }
     }
 
-    private func saveDrawing() throws -> PencilDrawingPreview {
+    private func saveDrawing() throws -> PencilDrawingPreview? {
         if let loadError {
             throw loadError
+        }
+        if canvasView.drawing.strokes.isEmpty {
+            try store.remove(documentID: documentID)
+            return nil
         }
         let bounds = canvasView.bounds.isEmpty
             ? CGRect(x: 0, y: 0, width: 1200, height: 820)

@@ -142,6 +142,7 @@ export type JournalSettings = {
   reducedMotion: boolean;
   penColor: string;
   penWidth: number;
+  penOpacity: number;
   welcomeGreeting: string;
   welcomeTagline: string;
   welcomeMessage: string;

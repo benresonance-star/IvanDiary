@@ -12,10 +12,12 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export function DiaryCalendar({
   entryDates,
+  onOpen,
   onSelectDate,
   selectedDate,
 }: {
   entryDates: ReadonlySet<string>;
+  onOpen?: () => void;
   onSelectDate: (dateKey: string) => void;
   selectedDate: string;
 }) {
@@ -59,7 +61,13 @@ export function DiaryCalendar({
             year: selected.getFullYear(),
             monthIndex: selected.getMonth(),
           });
-          setOpen((current) => !current);
+          setOpen((current) => {
+            const next = !current;
+            if (next) {
+              onOpen?.();
+            }
+            return next;
+          });
         }}
         type="button"
       >

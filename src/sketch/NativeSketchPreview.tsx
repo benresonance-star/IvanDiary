@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 import {
   getNativeDrawingPreview,
@@ -8,9 +8,12 @@ import {
 
 export function NativeSketchPreview({
   className = "",
+  contentInsetTop = 0,
   documentId,
 }: {
   className?: string;
+  /** Keep preview aspect matching the inset PencilKit overlay used while drawing. */
+  contentInsetTop?: number;
   documentId: string;
 }) {
   const [source, setSource] = useState<string>();
@@ -55,12 +58,27 @@ export function NativeSketchPreview({
     };
   }, [documentId]);
 
-  return source ? (
+  if (!source) {
+    return null;
+  }
+
+  const inset = Math.max(0, contentInsetTop);
+  const style: CSSProperties | undefined =
+    inset > 0
+      ? {
+          top: inset,
+          bottom: "auto",
+          height: `calc(100% - ${inset}px)`,
+        }
+      : undefined;
+
+  return (
     <img
       alt=""
       aria-hidden="true"
       className={`native-sketch-preview ${className}`.trim()}
       src={source}
+      style={style}
     />
-  ) : null;
+  );
 }

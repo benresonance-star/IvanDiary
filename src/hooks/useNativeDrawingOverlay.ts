@@ -6,28 +6,9 @@ import {
   showNativeDrawingOverlay,
   updateNativeDrawingOverlay,
 } from "../native/pencilKit";
+import { measureDrawingOverlayLayout } from "../sketch/drawingOverlayLayout";
 import { toLegacyInkDocument } from "../sketch/legacyInk";
 import type { SketchRepository } from "../sketch/types";
-
-function measureDrawingOverlayRect(
-  paper: HTMLElement,
-  toolPalette?: HTMLElement | null,
-) {
-  const paperRect = paper.getBoundingClientRect();
-  let top = paperRect.top;
-  if (toolPalette) {
-    const tools = toolPalette.getBoundingClientRect();
-    if (tools.bottom > paperRect.top && tools.top < paperRect.bottom) {
-      top = Math.max(top, tools.bottom + 8);
-    }
-  }
-  return {
-    x: paperRect.left,
-    y: top,
-    width: paperRect.width,
-    height: Math.max(0, paperRect.bottom - top),
-  };
-}
 
 export function useNativeDrawingOverlay({
   documentId,
@@ -35,6 +16,7 @@ export function useNativeDrawingOverlay({
   tool,
   color,
   width,
+  opacity = 1,
   paperRef,
   toolPaletteRef,
   sketchRepository,
@@ -45,6 +27,7 @@ export function useNativeDrawingOverlay({
   tool: "pen" | "eraser" | "view" | "arrange";
   color: string;
   width: number;
+  opacity?: number;
   paperRef: RefObject<HTMLDivElement | null>;
   toolPaletteRef: RefObject<HTMLDivElement | null>;
   sketchRepository: SketchRepository;
@@ -88,8 +71,11 @@ export function useNativeDrawingOverlay({
         return;
       }
 
-      const rect = measureDrawingOverlayRect(paper, toolPaletteRef.current);
-      if (rect.width < 8 || rect.height < 8) {
+      const { overlayRect } = measureDrawingOverlayLayout(
+        paper,
+        toolPaletteRef.current,
+      );
+      if (overlayRect.width < 8 || overlayRect.height < 8) {
         return;
       }
 
@@ -111,8 +97,9 @@ export function useNativeDrawingOverlay({
             documentId,
             color,
             width,
+            opacity,
             tool: tool === "eraser" ? "eraser" : "pen",
-            rect,
+            rect: overlayRect,
             legacyInk,
           });
         } catch (error) {
@@ -134,11 +121,14 @@ export function useNativeDrawingOverlay({
       if (!drawing || cancelled) {
         return;
       }
-      const rect = measureDrawingOverlayRect(paper, toolPaletteRef.current);
-      if (rect.width < 8 || rect.height < 8) {
+      const { overlayRect } = measureDrawingOverlayLayout(
+        paper,
+        toolPaletteRef.current,
+      );
+      if (overlayRect.width < 8 || overlayRect.height < 8) {
         return;
       }
-      void updateNativeDrawingOverlay({ rect });
+      void updateNativeDrawingOverlay({ rect: overlayRect });
     };
 
     void sync();
@@ -169,6 +159,7 @@ export function useNativeDrawingOverlay({
     drawing,
     nativeAvailable,
     onError,
+    opacity,
     paperRef,
     sketchRepository,
     tool,

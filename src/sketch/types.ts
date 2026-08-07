@@ -19,6 +19,7 @@ export type SketchStroke = {
   points: PencilSample[];
   color: string;
   width: number;
+  opacity?: number;
   createdAt: string;
 };
 

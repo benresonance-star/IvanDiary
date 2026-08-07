@@ -25,6 +25,7 @@ export async function openNativeDrawing(options: {
   documentId: string;
   color: string;
   width: number;
+  opacity?: number;
   initialTool: "pen" | "eraser";
   backgroundDataUrl?: string;
 }): Promise<NativeDrawingPreview> {
@@ -37,6 +38,7 @@ export async function showNativeDrawingOverlay(options: {
   documentId: string;
   color: string;
   width: number;
+  opacity?: number;
   tool: "pen" | "eraser";
   rect: PencilKitOverlayRect;
   legacyInk?: LegacyInkDocument;
@@ -50,6 +52,7 @@ export async function showNativeDrawingOverlay(options: {
 export async function updateNativeDrawingOverlay(options: {
   color?: string;
   width?: number;
+  opacity?: number;
   tool?: "pen" | "eraser";
   rect?: PencilKitOverlayRect;
 }): Promise<void> {
@@ -63,6 +66,10 @@ export async function hideNativeDrawingOverlay(
   const result = withWebPreview(await pencilKit.hideOverlay({ save }));
   notifyDrawingUpdated(documentId, save);
   return result;
+}
+
+export async function flushNativeDrawingOverlay(): Promise<NativeDrawingPreview> {
+  return withWebPreview(await pencilKit.flushOverlay());
 }
 
 export async function undoNativeDrawingOverlay(): Promise<void> {

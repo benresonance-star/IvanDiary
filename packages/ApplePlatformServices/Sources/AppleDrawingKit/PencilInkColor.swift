@@ -15,11 +15,15 @@ public enum PencilInkColor {
         PKInkingTool.convertColor(color, from: .light, to: .light)
     }
 
-    public static func fromHexRGB(_ hex: String?) -> UIColor {
+    public static func fromHexRGB(
+        _ hex: String?,
+        alpha: Double = 1
+    ) -> UIColor {
+        let opacity = CGFloat(max(0, min(alpha, 1)))
         guard let hex, let parsed = UIColor(hexRGB: hex) else {
-            return defaultInk
+            return defaultInk.withAlphaComponent(opacity)
         }
-        return forLightPaper(parsed)
+        return forLightPaper(parsed).withAlphaComponent(opacity)
     }
 
     public static func renderPreview(drawing: PKDrawing, bounds: CGRect) -> UIImage {

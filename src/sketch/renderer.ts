@@ -1,6 +1,16 @@
+import { colourWithOpacity } from "../utils/colour";
+
 import { strokeWidth, visibleDotWidth } from "./geometry";
-import { safeStrokeColor, safeStrokeWidth } from "./migrations";
+import {
+  safeStrokeColor,
+  safeStrokeOpacity,
+  safeStrokeWidth,
+} from "./migrations";
 import type { SketchDocument, SketchStroke } from "./types";
+
+function strokePaint(stroke: SketchStroke): string {
+  return colourWithOpacity(safeStrokeColor(stroke), safeStrokeOpacity(stroke));
+}
 
 function drawDot(
   context: CanvasRenderingContext2D,
@@ -12,7 +22,7 @@ function drawDot(
   }
 
   context.beginPath();
-  context.fillStyle = safeStrokeColor(stroke);
+  context.fillStyle = strokePaint(stroke);
   context.arc(
     point.x,
     point.y,
@@ -36,7 +46,7 @@ export function drawStroke(
     return;
   }
 
-  context.strokeStyle = safeStrokeColor(stroke);
+  context.strokeStyle = strokePaint(stroke);
   context.lineCap = "round";
   context.lineJoin = "round";
 

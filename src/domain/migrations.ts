@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS: JournalSettings = {
   reducedMotion: false,
   penColor: "#171410",
   penWidth: 4.2,
+  penOpacity: 1,
   welcomeGreeting: "Welcome back Ivan!",
   welcomeTagline: "It's a Wonderful World!",
   welcomeMessage: "",
@@ -72,8 +73,12 @@ function migrateSettings(value: unknown): JournalSettings {
       : DEFAULT_SETTINGS.penColor;
   const penWidth =
     typeof value.penWidth === "number" && Number.isFinite(value.penWidth)
-      ? Math.min(14, Math.max(1, value.penWidth))
+      ? Math.min(28, Math.max(1, value.penWidth))
       : DEFAULT_SETTINGS.penWidth;
+  const penOpacity =
+    typeof value.penOpacity === "number" && Number.isFinite(value.penOpacity)
+      ? Math.min(1, Math.max(0, value.penOpacity))
+      : DEFAULT_SETTINGS.penOpacity;
   const welcomeGreeting = welcomeText(
     value.welcomeGreeting,
     DEFAULT_SETTINGS.welcomeGreeting,
@@ -96,6 +101,7 @@ function migrateSettings(value: unknown): JournalSettings {
     reducedMotion,
     penColor,
     penWidth,
+    penOpacity,
     welcomeGreeting,
     welcomeTagline,
     welcomeMessage,

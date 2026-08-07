@@ -57,4 +57,28 @@ describe("NativeSketchPreview", () => {
     );
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("offsets the preview to match the draw-mode overlay inset", async () => {
+    vi.spyOn(pencilKit, "hasNativePencilKit").mockReturnValue(true);
+    vi.spyOn(pencilKit, "getNativeDrawingPreview").mockResolvedValue({
+      saved: true,
+      available: true,
+      previewSrc: "capacitor://localhost/preview.png",
+    });
+
+    const { container } = render(
+      <NativeSketchPreview
+        contentInsetTop={64}
+        documentId="drawing-one"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(container.querySelector("img")).not.toBeNull(),
+    );
+    expect(container.querySelector("img")).toHaveStyle({
+      top: "64px",
+      height: "calc(100% - 64px)",
+    });
+  });
 });

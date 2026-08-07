@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -42,6 +43,7 @@ import {
   undoNativeDrawingOverlay,
 } from "../native/pencilKit";
 import type { BrowserSketchRepository } from "../repository/browserSketchRepository";
+import { measureDrawingOverlayLayout } from "../sketch/drawingOverlayLayout";
 import {
   SketchSurface,
   type SketchSurfaceHandle,
@@ -255,12 +257,14 @@ export function PageWorkspace({
   health,
   onAddPage,
   onDrawingHealthChange,
+  onRefreshEntryDates,
   onReorderPages,
   onSelectDate,
   onSelectPage,
   page,
   pages,
   penColor,
+  penOpacity,
   penWidth,
   simpleMode,
   sketchRepository,
@@ -273,12 +277,14 @@ export function PageWorkspace({
   health: SaveHealth;
   onAddPage: () => void;
   onDrawingHealthChange: (health: SaveHealth) => void;
+  onRefreshEntryDates?: () => void;
   onReorderPages: (pageIds: string[]) => Promise<boolean>;
   onSelectDate?: (dateKey: string) => void;
   onSelectPage: (pageId: string) => void;
   page: Page;
   pages: Page[];
   penColor: string;
+  penOpacity: number;
   penWidth: number;
   simpleMode: boolean;
   sketchRepository: BrowserSketchRepository;
@@ -294,6 +300,7 @@ export function PageWorkspace({
   const [penSettings, setPenSettings] = useState<PenSettings>({
     color: penColor,
     width: penWidth,
+    opacity: penOpacity,
   });
   const [selectedObjectId, setSelectedObjectId] = useState<string>();
   const [notice, setNotice] = useState<string>();
@@ -306,11 +313,44 @@ export function PageWorkspace({
     tool,
     color: penSettings.color,
     width: penSettings.width,
+    opacity: penSettings.opacity,
     paperRef,
     toolPaletteRef,
     sketchRepository,
     onError: setNotice,
   });
+  const [sketchPreviewInsetTop, setSketchPreviewInsetTop] = useState(0);
+
+  useEffect(() => {
+    const paper = paperRef.current;
+    if (!paper) {
+      return;
+    }
+
+    const updateInset = () => {
+      const { contentInsetTop } = measureDrawingOverlayLayout(
+        paper,
+        toolPaletteRef.current,
+      );
+      setSketchPreviewInsetTop(contentInsetTop);
+    };
+
+    updateInset();
+    const observer = new ResizeObserver(updateInset);
+    observer.observe(paper);
+    const tools = toolPaletteRef.current;
+    if (tools) {
+      observer.observe(tools);
+    }
+    globalThis.addEventListener("resize", updateInset);
+    globalThis.visualViewport?.addEventListener("resize", updateInset);
+
+    return () => {
+      observer.disconnect();
+      globalThis.removeEventListener("resize", updateInset);
+      globalThis.visualViewport?.removeEventListener("resize", updateInset);
+    };
+  }, [page.id]);
 
   const heading =
     context.kind === "diary"
@@ -611,13 +651,15 @@ export function PageWorkspace({
     setPenHudOpen(false);
     if (
       penSettings.color !== penColor ||
-      Math.abs(penSettings.width - penWidth) > 0.001
+      Math.abs(penSettings.width - penWidth) > 0.001 ||
+      Math.abs(penSettings.opacity - penOpacity) > 0.001
     ) {
       void commit({
         type: "settings-update",
         settings: {
           penColor: penSettings.color,
           penWidth: penSettings.width,
+          penOpacity: penSettings.opacity,
         },
       });
     }
@@ -802,13 +844,17 @@ export function PageWorkspace({
           }
           onSaveHealthChange={onDrawingHealthChange}
           penColor={penSettings.color}
+          penOpacity={penSettings.opacity}
           penWidth={penSettings.width}
           ref={sketchRef}
           repository={sketchRepository}
           tool={tool === "eraser" ? "eraser" : "pen"}
         />
         {overlayActive ? null : (
-          <NativeSketchPreview documentId={page.drawingDocumentId} />
+          <NativeSketchPreview
+            contentInsetTop={sketchPreviewInsetTop}
+            documentId={page.drawingDocumentId}
+          />
         )}
 
         <header className="page-date">
@@ -825,6 +871,7 @@ export function PageWorkspace({
           {context.kind === "diary" && entryDates && onSelectDate ? (
             <DiaryCalendar
               entryDates={entryDates}
+              onOpen={onRefreshEntryDates}
               onSelectDate={onSelectDate}
               selectedDate={context.date}
             />

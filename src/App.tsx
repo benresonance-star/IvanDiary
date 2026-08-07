@@ -28,6 +28,7 @@ import {
   BrowserJournalAudioMock,
 } from "./native/browserMocks";
 import {
+  flushNativeDrawingOverlay,
   getNativeDrawingPreview,
   hasNativePencilKit,
   NATIVE_DRAWING_UPDATED_EVENT,
@@ -142,6 +143,7 @@ export default function App() {
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [welcomePreview, setWelcomePreview] = useState<WelcomeCopy>();
   const [entryDates, setEntryDates] = useState<Set<string>>(() => new Set());
+  const [entryDatesTick, setEntryDatesTick] = useState(0);
 
   useEffect(() => {
     if (!snapshot) {
@@ -151,6 +153,17 @@ export default function App() {
 
     let cancelled = false;
     const refresh = async () => {
+      if (hasNativePencilKit()) {
+        try {
+          // Persist in-progress erase/draw before scanning dots.
+          await flushNativeDrawingOverlay();
+        } catch {
+          // Overlay may not be open; fall through to stored previews.
+        }
+      }
+      if (cancelled) {
+        return;
+      }
       const dates = await collectDiaryEntryDates(snapshot, sketchRepository);
       if (!cancelled) {
         setEntryDates(dates);
@@ -173,7 +186,7 @@ export default function App() {
         handleNativeUpdate,
       );
     };
-  }, [drawingHealth, sketchRepository, snapshot]);
+  }, [drawingHealth, entryDatesTick, sketchRepository, snapshot]);
 
   if (!snapshot) {
     return (
@@ -419,6 +432,9 @@ export default function App() {
             key={page.id}
             onAddPage={() => void createDiaryPage()}
             onDrawingHealthChange={setDrawingHealth}
+            onRefreshEntryDates={() =>
+              setEntryDatesTick((current) => current + 1)
+            }
             onReorderPages={(pageIds) =>
               commit({
                 type: "journal-pages-reorder",
@@ -431,6 +447,7 @@ export default function App() {
             page={page}
             pages={dayPages}
             penColor={snapshot.settings.penColor}
+            penOpacity={snapshot.settings.penOpacity}
             penWidth={snapshot.settings.penWidth}
             simpleMode={snapshot.settings.simpleMode}
             sketchRepository={sketchRepository}
@@ -476,6 +493,7 @@ export default function App() {
             page={sketchbookPage}
             pages={sketchbookPages}
             penColor={snapshot.settings.penColor}
+            penOpacity={snapshot.settings.penOpacity}
             penWidth={snapshot.settings.penWidth}
             simpleMode={snapshot.settings.simpleMode}
             sketchRepository={sketchRepository}
