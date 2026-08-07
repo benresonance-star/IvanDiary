@@ -15,7 +15,18 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getPreview", returnType: CAPPluginReturnPromise)
     ]
 
-    private let overlay = NativeDrawingOverlay()
+    @MainActor
+    private var overlay: NativeDrawingOverlay?
+
+    @MainActor
+    private func drawingOverlay() -> NativeDrawingOverlay {
+        if let overlay {
+            return overlay
+        }
+        let created = NativeDrawingOverlay()
+        self.overlay = created
+        return created
+    }
 
     @objc public func open(_ call: CAPPluginCall) {
         guard let documentID = call.getString("documentId"),
@@ -87,7 +98,7 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             rawValue: call.getString("tool") ?? ""
         ) ?? .pen
 
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else {
                 call.reject("The PencilKit plugin is unavailable.")
                 return
@@ -97,7 +108,8 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             do {
-                try self.overlay.present(
+                let overlay = self.drawingOverlay()
+                try overlay.present(
                     in: host,
                     documentID: documentID,
                     color: color,
@@ -119,33 +131,35 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
         let tool = call.getString("tool").flatMap(NativeDrawingTool.init(rawValue:))
         let frame = call.getObject("rect") == nil ? nil : rect(from: call)
 
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else {
                 call.reject("The PencilKit plugin is unavailable.")
                 return
             }
-            self.overlay.update(
+            let overlay = self.drawingOverlay()
+            overlay.update(
                 color: color,
                 width: width.map { CGFloat($0) },
                 tool: tool,
                 frame: frame
             )
             if let host = self.overlayHost() {
-                host.bringSubviewToFront(self.overlay)
+                host.bringSubviewToFront(overlay)
             }
-            call.resolve(["visible": self.overlay.isPresented])
+            call.resolve(["visible": overlay.isPresented])
         }
     }
 
     @objc public func hideOverlay(_ call: CAPPluginCall) {
         let shouldSave = call.getBool("save") ?? true
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else {
                 call.reject("The PencilKit plugin is unavailable.")
                 return
             }
             do {
-                let preview = try self.overlay.hide(save: shouldSave)
+                let overlay = self.drawingOverlay()
+                let preview = try overlay.hide(save: shouldSave)
                 call.resolve(
                     self.response(saved: shouldSave, preview: preview)
                 )
@@ -156,8 +170,8 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc public func undoOverlay(_ call: CAPPluginCall) {
-        DispatchQueue.main.async { [weak self] in
-            self?.overlay.undo()
+        Task { @MainActor [weak self] in
+            self?.drawingOverlay().undo()
             call.resolve(["undone": true])
         }
     }
