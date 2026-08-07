@@ -129,6 +129,8 @@ export interface PencilKitPlugin {
 export type PencilKitPreview = {
   saved: boolean;
   available: boolean;
+  /** True only when hide dismissed a currently presented overlay. */
+  didHide?: boolean;
   previewUri?: string;
   modifiedAt?: number;
 };

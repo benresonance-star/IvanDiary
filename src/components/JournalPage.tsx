@@ -332,7 +332,9 @@ export function PageWorkspace({
         paper,
         toolPaletteRef.current,
       );
-      setSketchPreviewInsetTop(contentInsetTop);
+      setSketchPreviewInsetTop((current) =>
+        Math.abs(current - contentInsetTop) < 0.5 ? current : contentInsetTop,
+      );
     };
 
     updateInset();

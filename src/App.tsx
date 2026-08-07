@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { PageWorkspace } from "./components/JournalPage";
 import {
@@ -144,6 +144,7 @@ export default function App() {
   const [welcomePreview, setWelcomePreview] = useState<WelcomeCopy>();
   const [entryDates, setEntryDates] = useState<Set<string>>(() => new Set());
   const [entryDatesTick, setEntryDatesTick] = useState(0);
+  const flushEntryDatesOnTickRef = useRef(false);
 
   useEffect(() => {
     if (!snapshot) {
@@ -152,10 +153,12 @@ export default function App() {
     }
 
     let cancelled = false;
-    const refresh = async () => {
-      if (hasNativePencilKit()) {
+    let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async (flushOverlay: boolean) => {
+      // Never flush on ordinary toolbar/draw traffic — that races PencilKit and
+      // freezes the Capacitor bridge. Only flush when the calendar opens.
+      if (flushOverlay && hasNativePencilKit()) {
         try {
-          // Persist in-progress erase/draw before scanning dots.
           await flushNativeDrawingOverlay();
         } catch {
           // Overlay may not be open; fall through to stored previews.
@@ -170,9 +173,17 @@ export default function App() {
       }
     };
 
-    void refresh();
+    const flushForCalendar = flushEntryDatesOnTickRef.current;
+    flushEntryDatesOnTickRef.current = false;
+    void refresh(flushForCalendar);
+
     const handleNativeUpdate = () => {
-      void refresh();
+      if (debounceTimer !== undefined) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(() => {
+        void refresh(false);
+      }, 400);
     };
     globalThis.addEventListener(
       NATIVE_DRAWING_UPDATED_EVENT,
@@ -181,6 +192,9 @@ export default function App() {
 
     return () => {
       cancelled = true;
+      if (debounceTimer !== undefined) {
+        clearTimeout(debounceTimer);
+      }
       globalThis.removeEventListener(
         NATIVE_DRAWING_UPDATED_EVENT,
         handleNativeUpdate,
@@ -432,9 +446,10 @@ export default function App() {
             key={page.id}
             onAddPage={() => void createDiaryPage()}
             onDrawingHealthChange={setDrawingHealth}
-            onRefreshEntryDates={() =>
-              setEntryDatesTick((current) => current + 1)
-            }
+            onRefreshEntryDates={() => {
+              flushEntryDatesOnTickRef.current = true;
+              setEntryDatesTick((current) => current + 1);
+            }}
             onReorderPages={(pageIds) =>
               commit({
                 type: "journal-pages-reorder",

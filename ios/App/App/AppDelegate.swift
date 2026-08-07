@@ -156,9 +156,6 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
                 tool: tool,
                 frame: frame
             )
-            if let host = self.overlayHost() {
-                host.bringSubviewToFront(overlay)
-            }
             call.resolve(["visible": overlay.isPresented])
         }
     }
@@ -172,10 +169,11 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             do {
                 let overlay = self.drawingOverlay()
+                let wasPresented = overlay.isPresented
                 let preview = try overlay.hide(save: shouldSave)
-                call.resolve(
-                    self.response(saved: shouldSave, preview: preview)
-                )
+                var payload = self.response(saved: shouldSave, preview: preview)
+                payload["didHide"] = wasPresented
+                call.resolve(payload)
             } catch {
                 call.reject("The drawing overlay could not be closed.", nil, error)
             }

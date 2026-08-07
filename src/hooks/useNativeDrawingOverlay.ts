@@ -10,6 +10,18 @@ import { measureDrawingOverlayLayout } from "../sketch/drawingOverlayLayout";
 import { toLegacyInkDocument } from "../sketch/legacyInk";
 import type { SketchRepository } from "../sketch/types";
 
+function rectsEqual(
+  left: { x: number; y: number; width: number; height: number },
+  right: { x: number; y: number; width: number; height: number },
+): boolean {
+  return (
+    Math.abs(left.x - right.x) < 0.5 &&
+    Math.abs(left.y - right.y) < 0.5 &&
+    Math.abs(left.width - right.width) < 0.5 &&
+    Math.abs(left.height - right.height) < 0.5
+  );
+}
+
 export function useNativeDrawingOverlay({
   documentId,
   enabled,
@@ -34,6 +46,17 @@ export function useNativeDrawingOverlay({
   onError?: (message: string) => void;
 }) {
   const documentIdRef = useRef(documentId);
+  const onErrorRef = useRef(onError);
+  const presentedRef = useRef(false);
+  const lastRectRef = useRef<
+    | {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }
+    | undefined
+  >(undefined);
   const nativeAvailable = hasNativePencilKit();
   const drawing =
     nativeAvailable && enabled && (tool === "pen" || tool === "eraser");
@@ -41,6 +64,10 @@ export function useNativeDrawingOverlay({
   useEffect(() => {
     documentIdRef.current = documentId;
   }, [documentId]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   useEffect(() => {
     if (!nativeAvailable) {
@@ -53,21 +80,31 @@ export function useNativeDrawingOverlay({
     }
 
     let cancelled = false;
+    let frameTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const hideIfPresented = async () => {
+      if (!presentedRef.current) {
+        return;
+      }
+      presentedRef.current = false;
+      lastRectRef.current = undefined;
+      try {
+        await hideNativeDrawingOverlay(documentIdRef.current, true);
+      } catch (error) {
+        onErrorRef.current?.(
+          error instanceof Error
+            ? error.message
+            : "The drawing could not be saved.",
+        );
+      }
+    };
 
     const sync = async () => {
       if (cancelled) {
         return;
       }
       if (!drawing) {
-        try {
-          await hideNativeDrawingOverlay(documentId, true);
-        } catch (error) {
-          onError?.(
-            error instanceof Error
-              ? error.message
-              : "The drawing could not be saved.",
-          );
-        }
+        await hideIfPresented();
         return;
       }
 
@@ -102,6 +139,10 @@ export function useNativeDrawingOverlay({
             rect: overlayRect,
             legacyInk,
           });
+          if (!cancelled) {
+            presentedRef.current = true;
+            lastRectRef.current = overlayRect;
+          }
         } catch (error) {
           if (legacyInk) {
             await sketchRepository.save(sketch);
@@ -109,7 +150,10 @@ export function useNativeDrawingOverlay({
           throw error;
         }
       } catch (error) {
-        onError?.(
+        if (!cancelled) {
+          presentedRef.current = false;
+        }
+        onErrorRef.current?.(
           error instanceof Error
             ? error.message
             : "The drawing overlay could not be opened.",
@@ -118,7 +162,7 @@ export function useNativeDrawingOverlay({
     };
 
     const updateFrame = () => {
-      if (!drawing || cancelled) {
+      if (!drawing || cancelled || !presentedRef.current) {
         return;
       }
       const { overlayRect } = measureDrawingOverlayLayout(
@@ -128,7 +172,22 @@ export function useNativeDrawingOverlay({
       if (overlayRect.width < 8 || overlayRect.height < 8) {
         return;
       }
-      void updateNativeDrawingOverlay({ rect: overlayRect });
+      if (
+        lastRectRef.current &&
+        rectsEqual(lastRectRef.current, overlayRect)
+      ) {
+        return;
+      }
+      lastRectRef.current = overlayRect;
+      if (frameTimer !== undefined) {
+        clearTimeout(frameTimer);
+      }
+      frameTimer = setTimeout(() => {
+        if (cancelled || !presentedRef.current) {
+          return;
+        }
+        void updateNativeDrawingOverlay({ rect: overlayRect });
+      }, 80);
     };
 
     void sync();
@@ -141,24 +200,22 @@ export function useNativeDrawingOverlay({
     }
     globalThis.addEventListener("resize", updateFrame);
     globalThis.visualViewport?.addEventListener("resize", updateFrame);
-    globalThis.visualViewport?.addEventListener("scroll", updateFrame);
 
     return () => {
       cancelled = true;
+      if (frameTimer !== undefined) {
+        clearTimeout(frameTimer);
+      }
       observer.disconnect();
       globalThis.removeEventListener("resize", updateFrame);
       globalThis.visualViewport?.removeEventListener("resize", updateFrame);
-      globalThis.visualViewport?.removeEventListener("scroll", updateFrame);
-      void hideNativeDrawingOverlay(documentIdRef.current, true).catch(() => {
-        // Best-effort save while leaving the page.
-      });
+      void hideIfPresented();
     };
   }, [
     color,
     documentId,
     drawing,
     nativeAvailable,
-    onError,
     opacity,
     paperRef,
     sketchRepository,
