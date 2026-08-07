@@ -28,6 +28,7 @@ import {
 } from "./native/browserMocks";
 import { BrowserJournalRepository } from "./repository/browserJournalRepository";
 import { BrowserSketchRepository } from "./repository/browserSketchRepository";
+import { localDateKey } from "./utils/date";
 import { createId } from "./utils/id";
 
 const INITIAL_DRAWING_HEALTH: SaveHealth = {
@@ -88,6 +89,25 @@ export default function App() {
     useState<string>();
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [welcomePreview, setWelcomePreview] = useState<WelcomeCopy>();
+
+  const entryDates = useMemo(() => {
+    const dates = new Set<string>();
+    if (!snapshot) {
+      return dates;
+    }
+    for (const candidate of snapshot.days) {
+      const hasContent = candidate.pageIds.some((pageId) => {
+        const pageCandidate = snapshot.pages.find(
+          (pageItem) => pageItem.id === pageId,
+        );
+        return (pageCandidate?.objects.length ?? 0) > 0;
+      });
+      if (hasContent) {
+        dates.add(candidate.date);
+      }
+    }
+    return dates;
+  }, [snapshot]);
 
   if (!snapshot) {
     return (
@@ -154,6 +174,59 @@ export default function App() {
     });
     if (saved) {
       setActiveDiaryPageId(newPage.id);
+    }
+  };
+
+  const openDiaryDate = async (dateKey: string) => {
+    if (dateKey > localDateKey(new Date())) {
+      return;
+    }
+    const existing = snapshot.days.find(
+      (candidate) => candidate.date === dateKey,
+    );
+    if (existing) {
+      setActiveDayId(existing.id);
+      setActiveDiaryPageId(existing.pageIds[0]);
+      setActiveSection("diary");
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    const dayId = `day-${dateKey}`;
+    const pageId = createId();
+    const paperStyle = page?.paperStyle ?? "warm-journal";
+    const dayCreated = await commit({
+      type: "journal-day-create",
+      day: {
+        id: dayId,
+        date: dateKey,
+        pageIds: [],
+        favourite: false,
+        revision: 0,
+      },
+    });
+    if (!dayCreated) {
+      return;
+    }
+    const pageCreated = await commit({
+      type: "page-create",
+      journalDayId: dayId,
+      page: {
+        schemaVersion: DOCUMENT_SCHEMA_VERSION,
+        id: pageId,
+        journalDayId: dayId,
+        paperStyle,
+        drawingDocumentId: createId(),
+        objects: [],
+        revision: 0,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    });
+    if (pageCreated) {
+      setActiveDayId(dayId);
+      setActiveDiaryPageId(pageId);
+      setActiveSection("diary");
     }
   };
 
@@ -275,6 +348,7 @@ export default function App() {
               favourite: day.favourite,
               journalDayId: day.id,
             }}
+            entryDates={entryDates}
             health={combinedHealth(health, drawingHealth)}
             key={page.id}
             onAddPage={() => void createDiaryPage()}
@@ -286,6 +360,7 @@ export default function App() {
                 pageIds,
               })
             }
+            onSelectDate={(dateKey) => void openDiaryDate(dateKey)}
             onSelectPage={setActiveDiaryPageId}
             page={page}
             pages={dayPages}

@@ -56,6 +56,7 @@ import {
   type LayoutChange,
 } from "./ArrangeablePageObject";
 import { defaultObjectFrame } from "./arrangeGeometry";
+import { DiaryCalendar } from "./DiaryCalendar";
 import { DiaryPageStrip } from "./DiaryPageStrip";
 import { FlowerPhoto } from "./JournalIllustrations";
 import {
@@ -249,10 +250,12 @@ export function PageWorkspace({
   audio,
   commit,
   context,
+  entryDates,
   health,
   onAddPage,
   onDrawingHealthChange,
   onReorderPages,
+  onSelectDate,
   onSelectPage,
   page,
   pages,
@@ -265,10 +268,12 @@ export function PageWorkspace({
   audio: JournalAudioPlugin;
   commit: Commit;
   context: PageWorkspaceContext;
+  entryDates?: ReadonlySet<string>;
   health: SaveHealth;
   onAddPage: () => void;
   onDrawingHealthChange: (health: SaveHealth) => void;
   onReorderPages: (pageIds: string[]) => Promise<boolean>;
+  onSelectDate?: (dateKey: string) => void;
   onSelectPage: (pageId: string) => void;
   page: Page;
   pages: Page[];
@@ -815,6 +820,13 @@ export function PageWorkspace({
             >
               <ChevronLeft aria-hidden="true" />
             </button>
+          ) : null}
+          {context.kind === "diary" && entryDates && onSelectDate ? (
+            <DiaryCalendar
+              entryDates={entryDates}
+              onSelectDate={onSelectDate}
+              selectedDate={context.date}
+            />
           ) : null}
           <p>{heading}</p>
           <button

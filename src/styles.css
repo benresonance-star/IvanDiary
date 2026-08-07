@@ -704,17 +704,23 @@ textarea,
 .page-favourite {
   display: grid;
   place-items: center;
+  flex: 0 0 48px;
   width: 48px;
   height: 48px;
+  padding: 0;
   border: 1px solid rgba(83, 68, 45, 0.2);
   border-radius: 50%;
   background: rgba(255, 253, 247, 0.78);
+  line-height: 0;
   cursor: pointer;
 }
 
 .page-favourite svg {
-  width: 25px;
-  height: 25px;
+  display: block;
+  width: 24px;
+  height: 24px;
+  /* Lucide star glyph sits slightly high in its viewBox. */
+  transform: translateY(1px);
 }
 
 .back-to-library {
@@ -1664,11 +1670,167 @@ textarea,
   place-items: center;
   width: 48px;
   height: 48px;
+  padding: 0;
   border: 0;
   border-radius: 50%;
   background: transparent;
   color: #8a672d;
+  line-height: 0;
   cursor: pointer;
+}
+
+.favourite-button svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  transform: translateY(1px);
+}
+
+.diary-calendar {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.diary-calendar-trigger {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid rgba(83, 68, 45, 0.2);
+  border-radius: 50%;
+  background: rgba(255, 253, 247, 0.86);
+  color: #4a3b28;
+  line-height: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.diary-calendar-trigger svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+
+.diary-calendar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.diary-calendar-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 36;
+  display: grid;
+  width: min(340px, calc(100vw - 48px));
+  padding: 16px;
+  gap: 12px;
+  border: 1px solid rgba(83, 68, 45, 0.18);
+  border-radius: 18px;
+  background: #fffaf0;
+  box-shadow: 0 14px 36px rgba(53, 39, 21, 0.18);
+}
+
+.diary-calendar-header {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+}
+
+.diary-calendar-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.diary-calendar-nav {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(83, 68, 45, 0.16);
+  border-radius: 50%;
+  background: rgba(255, 253, 247, 0.95);
+  color: #4a3b28;
+  cursor: pointer;
+}
+
+.diary-calendar-nav svg {
+  width: 22px;
+  height: 22px;
+}
+
+.diary-calendar-weekdays,
+.diary-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.diary-calendar-weekdays span {
+  display: grid;
+  place-items: center;
+  min-height: 28px;
+  color: #7a6a55;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.diary-calendar-day {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 42px;
+  padding: 0 0 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #2f261a;
+  font-size: 15px;
+  font-weight: 650;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.diary-calendar-day.outside-month {
+  color: #b0a28d;
+}
+
+.diary-calendar-day.today {
+  background: rgba(234, 220, 195, 0.55);
+}
+
+.diary-calendar-day.selected {
+  background: #7b674c;
+  color: #fffaf0;
+}
+
+.diary-calendar-day.future {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.diary-calendar-day .entry-dot {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #c47b2b;
+  transform: translateX(-50%);
+}
+
+.diary-calendar-day.selected .entry-dot {
+  background: #ffd9a3;
 }
 
 .empty-library {
