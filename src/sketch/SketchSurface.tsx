@@ -343,6 +343,7 @@ function SketchSurfaceComponent(
       }
 
       reactEvent.preventDefault();
+      canvas.focus({ preventScroll: true });
       try {
         canvas.setPointerCapture(event.pointerId);
       } catch {
@@ -494,7 +495,7 @@ function SketchSurfaceComponent(
         onPointerMove={handlePointerMove}
         onPointerUp={(event) => finishPointer(event.nativeEvent, false)}
         ref={liveCanvasRef}
-        role="img"
+        tabIndex={0}
       />
       {loading ? <p className="sketch-loading">Opening page…</p> : null}
     </div>

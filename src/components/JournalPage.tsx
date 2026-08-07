@@ -659,6 +659,9 @@ export function PageWorkspace({
             }
             setTool("pen");
             setSelectedObjectId(undefined);
+            if (document.activeElement instanceof HTMLElement) {
+              document.activeElement.blur();
+            }
           }}
           type="button"
         >
@@ -688,6 +691,9 @@ export function PageWorkspace({
           onClick={() => {
             setTool("eraser");
             setSelectedObjectId(undefined);
+            if (document.activeElement instanceof HTMLElement) {
+              document.activeElement.blur();
+            }
           }}
           type="button"
         >
@@ -794,7 +800,7 @@ export function PageWorkspace({
               : {
                   kind: "ipad",
                   tools: ["pen", "eraser"],
-                  fingerDrawing: true,
+                  fingerDrawing: false,
                   pressure: true,
                 }
           }
