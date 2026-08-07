@@ -19,6 +19,8 @@ body,
   min-width: 320px;
   height: 100%;
   margin: 0;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
 }
 
 button,
@@ -126,6 +128,17 @@ textarea:focus-visible {
   min-height: 600px;
   overflow: hidden;
   background: #f5f0e7;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 .side-navigation {

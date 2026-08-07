@@ -449,6 +449,19 @@ function SketchSurfaceComponent(
     [onError, onMutation, renderLiveStroke, replaceDocument],
   );
 
+  useEffect(() => {
+    const finishOutsideCanvas = (event: PointerEvent) =>
+      finishPointer(event, false);
+    const cancelOutsideCanvas = (event: PointerEvent) =>
+      finishPointer(event, true);
+    window.addEventListener("pointerup", finishOutsideCanvas);
+    window.addEventListener("pointercancel", cancelOutsideCanvas);
+    return () => {
+      window.removeEventListener("pointerup", finishOutsideCanvas);
+      window.removeEventListener("pointercancel", cancelOutsideCanvas);
+    };
+  }, [finishPointer]);
+
   return (
     <div
       className="sketch-surface"
@@ -459,7 +472,6 @@ function SketchSurfaceComponent(
       <canvas
         aria-label="Drawing area"
         className="sketch-layer sketch-input-layer"
-        onLostPointerCapture={(event) => finishPointer(event.nativeEvent, true)}
         onPointerCancel={(event) => finishPointer(event.nativeEvent, true)}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
