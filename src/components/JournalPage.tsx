@@ -36,6 +36,10 @@ import type {
   JournalAudioPlugin,
   RecordingSnapshot,
 } from "../native/contracts";
+import {
+  hasNativePencilKit,
+  openNativeDrawing,
+} from "../native/pencilKit";
 import type { BrowserSketchRepository } from "../repository/browserSketchRepository";
 import {
   SketchSurface,
@@ -305,6 +309,30 @@ export function PageWorkspace({
       )
       .map((transcript) => [transcript.recordingId, transcript]),
   );
+
+  const openPencilKit = async () => {
+    setTool("view");
+    setPenHudOpen(false);
+    setSelectedObjectId(undefined);
+    try {
+      const result = await openNativeDrawing({
+        documentId: `pencilkit-test-${page.drawingDocumentId}`,
+        color: penSettings.color,
+        width: penSettings.width,
+      });
+      setNotice(
+        result.saved
+          ? "Native Pencil test saved. Reopen it to check the marks."
+          : "The native Pencil test was closed without saving.",
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "The native drawing screen could not be opened.",
+      );
+    }
+  };
 
   const updateObject = (
     object: TextObject | TranscriptObject | LinkObject,
@@ -642,6 +670,18 @@ export function PageWorkspace({
             style={{ backgroundColor: penSettings.color }}
           />
         </button>
+        {hasNativePencilKit() ? (
+          <button
+            aria-pressed={false}
+            className="tool"
+            onClick={() => void openPencilKit()}
+            title="Test responsive native PencilKit drawing"
+            type="button"
+          >
+            <PenLine aria-hidden="true" />
+            <span>Pencil Test</span>
+          </button>
+        ) : null}
         <button
           aria-pressed={tool === "eraser"}
           className={tool === "eraser" ? "tool selected" : "tool"}

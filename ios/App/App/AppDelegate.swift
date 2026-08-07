@@ -1,7 +1,61 @@
 import UIKit
 import Capacitor
+import AppleDrawingKit
 
-@UIApplicationMain
+@objc(PencilKitPlugin)
+public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "PencilKitPlugin"
+    public let jsName = "PencilKit"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise)
+    ]
+
+    @objc public func open(_ call: CAPPluginCall) {
+        guard let documentID = call.getString("documentId"),
+              !documentID.isEmpty else {
+            call.reject("A documentId is required.")
+            return
+        }
+
+        let color = UIColor(
+            hexRGB: call.getString("color") ?? "#244A60"
+        ) ?? UIColor.label
+        let width = max(1, min(call.getDouble("width") ?? 4, 30))
+
+        DispatchQueue.main.async { [weak self] in
+            guard let host = self?.bridge?.viewController else {
+                call.reject("The native drawing host is unavailable.")
+                return
+            }
+            guard host.presentedViewController == nil else {
+                call.reject("Another native screen is already open.")
+                return
+            }
+
+            let editor = NativeDrawingViewController(
+                documentID: documentID,
+                color: color,
+                width: CGFloat(width)
+            )
+            let navigationController = UINavigationController(
+                rootViewController: editor
+            )
+            navigationController.modalPresentationStyle = .fullScreen
+            editor.onDone = { saved in
+                call.resolve(["saved": saved])
+            }
+            host.present(navigationController, animated: true)
+        }
+    }
+}
+
+final class AppViewController: CAPBridgeViewController {
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(PencilKitPlugin())
+    }
+}
+
+@main
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?

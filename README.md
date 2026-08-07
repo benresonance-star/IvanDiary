@@ -11,6 +11,7 @@ The Windows development foundation includes:
 
 - the responsive Interface V2 shell;
 - an isolated, pressure-aware Canvas 2D `SketchSurface`;
+- a reusable PencilKit package and isolated native drawing gate for iPad;
 - whole-stroke erasing and undo;
 - versioned journal, drawing and native-plugin contracts;
 - a transactionally committed IndexedDB snapshot and operation log;
@@ -41,10 +42,16 @@ npm test
 npm run build
 ```
 
-The iOS project should be added on the development Mac after Xcode 26 is ready:
+The Capacitor iOS shell is checked in. After pulling native changes on the Mac:
 
 ```sh
-npm install @capacitor/ios
-npx cap add ios
+npm install
 npm run cap:sync
 ```
+
+The PencilKit gate uses the local package at
+`packages/ApplePlatformServices`. In Xcode, choose **File → Add Package
+Dependencies… → Add Local…**, select that folder, and add the
+`AppleDrawingKit` product to the **App** target. This one-time Xcode action
+records the package reference in the project. Do not edit `project.pbxproj`
+manually.

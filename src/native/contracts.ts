@@ -68,3 +68,11 @@ export interface NativeSharePlugin {
     assetUris?: string[];
   }): Promise<void>;
 }
+
+export interface PencilKitPlugin {
+  open(options: {
+    documentId: EntityId;
+    color: string;
+    width: number;
+  }): Promise<{ saved: boolean }>;
+}
