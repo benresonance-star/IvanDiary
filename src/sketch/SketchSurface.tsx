@@ -424,17 +424,15 @@ function SketchSurfaceComponent(
       activeStrokeRef.current = undefined;
       renderLiveStroke();
 
-      if (cancelled) {
-        onError?.({
-          code: "pointer-cancelled",
-          message: "The interrupted mark was not saved.",
-          recoverable: true,
-        });
-        return;
-      }
-
       const document = documentRef.current;
       if (!document || !active || active.points.length === 0) {
+        if (cancelled) {
+          onError?.({
+            code: "pointer-cancelled",
+            message: "The interrupted mark could not be recovered.",
+            recoverable: true,
+          });
+        }
         return;
       }
 
@@ -472,6 +470,8 @@ function SketchSurfaceComponent(
       <canvas
         aria-label="Drawing area"
         className="sketch-layer sketch-input-layer"
+        onContextMenu={(event) => event.preventDefault()}
+        onDragStart={(event) => event.preventDefault()}
         onPointerCancel={(event) => finishPointer(event.nativeEvent, true)}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
