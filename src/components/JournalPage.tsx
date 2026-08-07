@@ -49,6 +49,7 @@ import {
 import { NativeSketchPreview } from "../sketch/NativeSketchPreview";
 import type { SketchTool } from "../sketch/types";
 import { browserFileToAsset } from "../utils/assets";
+import { localDateKey } from "../utils/date";
 import { createId } from "../utils/id";
 import { AudioCard } from "./AudioCard";
 import {
@@ -829,6 +830,10 @@ export function PageWorkspace({
             />
           ) : null}
           <p>{heading}</p>
+          {context.kind === "diary" &&
+          context.date !== localDateKey(new Date()) ? (
+            <span className="earlier-diary-entry">EARLIER DIARY ENTRY</span>
+          ) : null}
           <button
             aria-label={
               context.favourite

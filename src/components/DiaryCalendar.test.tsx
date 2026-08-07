@@ -33,4 +33,28 @@ describe("DiaryCalendar", () => {
     );
     expect(onSelectDate).toHaveBeenCalledWith("2026-08-03");
   });
+
+  it("jumps back to today from the calendar footer", () => {
+    const onSelectDate = vi.fn();
+    const today = new Date();
+    const todayKey = [
+      today.getFullYear(),
+      String(today.getMonth() + 1).padStart(2, "0"),
+      String(today.getDate()).padStart(2, "0"),
+    ].join("-");
+
+    render(
+      <DiaryCalendar
+        entryDates={new Set()}
+        onSelectDate={onSelectDate}
+        selectedDate="2026-07-01"
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open diary calendar" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Jump to today" }));
+    expect(onSelectDate).toHaveBeenCalledWith(todayKey);
+  });
 });

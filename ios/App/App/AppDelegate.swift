@@ -35,9 +35,9 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        let color = UIColor(
-            hexRGB: call.getString("color") ?? "#244A60"
-        ) ?? UIColor.label
+        let color = PencilInkColor.fromHexRGB(
+            call.getString("color") ?? "#244A60"
+        )
         let width = max(1, min(call.getDouble("width") ?? 4, 30))
         let initialTool = NativeDrawingTool(
             rawValue: call.getString("initialTool") ?? ""
@@ -90,9 +90,9 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        let color = UIColor(
-            hexRGB: call.getString("color") ?? "#244A60"
-        ) ?? UIColor.label
+        let color = PencilInkColor.fromHexRGB(
+            call.getString("color") ?? "#244A60"
+        )
         let width = max(1, min(call.getDouble("width") ?? 4, 30))
         let tool = NativeDrawingTool(
             rawValue: call.getString("tool") ?? ""
@@ -131,7 +131,7 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc public func updateOverlay(_ call: CAPPluginCall) {
         let colorValue = call.getString("color")
-        let color = colorValue.flatMap { UIColor(hexRGB: $0) }
+        let color = colorValue.map { PencilInkColor.fromHexRGB($0) }
         let width = call.getDouble("width").map { max(1, min($0, 30)) }
         let tool = call.getString("tool").flatMap(NativeDrawingTool.init(rawValue:))
         let frame = call.getObject("rect") == nil ? nil : rect(from: call)

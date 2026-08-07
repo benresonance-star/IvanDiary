@@ -27,6 +27,10 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         super.init(frame: .zero)
         isOpaque = false
         backgroundColor = .clear
+        // PencilKit inverts ink in dark mode (black → white). Journal paper is
+        // always light, so keep the canvas in light appearance permanently.
+        overrideUserInterfaceStyle = .light
+        canvasView.overrideUserInterfaceStyle = .light
         canvasView.translatesAutoresizingMaskIntoConstraints = false
         canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
@@ -156,7 +160,11 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
     private func apply(tool: NativeDrawingTool) {
         switch tool {
         case .pen:
-            canvasView.tool = PKInkingTool(.pen, color: color, width: width)
+            canvasView.tool = PKInkingTool(
+                .pen,
+                color: PencilInkColor.forLightPaper(color),
+                width: width
+            )
         case .eraser:
             canvasView.tool = PKEraserTool(.vector)
         }
@@ -189,9 +197,9 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         let bounds = canvasView.bounds.isEmpty
             ? CGRect(x: 0, y: 0, width: max(frame.width, 1), height: max(frame.height, 1))
             : canvasView.bounds
-        let previewImage = canvasView.drawing.image(
-            from: bounds,
-            scale: UIScreen.main.scale
+        let previewImage = PencilInkColor.renderPreview(
+            drawing: canvasView.drawing,
+            bounds: bounds
         )
         guard let previewData = previewImage.pngData() else {
             throw DrawingPersistenceError.previewUnavailable

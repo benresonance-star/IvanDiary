@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { PageWorkspace } from "./components/JournalPage";
 import {
@@ -18,6 +18,7 @@ import {
 import {
   DOCUMENT_SCHEMA_VERSION,
   type Favourite,
+  type JournalSnapshot,
   type Page,
   type SaveHealth,
 } from "./domain/models";
@@ -26,8 +27,14 @@ import {
   BrowserAppleTranscriptionMock,
   BrowserJournalAudioMock,
 } from "./native/browserMocks";
+import {
+  getNativeDrawingPreview,
+  hasNativePencilKit,
+  NATIVE_DRAWING_UPDATED_EVENT,
+} from "./native/pencilKit";
 import { BrowserJournalRepository } from "./repository/browserJournalRepository";
 import { BrowserSketchRepository } from "./repository/browserSketchRepository";
+import type { SketchRepository } from "./sketch/types";
 import { localDateKey } from "./utils/date";
 import { createId } from "./utils/id";
 
@@ -37,6 +44,51 @@ const INITIAL_DRAWING_HEALTH: SaveHealth = {
   durableRevision: 0,
   pendingOperationCount: 0,
 };
+
+async function collectDiaryEntryDates(
+  snapshot: JournalSnapshot,
+  sketchRepository: SketchRepository,
+): Promise<Set<string>> {
+  const dates = new Set<string>();
+  const checkNative = hasNativePencilKit();
+
+  for (const day of snapshot.days) {
+    for (const pageId of day.pageIds) {
+      const pageCandidate = snapshot.pages.find(
+        (pageItem) => pageItem.id === pageId,
+      );
+      if (!pageCandidate) {
+        continue;
+      }
+      if (pageCandidate.objects.length > 0) {
+        dates.add(day.date);
+        break;
+      }
+      const sketch = await sketchRepository.load(
+        pageCandidate.drawingDocumentId,
+      );
+      if (sketch.strokes.length > 0) {
+        dates.add(day.date);
+        break;
+      }
+      if (checkNative) {
+        try {
+          const preview = await getNativeDrawingPreview(
+            pageCandidate.drawingDocumentId,
+          );
+          if (preview.available) {
+            dates.add(day.date);
+            break;
+          }
+        } catch {
+          // Ignore preview lookup failures while scanning the calendar.
+        }
+      }
+    }
+  }
+
+  return dates;
+}
 
 function combinedHealth(
   journal: SaveHealth,
@@ -89,25 +141,39 @@ export default function App() {
     useState<string>();
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [welcomePreview, setWelcomePreview] = useState<WelcomeCopy>();
+  const [entryDates, setEntryDates] = useState<Set<string>>(() => new Set());
 
-  const entryDates = useMemo(() => {
-    const dates = new Set<string>();
+  useEffect(() => {
     if (!snapshot) {
-      return dates;
+      setEntryDates(new Set());
+      return;
     }
-    for (const candidate of snapshot.days) {
-      const hasContent = candidate.pageIds.some((pageId) => {
-        const pageCandidate = snapshot.pages.find(
-          (pageItem) => pageItem.id === pageId,
-        );
-        return (pageCandidate?.objects.length ?? 0) > 0;
-      });
-      if (hasContent) {
-        dates.add(candidate.date);
+
+    let cancelled = false;
+    const refresh = async () => {
+      const dates = await collectDiaryEntryDates(snapshot, sketchRepository);
+      if (!cancelled) {
+        setEntryDates(dates);
       }
-    }
-    return dates;
-  }, [snapshot]);
+    };
+
+    void refresh();
+    const handleNativeUpdate = () => {
+      void refresh();
+    };
+    globalThis.addEventListener(
+      NATIVE_DRAWING_UPDATED_EVENT,
+      handleNativeUpdate,
+    );
+
+    return () => {
+      cancelled = true;
+      globalThis.removeEventListener(
+        NATIVE_DRAWING_UPDATED_EVENT,
+        handleNativeUpdate,
+      );
+    };
+  }, [drawingHealth, sketchRepository, snapshot]);
 
   if (!snapshot) {
     return (

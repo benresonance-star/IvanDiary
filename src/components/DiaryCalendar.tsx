@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 
 import {
   buildMonthGrid,
+  localDateKey,
   parseLocalDateKey,
   shiftMonth,
 } from "../utils/date";
@@ -18,6 +19,7 @@ export function DiaryCalendar({
   onSelectDate: (dateKey: string) => void;
   selectedDate: string;
 }) {
+  const todayKey = localDateKey(new Date());
   const selected = parseLocalDateKey(selectedDate);
   const [open, setOpen] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState({
@@ -34,6 +36,16 @@ export function DiaryCalendar({
     month: "long",
     year: "numeric",
   }).format(new Date(visibleMonth.year, visibleMonth.monthIndex, 1));
+
+  const jumpToToday = () => {
+    const today = new Date();
+    setVisibleMonth({
+      year: today.getFullYear(),
+      monthIndex: today.getMonth(),
+    });
+    onSelectDate(todayKey);
+    setOpen(false);
+  };
 
   return (
     <div className="diary-calendar">
@@ -119,6 +131,7 @@ export function DiaryCalendar({
                       cell.isToday ? "today" : "",
                       isSelected ? "selected" : "",
                       cell.isFuture ? "future" : "",
+                      hasEntry ? "has-entry" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
@@ -138,6 +151,14 @@ export function DiaryCalendar({
                 );
               })}
             </div>
+
+            <button
+              className="diary-calendar-today-action"
+              onClick={jumpToToday}
+              type="button"
+            >
+              Jump to today
+            </button>
           </div>
         </>
       ) : null}

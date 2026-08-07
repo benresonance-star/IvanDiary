@@ -56,7 +56,7 @@ public enum LegacyInkImport {
                 return nil
             }
             let start = stroke.points[0].timestamp
-            let inkColor = UIColor(hexRGB: stroke.color) ?? .label
+            let inkColor = PencilInkColor.fromHexRGB(stroke.color)
             let baseWidth = max(1, stroke.width * ((scaleX + scaleY) / 2))
             let controlPoints = stroke.points.map { point -> PKStrokePoint in
                 let force = max(0.05, min(point.pressure > 0 ? point.pressure : 0.5, 1))

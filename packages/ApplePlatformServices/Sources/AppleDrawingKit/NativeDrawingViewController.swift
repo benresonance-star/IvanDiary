@@ -148,6 +148,7 @@ public final class NativeDrawingViewController: UIViewController, PKCanvasViewDe
     public override func viewDidLoad() {
         super.viewDidLoad()
         title = "Draw"
+        overrideUserInterfaceStyle = .light
         view.backgroundColor = UIColor(
             red: 0.965,
             green: 0.941,
@@ -155,12 +156,17 @@ public final class NativeDrawingViewController: UIViewController, PKCanvasViewDe
             alpha: 1
         )
 
+        canvasView.overrideUserInterfaceStyle = .light
         canvasView.translatesAutoresizingMaskIntoConstraints = false
         canvasView.backgroundColor = .clear
         canvasView.drawingPolicy = .anyInput
         switch initialTool {
         case .pen:
-            canvasView.tool = PKInkingTool(.pen, color: color, width: width)
+            canvasView.tool = PKInkingTool(
+                .pen,
+                color: PencilInkColor.forLightPaper(color),
+                width: width
+            )
         case .eraser:
             canvasView.tool = PKEraserTool(.vector)
         }
@@ -281,9 +287,9 @@ public final class NativeDrawingViewController: UIViewController, PKCanvasViewDe
         let bounds = canvasView.bounds.isEmpty
             ? CGRect(x: 0, y: 0, width: 1200, height: 820)
             : canvasView.bounds
-        let previewImage = canvasView.drawing.image(
-            from: bounds,
-            scale: UIScreen.main.scale
+        let previewImage = PencilInkColor.renderPreview(
+            drawing: canvasView.drawing,
+            bounds: bounds
         )
         guard let previewData = previewImage.pngData() else {
             throw DrawingPersistenceError.previewUnavailable
@@ -324,7 +330,11 @@ public final class NativeDrawingViewController: UIViewController, PKCanvasViewDe
     }
 
     @objc private func selectPen() {
-        canvasView.tool = PKInkingTool(.pen, color: color, width: width)
+        canvasView.tool = PKInkingTool(
+            .pen,
+            color: PencilInkColor.forLightPaper(color),
+            width: width
+        )
     }
 
     @objc private func selectEraser() {
