@@ -4,6 +4,7 @@ import {
   distanceToSegment,
   shouldAppendSample,
   strokeWidth,
+  visibleDotWidth,
 } from "./geometry";
 import type { PencilSample } from "./types";
 
@@ -20,6 +21,11 @@ describe("stroke geometry", () => {
   it("maps zero and full pressure to visible stroke widths", () => {
     expect(strokeWidth(10, 0)).toBeCloseTo(2.2);
     expect(strokeWidth(10, 1)).toBeCloseTo(10);
+  });
+
+  it("keeps a light Pencil tap visible", () => {
+    expect(visibleDotWidth(4.2, 0.08)).toBeCloseTo(2.31);
+    expect(visibleDotWidth(4.2, 1)).toBeCloseTo(4.2);
   });
 
   it("keeps stationary samples when enough time has elapsed", () => {

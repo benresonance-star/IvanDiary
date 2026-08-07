@@ -11,7 +11,11 @@ import {
 
 import type { SaveHealth } from "../domain/models";
 import { createId } from "../utils/id";
-import { distanceToSegment, shouldAppendSample } from "./geometry";
+import {
+  distance,
+  distanceToSegment,
+  shouldAppendSample,
+} from "./geometry";
 import { drawStroke, renderDocument } from "./renderer";
 import type {
   PencilSample,
@@ -419,12 +423,25 @@ function SketchSurfaceComponent(
         return;
       }
 
-      activePointerRef.current = undefined;
       const active = activeStrokeRef.current;
+      const document = documentRef.current;
+      const canvas = liveCanvasRef.current;
+      const previous = active?.points.at(-1);
+      if (!cancelled && active && document && canvas && previous) {
+        const released = sampleFromEvent(event, canvas, document);
+        if (distance(previous, released) >= 0.1) {
+          active.points.push({
+            ...released,
+            pressure:
+              released.pressure > 0 ? released.pressure : previous.pressure,
+          });
+        }
+      }
+
+      activePointerRef.current = undefined;
       activeStrokeRef.current = undefined;
       renderLiveStroke();
 
-      const document = documentRef.current;
       if (!document || !active || active.points.length === 0) {
         if (cancelled) {
           onError?.({

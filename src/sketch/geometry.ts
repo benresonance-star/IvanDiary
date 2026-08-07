@@ -8,6 +8,10 @@ export function strokeWidth(baseWidth: number, pressure: number): number {
   return baseWidth * (0.22 + clamp(pressure, 0, 1) * 0.78);
 }
 
+export function visibleDotWidth(baseWidth: number, pressure: number): number {
+  return Math.max(strokeWidth(baseWidth, pressure), baseWidth * 0.55);
+}
+
 export function distance(
   first: Pick<PencilSample, "x" | "y">,
   second: Pick<PencilSample, "x" | "y">,

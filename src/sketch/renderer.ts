@@ -1,4 +1,4 @@
-import { strokeWidth } from "./geometry";
+import { strokeWidth, visibleDotWidth } from "./geometry";
 import { safeStrokeColor, safeStrokeWidth } from "./migrations";
 import type { SketchDocument, SketchStroke } from "./types";
 
@@ -16,7 +16,7 @@ function drawDot(
   context.arc(
     point.x,
     point.y,
-    strokeWidth(safeStrokeWidth(stroke), point.pressure) / 2,
+    visibleDotWidth(safeStrokeWidth(stroke), point.pressure) / 2,
     0,
     Math.PI * 2,
   );
