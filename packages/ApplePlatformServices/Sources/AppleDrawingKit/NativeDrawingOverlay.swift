@@ -62,7 +62,8 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         color: UIColor,
         width: CGFloat,
         tool: NativeDrawingTool,
-        frame: CGRect
+        frame: CGRect,
+        legacyInk: LegacyInkDocument? = nil
     ) throws {
         pendingSave?.cancel()
         let previousDocumentID = self.documentID
@@ -73,6 +74,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         self.color = color
         self.width = width
         self.frame = frame
+        layoutIfNeeded()
         apply(tool: tool)
         if superview !== host {
             removeFromSuperview()
@@ -81,6 +83,15 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         host.bringSubviewToFront(self)
         if !isPresented || previousDocumentID != documentID {
             try loadDrawing(documentID: documentID)
+        }
+        if let legacyInk, !legacyInk.strokes.isEmpty {
+            let canvasSize = bounds.isEmpty ? frame.size : bounds.size
+            canvasView.drawing = LegacyInkImport.merging(
+                canvasView.drawing,
+                with: legacyInk,
+                canvasSize: canvasSize
+            )
+            _ = try saveDrawing()
         }
         isPresented = true
         isHidden = false

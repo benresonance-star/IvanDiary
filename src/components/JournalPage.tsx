@@ -302,6 +302,7 @@ export function PageWorkspace({
     width: penSettings.width,
     paperRef,
     toolPaletteRef,
+    sketchRepository,
     onError: setNotice,
   });
 

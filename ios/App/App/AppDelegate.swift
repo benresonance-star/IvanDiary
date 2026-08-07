@@ -97,6 +97,7 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
         let tool = NativeDrawingTool(
             rawValue: call.getString("tool") ?? ""
         ) ?? .pen
+        let legacyInk = legacyInkDocument(from: call)
 
         Task { @MainActor [weak self] in
             guard let self else {
@@ -115,9 +116,13 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
                     color: color,
                     width: CGFloat(width),
                     tool: tool,
-                    frame: frame
+                    frame: frame,
+                    legacyInk: legacyInk
                 )
-                call.resolve(["visible": true])
+                call.resolve([
+                    "visible": true,
+                    "importedLegacyStrokes": legacyInk?.strokes.isEmpty == false
+                ])
             } catch {
                 call.reject("The drawing overlay could not be opened.", nil, error)
             }
@@ -218,6 +223,67 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             return rectInWebView
         }
         return webView.convert(rectInWebView, to: parent)
+    }
+
+    private func legacyInkDocument(from call: CAPPluginCall) -> LegacyInkDocument? {
+        guard let values = call.getObject("legacyInk") else {
+            return nil
+        }
+        guard let width = doubleValue(values["width"]),
+              let height = doubleValue(values["height"]),
+              width > 0, height > 0,
+              let rawStrokes = values["strokes"] as? [Any] else {
+            return nil
+        }
+
+        let strokes: [LegacyInkStroke] = rawStrokes.compactMap { rawStroke in
+            guard let stroke = rawStroke as? JSObject,
+                  let color = stroke["color"] as? String,
+                  let strokeWidth = doubleValue(stroke["width"]),
+                  let rawPoints = stroke["points"] as? [Any] else {
+                return nil
+            }
+            let points: [LegacyInkPoint] = rawPoints.compactMap { rawPoint in
+                guard let point = rawPoint as? JSObject,
+                      let x = doubleValue(point["x"]),
+                      let y = doubleValue(point["y"]) else {
+                    return nil
+                }
+                return LegacyInkPoint(
+                    x: x,
+                    y: y,
+                    pressure: doubleValue(point["pressure"]) ?? 0.5,
+                    timestamp: doubleValue(point["timestamp"]) ?? 0
+                )
+            }
+            guard !points.isEmpty else {
+                return nil
+            }
+            return LegacyInkStroke(
+                color: color,
+                width: strokeWidth,
+                points: points
+            )
+        }
+        guard !strokes.isEmpty else {
+            return nil
+        }
+        return LegacyInkDocument(
+            width: width,
+            height: height,
+            strokes: strokes
+        )
+    }
+
+    private func doubleValue(_ value: Any?) -> Double? {
+        switch value {
+        case let number as Double:
+            return number
+        case let number as NSNumber:
+            return number.doubleValue
+        default:
+            return nil
+        }
     }
 
     private func image(fromDataURL value: String?) -> UIImage? {

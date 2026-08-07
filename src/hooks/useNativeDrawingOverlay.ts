@@ -6,6 +6,8 @@ import {
   showNativeDrawingOverlay,
   updateNativeDrawingOverlay,
 } from "../native/pencilKit";
+import { toLegacyInkDocument } from "../sketch/legacyInk";
+import type { SketchRepository } from "../sketch/types";
 
 function measureDrawingOverlayRect(
   paper: HTMLElement,
@@ -35,6 +37,7 @@ export function useNativeDrawingOverlay({
   width,
   paperRef,
   toolPaletteRef,
+  sketchRepository,
   onError,
 }: {
   documentId: string;
@@ -44,6 +47,7 @@ export function useNativeDrawingOverlay({
   width: number;
   paperRef: RefObject<HTMLDivElement | null>;
   toolPaletteRef: RefObject<HTMLDivElement | null>;
+  sketchRepository: SketchRepository;
   onError?: (message: string) => void;
 }) {
   const documentIdRef = useRef(documentId);
@@ -90,13 +94,33 @@ export function useNativeDrawingOverlay({
       }
 
       try {
-        await showNativeDrawingOverlay({
-          documentId,
-          color,
-          width,
-          tool: tool === "eraser" ? "eraser" : "pen",
-          rect,
-        });
+        const sketch = await sketchRepository.load(documentId);
+        if (cancelled) {
+          return;
+        }
+        const legacyInk = toLegacyInkDocument(sketch);
+        if (legacyInk) {
+          await sketchRepository.save({
+            ...sketch,
+            strokes: [],
+            revision: sketch.revision + 1,
+          });
+        }
+        try {
+          await showNativeDrawingOverlay({
+            documentId,
+            color,
+            width,
+            tool: tool === "eraser" ? "eraser" : "pen",
+            rect,
+            legacyInk,
+          });
+        } catch (error) {
+          if (legacyInk) {
+            await sketchRepository.save(sketch);
+          }
+          throw error;
+        }
       } catch (error) {
         onError?.(
           error instanceof Error
@@ -146,6 +170,7 @@ export function useNativeDrawingOverlay({
     nativeAvailable,
     onError,
     paperRef,
+    sketchRepository,
     tool,
     toolPaletteRef,
     width,

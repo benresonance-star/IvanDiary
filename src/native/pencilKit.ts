@@ -1,6 +1,7 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 
 import type {
+  LegacyInkDocument,
   PencilKitOverlayRect,
   PencilKitPlugin,
   PencilKitPreview,
@@ -38,8 +39,12 @@ export async function showNativeDrawingOverlay(options: {
   width: number;
   tool: "pen" | "eraser";
   rect: PencilKitOverlayRect;
-}): Promise<void> {
-  await pencilKit.showOverlay(options);
+  legacyInk?: LegacyInkDocument;
+}): Promise<{ importedLegacyStrokes: boolean }> {
+  const result = await pencilKit.showOverlay(options);
+  return {
+    importedLegacyStrokes: result.importedLegacyStrokes === true,
+  };
 }
 
 export async function updateNativeDrawingOverlay(options: {

@@ -76,6 +76,25 @@ export type PencilKitOverlayRect = {
   height: number;
 };
 
+export type LegacyInkPoint = {
+  x: number;
+  y: number;
+  pressure: number;
+  timestamp: number;
+};
+
+export type LegacyInkStroke = {
+  color: string;
+  width: number;
+  points: LegacyInkPoint[];
+};
+
+export type LegacyInkDocument = {
+  width: number;
+  height: number;
+  strokes: LegacyInkStroke[];
+};
+
 export interface PencilKitPlugin {
   open(options: {
     documentId: EntityId;
@@ -90,7 +109,8 @@ export interface PencilKitPlugin {
     width: number;
     tool: "pen" | "eraser";
     rect: PencilKitOverlayRect;
-  }): Promise<{ visible: boolean }>;
+    legacyInk?: LegacyInkDocument;
+  }): Promise<{ visible: boolean; importedLegacyStrokes?: boolean }>;
   updateOverlay(options: {
     color?: string;
     width?: number;
