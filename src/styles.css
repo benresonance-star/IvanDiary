@@ -630,6 +630,17 @@ textarea,
   touch-action: none;
 }
 
+.paper-page.drawing-active .sketch-surface {
+  z-index: 10;
+}
+
+.paper-page.drawing-active > :not(.sketch-surface) {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .sketch-layer {
   display: block;
 }

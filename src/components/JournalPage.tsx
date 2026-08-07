@@ -777,7 +777,9 @@ export function PageWorkspace({
       />
 
       <div
-        className={`paper-page paper-${page.paperStyle}`}
+        className={`paper-page paper-${page.paperStyle}${
+          tool === "pen" || tool === "eraser" ? " drawing-active" : ""
+        }`}
         ref={paperRef}
       >
         <SketchSurface
