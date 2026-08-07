@@ -36,10 +36,6 @@ import type {
   JournalAudioPlugin,
   RecordingSnapshot,
 } from "../native/contracts";
-import {
-  hasNativePencilKit,
-  openNativeDrawing,
-} from "../native/pencilKit";
 import type { BrowserSketchRepository } from "../repository/browserSketchRepository";
 import {
   SketchSurface,
@@ -310,34 +306,6 @@ export function PageWorkspace({
       )
       .map((transcript) => [transcript.recordingId, transcript]),
   );
-  const nativePencilKit = hasNativePencilKit();
-
-  const openPencilKit = async (initialTool: "pen" | "eraser") => {
-    setTool("view");
-    setPenHudOpen(false);
-    setSelectedObjectId(undefined);
-    try {
-      const result = await openNativeDrawing({
-        documentId: page.drawingDocumentId,
-        color: penSettings.color,
-        width: penSettings.width,
-        initialTool,
-        backgroundDataUrl: sketchRef.current?.exportPreviewDataUrl(),
-      });
-      setNotice(
-        result.saved
-          ? "Drawing saved on this iPad."
-          : "The drawing was closed without saving.",
-      );
-    } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? error.message
-          : "The native drawing screen could not be opened.",
-      );
-    }
-  };
-
   const updateObject = (
     object: TextObject | TranscriptObject | LinkObject,
   ) => {
@@ -612,7 +580,7 @@ export function PageWorkspace({
     setNotice("Browser demonstration only. Tap Voice again to stop.");
   };
 
-  const closePenSettings = (launchNative = false) => {
+  const closePenSettings = () => {
     setPenHudOpen(false);
     if (
       penSettings.color !== penColor ||
@@ -625,9 +593,6 @@ export function PageWorkspace({
           penWidth: penSettings.width,
         },
       });
-    }
-    if (launchNative && nativePencilKit) {
-      void openPencilKit("pen");
     }
   };
 
@@ -660,11 +625,6 @@ export function PageWorkspace({
           aria-pressed={tool === "pen"}
           className={tool === "pen" ? "tool selected" : "tool"}
           onClick={() => {
-            if (nativePencilKit) {
-              setPenHudOpen(true);
-              setSelectedObjectId(undefined);
-              return;
-            }
             if (tool === "pen") {
               setPenHudOpen(true);
               return;
@@ -689,10 +649,6 @@ export function PageWorkspace({
           aria-pressed={tool === "eraser"}
           className={tool === "eraser" ? "tool selected" : "tool"}
           onClick={() => {
-            if (nativePencilKit) {
-              void openPencilKit("eraser");
-              return;
-            }
             setTool("eraser");
             setSelectedObjectId(undefined);
             if (document.activeElement instanceof HTMLElement) {
@@ -764,12 +720,12 @@ export function PageWorkspace({
           <button
             aria-label="Close pen settings"
             className="pen-hud-backdrop"
-            onClick={() => closePenSettings(false)}
+            onClick={closePenSettings}
             type="button"
           />
           <PenSettingsHud
             onChange={setPenSettings}
-            onDone={() => closePenSettings(nativePencilKit)}
+            onDone={closePenSettings}
             settings={penSettings}
             simpleMode={simpleMode}
           />
@@ -794,7 +750,7 @@ export function PageWorkspace({
       >
         <SketchSurface
           capabilities={
-            nativePencilKit || tool === "arrange" || tool === "view"
+            tool === "arrange" || tool === "view"
               ? {
                   kind: "readonly",
                   tools: [],

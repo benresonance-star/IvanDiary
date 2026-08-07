@@ -50,11 +50,10 @@ npm install
 npm run cap:sync
 ```
 
-On iPad, **Draw** opens pen colour/thickness settings, then the native
-PencilKit editor. **Erase** opens the same editor with the eraser selected.
-Marks are stored per page under Application Support and shown as PNG
-previews on the diary page and in library thumbnails. The web canvas remains
-the drawing surface in the browser.
+**Draw** and **Erase** use the standard on-page canvas. A reusable PencilKit
+package remains available for a future in-place native overlay; durable native
+preview files can still be shown when present. The browser keeps the same
+on-page drawing surface for Windows development.
 
 PencilKit uses the local package at `packages/ApplePlatformServices`. In
 Xcode, choose **File → Add Package Dependencies… → Add Local…**, select that
