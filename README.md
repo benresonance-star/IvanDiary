@@ -50,10 +50,10 @@ npm install
 npm run cap:sync
 ```
 
-**Draw** and **Erase** use the standard on-page canvas. A reusable PencilKit
-package remains available for a future in-place native overlay; durable native
-preview files can still be shown when present. The browser keeps the same
-on-page drawing surface for Windows development.
+On iPad, **Draw** and **Erase** keep you on the journal page and activate an
+in-place PencilKit overlay aligned to the paper. Leaving Draw/Erase saves a
+PNG preview onto the page. The browser keeps the web canvas for Windows
+development.
 
 PencilKit uses the local package at `packages/ApplePlatformServices`. In
 Xcode, choose **File → Add Package Dependencies… → Add Local…**, select that

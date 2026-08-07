@@ -8,8 +8,14 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "PencilKit"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "showOverlay", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updateOverlay", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "hideOverlay", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "undoOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPreview", returnType: CAPPluginReturnPromise)
     ]
+
+    private let overlay = NativeDrawingOverlay()
 
     @objc public func open(_ call: CAPPluginCall) {
         guard let documentID = call.getString("documentId"),
@@ -62,6 +68,100 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @objc public func showOverlay(_ call: CAPPluginCall) {
+        guard let documentID = call.getString("documentId"),
+              !documentID.isEmpty else {
+            call.reject("A documentId is required.")
+            return
+        }
+        guard let frame = rect(from: call) else {
+            call.reject("A valid overlay frame is required.")
+            return
+        }
+
+        let color = UIColor(
+            hexRGB: call.getString("color") ?? "#244A60"
+        ) ?? UIColor.label
+        let width = max(1, min(call.getDouble("width") ?? 4, 30))
+        let tool = NativeDrawingTool(
+            rawValue: call.getString("tool") ?? ""
+        ) ?? .pen
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                call.reject("The PencilKit plugin is unavailable.")
+                return
+            }
+            guard let host = self.overlayHost() else {
+                call.reject("The native drawing host is unavailable.")
+                return
+            }
+            do {
+                try self.overlay.present(
+                    in: host,
+                    documentID: documentID,
+                    color: color,
+                    width: CGFloat(width),
+                    tool: tool,
+                    frame: frame
+                )
+                call.resolve(["visible": true])
+            } catch {
+                call.reject("The drawing overlay could not be opened.", nil, error)
+            }
+        }
+    }
+
+    @objc public func updateOverlay(_ call: CAPPluginCall) {
+        let colorValue = call.getString("color")
+        let color = colorValue.flatMap { UIColor(hexRGB: $0) }
+        let width = call.getDouble("width").map { max(1, min($0, 30)) }
+        let tool = call.getString("tool").flatMap(NativeDrawingTool.init(rawValue:))
+        let frame = call.getObject("rect") == nil ? nil : rect(from: call)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                call.reject("The PencilKit plugin is unavailable.")
+                return
+            }
+            self.overlay.update(
+                color: color,
+                width: width.map { CGFloat($0) },
+                tool: tool,
+                frame: frame
+            )
+            if let host = self.overlayHost() {
+                host.bringSubviewToFront(self.overlay)
+            }
+            call.resolve(["visible": self.overlay.isPresented])
+        }
+    }
+
+    @objc public func hideOverlay(_ call: CAPPluginCall) {
+        let shouldSave = call.getBool("save") ?? true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                call.reject("The PencilKit plugin is unavailable.")
+                return
+            }
+            do {
+                let preview = try self.overlay.hide(save: shouldSave)
+                call.resolve(
+                    self.response(saved: shouldSave, preview: preview)
+                )
+            } catch {
+                call.reject("The drawing overlay could not be closed.", nil, error)
+            }
+        }
+    }
+
+    @objc public func undoOverlay(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            self?.overlay.undo()
+            call.resolve(["undone": true])
+        }
+    }
+
     @objc public func getPreview(_ call: CAPPluginCall) {
         guard let documentID = call.getString("documentId"),
               !documentID.isEmpty else {
@@ -75,6 +175,35 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
         } catch {
             call.reject("The drawing preview could not be loaded.", nil, error)
         }
+    }
+
+    private func overlayHost() -> UIView? {
+        guard let webView = bridge?.webView,
+              let parent = webView.superview else {
+            return bridge?.viewController?.view
+        }
+        return parent
+    }
+
+    private func rect(from call: CAPPluginCall) -> CGRect? {
+        guard let values = call.getObject("rect") else {
+            return nil
+        }
+        let x = values["x"] as? Double
+        let y = values["y"] as? Double
+        let width = values["width"] as? Double
+        let height = values["height"] as? Double
+        guard let x, let y, let width, let height,
+              width > 0, height > 0 else {
+            return nil
+        }
+
+        let rectInWebView = CGRect(x: x, y: y, width: width, height: height)
+        guard let webView = bridge?.webView,
+              let parent = webView.superview else {
+            return rectInWebView
+        }
+        return webView.convert(rectInWebView, to: parent)
     }
 
     private func image(fromDataURL value: String?) -> UIImage? {
@@ -117,42 +246,29 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
         return true
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
-        // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
-        // Use this method to pause ongoing tasks, disable timers, and invalidate graphics rendering callbacks. Games should use this method to pause the game.
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later.
-        // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {
-        // Called as part of the transition from the background to the active state; here you can undo many of the changes made on entering the background.
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
-        // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        // Called when the app was launched with a url. Feel free to add additional processing here,
-        // but if you want the App API to support tracking app url opens, make sure to keep this call
         return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
     }
 
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
-        // Called when the app was launched with an activity, including Universal Links.
-        // Feel free to add additional processing here, but if you want the App API to support
-        // tracking app url opens, make sure to keep this call
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 

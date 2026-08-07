@@ -69,6 +69,13 @@ export interface NativeSharePlugin {
   }): Promise<void>;
 }
 
+export type PencilKitOverlayRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export interface PencilKitPlugin {
   open(options: {
     documentId: EntityId;
@@ -77,6 +84,21 @@ export interface PencilKitPlugin {
     initialTool: "pen" | "eraser";
     backgroundDataUrl?: string;
   }): Promise<PencilKitPreview>;
+  showOverlay(options: {
+    documentId: EntityId;
+    color: string;
+    width: number;
+    tool: "pen" | "eraser";
+    rect: PencilKitOverlayRect;
+  }): Promise<{ visible: boolean }>;
+  updateOverlay(options: {
+    color?: string;
+    width?: number;
+    tool?: "pen" | "eraser";
+    rect?: PencilKitOverlayRect;
+  }): Promise<{ visible: boolean }>;
+  hideOverlay(options?: { save?: boolean }): Promise<PencilKitPreview>;
+  undoOverlay(): Promise<{ undone: boolean }>;
   getPreview(options: { documentId: EntityId }): Promise<PencilKitPreview>;
 }
 

@@ -36,6 +36,11 @@ import type {
   JournalAudioPlugin,
   RecordingSnapshot,
 } from "../native/contracts";
+import { useNativeDrawingOverlay } from "../hooks/useNativeDrawingOverlay";
+import {
+  hasNativePencilKit,
+  undoNativeDrawingOverlay,
+} from "../native/pencilKit";
 import type { BrowserSketchRepository } from "../repository/browserSketchRepository";
 import {
   SketchSurface,
@@ -275,6 +280,7 @@ export function PageWorkspace({
 }) {
   const sketchRef = useRef<SketchSurfaceHandle>(null);
   const paperRef = useRef<HTMLDivElement>(null);
+  const toolPaletteRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const actionTimelineRef = useRef<PageAction[]>([]);
   const [tool, setTool] = useState<PageTool>("view");
@@ -288,6 +294,16 @@ export function PageWorkspace({
   const [linkComposerOpen, setLinkComposerOpen] = useState(false);
   const [linkBeingEdited, setLinkBeingEdited] = useState<LinkObject>();
   const [recording, setRecording] = useState<RecordingSnapshot>();
+  const { overlayActive } = useNativeDrawingOverlay({
+    documentId: page.drawingDocumentId,
+    enabled: hasNativePencilKit() && !penHudOpen,
+    tool,
+    color: penSettings.color,
+    width: penSettings.width,
+    paperRef,
+    toolPaletteRef,
+    onError: setNotice,
+  });
 
   const heading =
     context.kind === "diary"
@@ -360,6 +376,10 @@ export function PageWorkspace({
   };
 
   const undoLastAction = () => {
+    if (overlayActive) {
+      void undoNativeDrawingOverlay();
+      return;
+    }
     const action = actionTimelineRef.current.pop();
     if (!action || action.kind === "drawing") {
       sketchRef.current?.undo();
@@ -605,7 +625,11 @@ export function PageWorkspace({
           : `${context.sketchbook.name} sketchbook page`
       }
     >
-      <div className="tool-palette" aria-label="Page tools">
+      <div
+        className="tool-palette"
+        aria-label="Page tools"
+        ref={toolPaletteRef}
+      >
         <button
           aria-pressed={tool === "view"}
           className={tool === "view" ? "tool selected" : "tool"}
@@ -750,7 +774,7 @@ export function PageWorkspace({
       >
         <SketchSurface
           capabilities={
-            tool === "arrange" || tool === "view"
+            overlayActive || tool === "arrange" || tool === "view"
               ? {
                   kind: "readonly",
                   tools: [],
@@ -776,7 +800,9 @@ export function PageWorkspace({
           repository={sketchRepository}
           tool={tool === "eraser" ? "eraser" : "pen"}
         />
-        <NativeSketchPreview documentId={page.drawingDocumentId} />
+        {overlayActive ? null : (
+          <NativeSketchPreview documentId={page.drawingDocumentId} />
+        )}
 
         <header className="page-date">
           {context.kind === "sketchbook" ? (

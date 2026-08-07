@@ -1,6 +1,10 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 
-import type { PencilKitPlugin, PencilKitPreview } from "./contracts";
+import type {
+  PencilKitOverlayRect,
+  PencilKitPlugin,
+  PencilKitPreview,
+} from "./contracts";
 
 const pencilKit = registerPlugin<PencilKitPlugin>("PencilKit");
 export const NATIVE_DRAWING_UPDATED_EVENT = "native-drawing-updated";
@@ -24,14 +28,40 @@ export async function openNativeDrawing(options: {
   backgroundDataUrl?: string;
 }): Promise<NativeDrawingPreview> {
   const result = withWebPreview(await pencilKit.open(options));
-  if (result.saved) {
-    globalThis.dispatchEvent(
-      new CustomEvent(NATIVE_DRAWING_UPDATED_EVENT, {
-        detail: { documentId: options.documentId },
-      }),
-    );
-  }
+  notifyDrawingUpdated(options.documentId, result.saved);
   return result;
+}
+
+export async function showNativeDrawingOverlay(options: {
+  documentId: string;
+  color: string;
+  width: number;
+  tool: "pen" | "eraser";
+  rect: PencilKitOverlayRect;
+}): Promise<void> {
+  await pencilKit.showOverlay(options);
+}
+
+export async function updateNativeDrawingOverlay(options: {
+  color?: string;
+  width?: number;
+  tool?: "pen" | "eraser";
+  rect?: PencilKitOverlayRect;
+}): Promise<void> {
+  await pencilKit.updateOverlay(options);
+}
+
+export async function hideNativeDrawingOverlay(
+  documentId: string,
+  save = true,
+): Promise<NativeDrawingPreview> {
+  const result = withWebPreview(await pencilKit.hideOverlay({ save }));
+  notifyDrawingUpdated(documentId, save);
+  return result;
+}
+
+export async function undoNativeDrawingOverlay(): Promise<void> {
+  await pencilKit.undoOverlay();
 }
 
 export async function getNativeDrawingPreview(
@@ -40,9 +70,18 @@ export async function getNativeDrawingPreview(
   return withWebPreview(await pencilKit.getPreview({ documentId }));
 }
 
-function withWebPreview(
-  preview: PencilKitPreview,
-): NativeDrawingPreview {
+function notifyDrawingUpdated(documentId: string, saved: boolean) {
+  if (!saved) {
+    return;
+  }
+  globalThis.dispatchEvent(
+    new CustomEvent(NATIVE_DRAWING_UPDATED_EVENT, {
+      detail: { documentId },
+    }),
+  );
+}
+
+function withWebPreview(preview: PencilKitPreview): NativeDrawingPreview {
   if (!preview.available || !preview.previewUri) {
     return preview;
   }
