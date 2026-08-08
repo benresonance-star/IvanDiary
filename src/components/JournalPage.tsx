@@ -307,7 +307,7 @@ export function PageWorkspace({
   const [linkComposerOpen, setLinkComposerOpen] = useState(false);
   const [linkBeingEdited, setLinkBeingEdited] = useState<LinkObject>();
   const [recording, setRecording] = useState<RecordingSnapshot>();
-  const { overlayActive } = useNativeDrawingOverlay({
+  const { overlayActive, overlayRequested } = useNativeDrawingOverlay({
     documentId: page.drawingDocumentId,
     enabled: hasNativePencilKit() && !penHudOpen,
     tool,
@@ -825,7 +825,7 @@ export function PageWorkspace({
       >
         <SketchSurface
           capabilities={
-            overlayActive || tool === "arrange" || tool === "view"
+            overlayRequested || tool === "arrange" || tool === "view"
               ? {
                   kind: "readonly",
                   tools: [],

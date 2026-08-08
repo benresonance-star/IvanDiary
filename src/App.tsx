@@ -148,7 +148,6 @@ export default function App() {
 
   useEffect(() => {
     if (!snapshot) {
-      setEntryDates(new Set());
       return;
     }
 
@@ -200,7 +199,7 @@ export default function App() {
         handleNativeUpdate,
       );
     };
-  }, [drawingHealth, entryDatesTick, sketchRepository, snapshot]);
+  }, [entryDatesTick, sketchRepository, snapshot]);
 
   if (!snapshot) {
     return (

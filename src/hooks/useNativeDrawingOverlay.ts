@@ -1,14 +1,18 @@
-import { useEffect, useRef, type RefObject } from "react";
-
 import {
-  hasNativePencilKit,
-  hideNativeDrawingOverlay,
-  showNativeDrawingOverlay,
-  updateNativeDrawingOverlay,
-} from "../native/pencilKit";
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+
+import { hasNativePencilKit } from "../native/pencilKit";
 import { measureDrawingOverlayLayout } from "../sketch/drawingOverlayLayout";
-import { toLegacyInkDocument } from "../sketch/legacyInk";
 import type { SketchRepository } from "../sketch/types";
+import {
+  nativeDrawingOverlayCoordinator,
+  type NativeDrawingOverlayState,
+} from "./nativeDrawingOverlayCoordinator";
 
 function rectsEqual(
   left: { x: number; y: number; width: number; height: number },
@@ -45,10 +49,10 @@ export function useNativeDrawingOverlay({
   sketchRepository: SketchRepository;
   onError?: (message: string) => void;
 }) {
-  const documentIdRef = useRef(documentId);
+  const ownerRef = useRef(Symbol("native-drawing-overlay-owner"));
   const onErrorRef = useRef(onError);
-  const presentedRef = useRef(false);
-  const lastRectRef = useRef<
+  const [overlayActive, setOverlayActive] = useState(false);
+  const [overlayRect, setOverlayRect] = useState<
     | {
         x: number;
         y: number;
@@ -62,12 +66,24 @@ export function useNativeDrawingOverlay({
     nativeAvailable && enabled && (tool === "pen" || tool === "eraser");
 
   useEffect(() => {
-    documentIdRef.current = documentId;
-  }, [documentId]);
-
-  useEffect(() => {
     onErrorRef.current = onError;
   }, [onError]);
+
+  useEffect(() => {
+    const owner = ownerRef.current;
+    return nativeDrawingOverlayCoordinator.subscribe(
+      (state: NativeDrawingOverlayState) => {
+        setOverlayActive(state.active && state.owner === owner);
+      },
+    );
+  }, []);
+
+  useEffect(
+    () => () => {
+      nativeDrawingOverlayCoordinator.release(ownerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!nativeAvailable) {
@@ -79,35 +95,8 @@ export function useNativeDrawingOverlay({
       return;
     }
 
-    let cancelled = false;
     let frameTimer: ReturnType<typeof setTimeout> | undefined;
-
-    const hideIfPresented = async () => {
-      if (!presentedRef.current) {
-        return;
-      }
-      presentedRef.current = false;
-      lastRectRef.current = undefined;
-      try {
-        await hideNativeDrawingOverlay(documentIdRef.current, true);
-      } catch (error) {
-        onErrorRef.current?.(
-          error instanceof Error
-            ? error.message
-            : "The drawing could not be saved.",
-        );
-      }
-    };
-
-    const sync = async () => {
-      if (cancelled) {
-        return;
-      }
-      if (!drawing) {
-        await hideIfPresented();
-        return;
-      }
-
+    const measure = () => {
       const { overlayRect } = measureDrawingOverlayLayout(
         paper,
         toolPaletteRef.current,
@@ -115,82 +104,21 @@ export function useNativeDrawingOverlay({
       if (overlayRect.width < 8 || overlayRect.height < 8) {
         return;
       }
-
-      try {
-        const sketch = await sketchRepository.load(documentId);
-        if (cancelled) {
-          return;
-        }
-        const legacyInk = toLegacyInkDocument(sketch);
-        if (legacyInk) {
-          await sketchRepository.save({
-            ...sketch,
-            strokes: [],
-            revision: sketch.revision + 1,
-          });
-        }
-        try {
-          await showNativeDrawingOverlay({
-            documentId,
-            color,
-            width,
-            opacity,
-            tool: tool === "eraser" ? "eraser" : "pen",
-            rect: overlayRect,
-            legacyInk,
-          });
-          if (!cancelled) {
-            presentedRef.current = true;
-            lastRectRef.current = overlayRect;
-          }
-        } catch (error) {
-          if (legacyInk) {
-            await sketchRepository.save(sketch);
-          }
-          throw error;
-        }
-      } catch (error) {
-        if (!cancelled) {
-          presentedRef.current = false;
-        }
-        onErrorRef.current?.(
-          error instanceof Error
-            ? error.message
-            : "The drawing overlay could not be opened.",
-        );
-      }
+      setOverlayRect((current) =>
+        current && rectsEqual(current, overlayRect) ? current : overlayRect,
+      );
     };
 
     const updateFrame = () => {
-      if (!drawing || cancelled || !presentedRef.current) {
-        return;
-      }
-      const { overlayRect } = measureDrawingOverlayLayout(
-        paper,
-        toolPaletteRef.current,
-      );
-      if (overlayRect.width < 8 || overlayRect.height < 8) {
-        return;
-      }
-      if (
-        lastRectRef.current &&
-        rectsEqual(lastRectRef.current, overlayRect)
-      ) {
-        return;
-      }
-      lastRectRef.current = overlayRect;
       if (frameTimer !== undefined) {
         clearTimeout(frameTimer);
       }
       frameTimer = setTimeout(() => {
-        if (cancelled || !presentedRef.current) {
-          return;
-        }
-        void updateNativeDrawingOverlay({ rect: overlayRect });
+        measure();
       }, 80);
     };
 
-    void sync();
+    measure();
 
     const observer = new ResizeObserver(updateFrame);
     observer.observe(paper);
@@ -202,30 +130,46 @@ export function useNativeDrawingOverlay({
     globalThis.visualViewport?.addEventListener("resize", updateFrame);
 
     return () => {
-      cancelled = true;
       if (frameTimer !== undefined) {
         clearTimeout(frameTimer);
       }
       observer.disconnect();
       globalThis.removeEventListener("resize", updateFrame);
       globalThis.visualViewport?.removeEventListener("resize", updateFrame);
-      void hideIfPresented();
     };
+  }, [nativeAvailable, paperRef, toolPaletteRef]);
+
+  useLayoutEffect(() => {
+    const owner = ownerRef.current;
+    if (!drawing || !overlayRect) {
+      nativeDrawingOverlayCoordinator.release(owner);
+      return;
+    }
+    nativeDrawingOverlayCoordinator.request({
+      owner,
+      documentId,
+      color,
+      width,
+      opacity,
+      tool: tool === "eraser" ? "eraser" : "pen",
+      rect: overlayRect,
+      sketchRepository,
+      onError: (message) => onErrorRef.current?.(message),
+    });
   }, [
     color,
     documentId,
     drawing,
-    nativeAvailable,
     opacity,
-    paperRef,
+    overlayRect,
     sketchRepository,
     tool,
-    toolPaletteRef,
     width,
   ]);
 
   return {
     nativeAvailable,
-    overlayActive: drawing,
+    overlayActive,
+    overlayRequested: drawing,
   };
 }
