@@ -68,11 +68,11 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         tool: NativeDrawingTool,
         frame: CGRect,
         legacyInk: LegacyInkDocument? = nil
-    ) throws {
+    ) throws -> Bool {
         pendingSave?.cancel()
         let previousDocumentID = self.documentID
         if isPresented, previousDocumentID != documentID {
-            _ = try? saveDrawing()
+            _ = try saveDrawing()
         }
         self.documentID = documentID
         self.color = color
@@ -80,15 +80,13 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         self.frame = frame
         layoutIfNeeded()
         apply(tool: tool)
-        if superview !== host {
-            removeFromSuperview()
-            host.addSubview(self)
-        }
-        host.bringSubviewToFront(self)
         if !isPresented || previousDocumentID != documentID {
             try loadDrawing(documentID: documentID)
         }
-        if let legacyInk, !legacyInk.strokes.isEmpty {
+        var importedLegacyStrokes = false
+        if let legacyInk,
+           !legacyInk.strokes.isEmpty,
+           canvasView.drawing.strokes.isEmpty {
             let canvasSize = bounds.isEmpty ? frame.size : bounds.size
             canvasView.drawing = LegacyInkImport.merging(
                 canvasView.drawing,
@@ -96,10 +94,17 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
                 canvasSize: canvasSize
             )
             _ = try saveDrawing()
+            importedLegacyStrokes = true
         }
+        if superview !== host {
+            removeFromSuperview()
+            host.addSubview(self)
+        }
+        host.bringSubviewToFront(self)
         isPresented = true
         isHidden = false
         isUserInteractionEnabled = loadError == nil
+        return importedLegacyStrokes
     }
 
     public func update(

@@ -112,7 +112,12 @@ function SketchSurfaceComponent(
   const activePointerRef = useRef<number | undefined>(undefined);
   const frameRef = useRef<number | undefined>(undefined);
   const historyRef = useRef<HistoryEntry[]>([]);
+  const onErrorRef = useRef(onError);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   const configureContext = useCallback(
     (canvas: HTMLCanvasElement): CanvasRenderingContext2D | null => {
@@ -154,7 +159,7 @@ function SketchSurfaceComponent(
 
     const context = configureContext(canvas);
     if (!context) {
-      onError?.({
+      onErrorRef.current?.({
         code: "canvas-unavailable",
         message: "Drawing is unavailable on this device.",
         recoverable: false,
@@ -163,7 +168,7 @@ function SketchSurfaceComponent(
     }
 
     renderDocument(context, document);
-  }, [configureContext, onError]);
+  }, [configureContext]);
 
   const renderLiveStroke = useCallback(() => {
     const canvas = liveCanvasRef.current;
@@ -267,20 +272,36 @@ function SketchSurfaceComponent(
 
   useEffect(() => {
     let cancelled = false;
-    void repository.load(documentId).then((document) => {
-      if (cancelled) {
-        return;
-      }
-      documentRef.current = document;
-      setLoading(false);
-      scheduleSceneRender();
-      onSaveHealthChange?.({
-        localDurability: "saved",
-        remoteSync: "offline",
-        durableRevision: document.revision,
-        pendingOperationCount: document.revision,
+    void repository
+      .load(documentId)
+      .then((document) => {
+        if (cancelled) {
+          return;
+        }
+        documentRef.current = document;
+        setLoading(false);
+        scheduleSceneRender();
+        onSaveHealthChange?.({
+          localDurability: "saved",
+          remoteSync: "offline",
+          durableRevision: document.revision,
+          pendingOperationCount: document.revision,
+        });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setLoading(false);
+        onErrorRef.current?.({
+          code: "storage-failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "The drawing could not be opened.",
+          recoverable: true,
+        });
       });
-    });
 
     return () => {
       cancelled = true;

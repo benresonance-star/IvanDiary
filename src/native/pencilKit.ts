@@ -129,9 +129,7 @@ export async function undoNativeDrawingOverlay(): Promise<void> {
 export async function getNativeDrawingPreview(
   documentId: string,
 ): Promise<NativeDrawingPreview> {
-  return withWebPreview(
-    await enqueueOverlayCall(() => pencilKit.getPreview({ documentId })),
-  );
+  return withWebPreview(await pencilKit.getPreview({ documentId }));
 }
 
 function notifyDrawingUpdated(documentId: string, saved: boolean) {

@@ -115,7 +115,7 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             do {
                 let overlay = self.drawingOverlay()
-                try overlay.present(
+                let importedLegacyStrokes = try overlay.present(
                     in: host,
                     documentID: documentID,
                     color: color,
@@ -126,7 +126,7 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
                 )
                 call.resolve([
                     "visible": true,
-                    "importedLegacyStrokes": legacyInk?.strokes.isEmpty == false
+                    "importedLegacyStrokes": importedLegacyStrokes
                 ])
             } catch {
                 call.reject("The drawing overlay could not be opened.", nil, error)
