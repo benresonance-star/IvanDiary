@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.swiftpm/
 .DS_Store
 *.local
 *.log
