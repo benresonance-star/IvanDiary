@@ -23,10 +23,7 @@ import {
   type SaveHealth,
 } from "./domain/models";
 import { useJournal } from "./hooks/useJournal";
-import {
-  BrowserAppleTranscriptionMock,
-  BrowserJournalAudioMock,
-} from "./native/browserMocks";
+import { createAppServices } from "./native/composition";
 import {
   flushNativeDrawingOverlay,
   getNativeDrawingPreview,
@@ -123,11 +120,8 @@ export default function App() {
     [],
   );
   const sketchRepository = useMemo(() => new BrowserSketchRepository(), []);
-  const audio = useMemo(() => new BrowserJournalAudioMock(), []);
-  const transcription = useMemo(
-    () => new BrowserAppleTranscriptionMock(),
-    [],
-  );
+  const services = useMemo(() => createAppServices(), []);
+  const { audio, transcription } = services;
   const { clearMessage, commit, health, message, snapshot } =
     useJournal(journalRepository);
   const [activeSection, setActiveSection] =

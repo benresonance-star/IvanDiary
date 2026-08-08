@@ -1,6 +1,8 @@
 import { createId } from "../utils/id";
 import type {
   AppleTranscriptionPlugin,
+  AppLifecyclePlugin,
+  JournalFilesPlugin,
   JournalAudioPlugin,
   RecordingSnapshot,
   TranscriptionResult,
@@ -56,6 +58,44 @@ export class BrowserJournalAudioMock implements JournalAudioPlugin {
 
   async recoverInterrupted(): Promise<{ recordings: RecordingSnapshot[] }> {
     return { recordings: [] };
+  }
+}
+
+export class BrowserJournalFilesMock implements JournalFilesPlugin {
+  readonly isSimulation = true;
+
+  async finaliseTemporaryAsset({
+    assetId,
+    mimeType,
+  }: {
+    temporaryUri: string;
+    assetId: string;
+    mimeType: string;
+  }) {
+    return {
+      id: assetId,
+      localUri: `demo://asset/${assetId}`,
+      mimeType,
+      byteLength: 0,
+      checksum: "browser-demonstration",
+    };
+  }
+
+  async removeToTrash(): Promise<void> {}
+
+  async storageHealth(): Promise<{
+    availableBytes?: number;
+    lowStorage: boolean;
+  }> {
+    return { lowStorage: false };
+  }
+}
+
+export class BrowserAppLifecycleMock implements AppLifecyclePlugin {
+  readonly isSimulation = true;
+
+  async flushRequested(): Promise<{ requestedAt: string }> {
+    return { requestedAt: new Date().toISOString() };
   }
 }
 
