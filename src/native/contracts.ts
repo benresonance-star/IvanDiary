@@ -61,6 +61,23 @@ export interface AppLifecyclePlugin {
   flushRequested(): Promise<{ requestedAt: string }>;
 }
 
+export type JournalServiceErrorCode =
+  | "permission-denied"
+  | "interrupted"
+  | "low-storage"
+  | "asset-missing"
+  | "asset-corrupt"
+  | "service-unavailable"
+  | "native-failure";
+
+export type JournalServiceErrorDetails = {
+  code: JournalServiceErrorCode;
+  message: string;
+  action: string;
+  retryable: boolean;
+  service: "audio" | "transcription" | "files" | "lifecycle";
+};
+
 export interface NativeSharePlugin {
   share(options: {
     title: string;
