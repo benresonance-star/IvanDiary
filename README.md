@@ -43,6 +43,9 @@ npm test
 npm run build
 ```
 
+See the [next-stage implementation plan](Specs/next-stage-plan.md) for the
+native local-reliability sequence and acceptance gates.
+
 The Capacitor iOS shell is checked in. After pulling native changes on the Mac:
 
 ```sh
