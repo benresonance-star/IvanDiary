@@ -1,10 +1,16 @@
 import { clampOpacity } from "../utils/colour";
 
-import type { SketchDocument, SketchStroke } from "./types";
+import type { PenNib, SketchDocument, SketchStroke } from "./types";
 
 export const DEFAULT_PEN_COLOR = "#171410";
 export const DEFAULT_PEN_WIDTH = 4.2;
 export const DEFAULT_PEN_OPACITY = 1;
+
+export function safeStrokeNib(stroke: SketchStroke): PenNib {
+  return stroke.nib === "marker" || stroke.nib === "pencil" || stroke.nib === "brush"
+    ? stroke.nib
+    : "pen";
+}
 
 export function safeStrokeColor(stroke: SketchStroke): string {
   return typeof stroke.color === "string" &&
@@ -34,15 +40,17 @@ export function migrateSketchDocument(document: SketchDocument): {
     const color = safeStrokeColor(stroke);
     const width = safeStrokeWidth(stroke);
     const opacity = safeStrokeOpacity(stroke);
+    const nib = safeStrokeNib(stroke);
     if (
       color === stroke.color &&
       width === stroke.width &&
-      opacity === (stroke.opacity ?? DEFAULT_PEN_OPACITY)
+      opacity === (stroke.opacity ?? DEFAULT_PEN_OPACITY) &&
+      nib === stroke.nib
     ) {
       return stroke;
     }
     changed = true;
-    return { ...stroke, color, width, opacity };
+    return { ...stroke, color, width, opacity, nib };
   });
 
   return {

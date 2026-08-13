@@ -1,6 +1,8 @@
 import type {
   AppleTranscriptionPlugin,
   AppLifecyclePlugin,
+  CloudBackupPlugin,
+  CloudBackupResult,
   JournalAudioPlugin,
   JournalFilesPlugin,
   RecordingSnapshot,
@@ -13,10 +15,11 @@ export type CapacitorPluginContracts = {
   transcription: AppleTranscriptionPlugin;
   files: JournalFilesPlugin;
   lifecycle: AppLifecyclePlugin;
+  backup: CloudBackupPlugin;
 };
 
 async function nativeCall<T>(
-  service: "audio" | "transcription" | "files" | "lifecycle",
+  service: "audio" | "transcription" | "files" | "lifecycle" | "backup",
   operation: () => Promise<T>,
 ): Promise<T> {
   try {
@@ -26,11 +29,58 @@ async function nativeCall<T>(
   }
 }
 
+function cloudBackupShape(value: CloudBackupResult): CloudBackupResult {
+  return {
+    state: value.state,
+    message: value.message,
+    ...(value.lastSuccessfulBackupAt
+      ? { lastSuccessfulBackupAt: value.lastSuccessfulBackupAt }
+      : {}),
+    ...(value.accountDescription ? { accountDescription: value.accountDescription } : {}),
+    ...(value.containerIdentifier ? { containerIdentifier: value.containerIdentifier } : {}),
+    ...(value.databaseDescription ? { databaseDescription: value.databaseDescription } : {}),
+    ...(value.recordIdentifier ? { recordIdentifier: value.recordIdentifier } : {}),
+    ...(value.uploadedItemCount === undefined ? {} : { uploadedItemCount: value.uploadedItemCount }),
+    ...(value.failedItemCount === undefined ? {} : { failedItemCount: value.failedItemCount }),
+    ...(value.failedItems ? { failedItems: value.failedItems.map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      reason: item.reason,
+    })) } : {}),
+    ...(value.backedUpRevision === undefined ? {} : { backedUpRevision: value.backedUpRevision }),
+  };
+}
+
+export class CapacitorCloudBackupAdapter implements CloudBackupPlugin {
+  constructor(private readonly plugin: CloudBackupPlugin) {}
+
+  async status() {
+    return cloudBackupShape(await nativeCall("backup", () => this.plugin.status()));
+  }
+
+  async backupSnapshot(options: Parameters<CloudBackupPlugin["backupSnapshot"]>[0]) {
+    return cloudBackupShape(
+      await nativeCall("backup", () => this.plugin.backupSnapshot(options)),
+    );
+  }
+
+  async backupAssets(options: Parameters<CloudBackupPlugin["backupAssets"]>[0]) {
+    return cloudBackupShape(
+      await nativeCall("backup", () => this.plugin.backupAssets(options)),
+    );
+  }
+
+  async restore() {
+    return nativeCall("backup", () => this.plugin.restore());
+  }
+}
+
 function recordingShape(value: RecordingSnapshot): RecordingSnapshot {
   return {
     id: value.id,
     state: value.state,
     elapsedMs: value.elapsedMs,
+    ...(value.temporaryUri ? { temporaryUri: value.temporaryUri } : {}),
     ...(value.asset ? { asset: value.asset } : {}),
     ...(value.message ? { message: value.message } : {}),
   };
@@ -53,6 +103,27 @@ export class CapacitorJournalAudioAdapter implements JournalAudioPlugin {
 
   async stop() {
     return recordingShape(await nativeCall("audio", () => this.plugin.stop()));
+  }
+
+  async acknowledgeSaved() {
+    return recordingShape(
+      await nativeCall("audio", () => this.plugin.acknowledgeSaved()),
+    );
+  }
+
+  async play(options: { assetUri: string }) {
+    return nativeCall("audio", () => this.plugin.play(options));
+  }
+
+  async pausePlayback() {
+    return nativeCall("audio", () => this.plugin.pausePlayback());
+  }
+
+  async addListener(
+    eventName: "playbackEnded",
+    listener: (event: { assetUri: string }) => void,
+  ) {
+    return this.plugin.addListener(eventName, listener);
   }
 
   async recoverInterrupted() {

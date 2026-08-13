@@ -66,4 +66,15 @@ describe("measureDrawingOverlayLayout", () => {
     expect(layout.contentInsetTop).toBe(0);
     expect(layout.overlayRect.height).toBe(700);
   });
+
+  it("keeps the page header outside the native drawing surface", () => {
+    const paper = fakeElement({ left: 40, top: 100, width: 800, height: 1000 });
+    const tools = fakeElement({ left: 100, top: 80, width: 600, height: 70 });
+    const header = fakeElement({ left: 96, top: 230, width: 500, height: 48 });
+
+    const layout = measureDrawingOverlayLayout(paper, tools, header);
+
+    expect(layout.contentInsetTop).toBe(186);
+    expect(layout.overlayRect.y).toBe(286);
+  });
 });

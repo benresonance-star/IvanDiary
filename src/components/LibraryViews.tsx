@@ -1,12 +1,15 @@
 import {
   BookOpen,
   ChevronLeft,
-  GripVertical,
+  GripHorizontal,
   Mic,
+  Move,
   NotebookTabs,
   Plus,
-  Star,
+  ThumbsUp,
+  Trash2,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import {
   useEffect,
   useRef,
@@ -25,11 +28,14 @@ import type {
   Sketchbook,
 } from "../domain/models";
 import type { SketchRepository } from "../sketch/types";
+import { FavouriteConfirmation } from "./FavouriteConfirmation";
 import type {
   AppleTranscriptionPlugin,
   JournalAudioPlugin,
+  JournalFilesPlugin,
   RecordingSnapshot,
 } from "../native/contracts";
+import { finalizeStoppedRecording } from "../native/durableAudio";
 import { PagePreview } from "./DiaryPageStrip";
 
 function displayDate(date: string): string {
@@ -69,7 +75,9 @@ type SketchbookDrag = {
 export function SketchbooksView({
   audio,
   commit,
+  files,
   onCreateSketchbook,
+  onDeleteSketchbook,
   onOpenSketchbook,
   onRenameSketchbook,
   onReorderSketchbooks,
@@ -78,8 +86,10 @@ export function SketchbooksView({
   transcription,
 }: {
   audio: JournalAudioPlugin;
-  commit: (operation: DocumentOperationInput) => void;
+  commit: (operation: DocumentOperationInput) => boolean | void | Promise<boolean | void>;
+  files: JournalFilesPlugin;
   onCreateSketchbook: (name: string) => Promise<boolean>;
+  onDeleteSketchbook: (sketchbookId: string) => Promise<boolean>;
   onOpenSketchbook: (sketchbookId: string) => void;
   onRenameSketchbook: (
     sketchbookId: string,
@@ -96,8 +106,11 @@ export function SketchbooksView({
   const [renamingSketchbookId, setRenamingSketchbookId] =
     useState<string>();
   const [name, setName] = useState("");
+  const [favouriteConfirmation, setFavouriteConfirmation] = useState<string>();
   const [creating, setCreating] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [sketchbookPendingDelete, setSketchbookPendingDelete] =
+    useState<Sketchbook>();
   const [recording, setRecording] = useState<RecordingSnapshot>();
   const [speechMessage, setSpeechMessage] = useState<string>();
   const initialOrder = snapshot.sketchbooks.map(
@@ -159,12 +172,15 @@ export function SketchbooksView({
   const speakTitle = async () => {
     setSpeechMessage(undefined);
     if (recording?.state === "recording") {
-      const stopped = await audio.stop();
-      setRecording(stopped);
-      if (!stopped.asset) {
+      let stopped: RecordingSnapshot;
+      try {
+        stopped = await finalizeStoppedRecording(audio, files);
+        setRecording(stopped);
+      } catch {
         setSpeechMessage("The spoken title could not be saved. Type it instead.");
         return;
       }
+      if (!stopped.asset) return;
       try {
         const result = await transcription.transcribe({
           recordingId: stopped.id,
@@ -179,16 +195,20 @@ export function SketchbooksView({
       return;
     }
 
-    const permission = await transcription.requestPermission();
-    if (!permission.granted) {
-      setSpeechMessage("Speech permission is off. Type the title instead.");
-      return;
+    try {
+      const permission = await transcription.requestPermission();
+      if (!permission.granted) {
+        setSpeechMessage("Speech permission is off. Type the title instead.");
+        return;
+      }
+      const started = await audio.start();
+      setRecording(started);
+      setSpeechMessage(
+        "Listening for the sketchbook title. Tap Stop title when finished.",
+      );
+    } catch {
+      setSpeechMessage("Listening could not start. Type the title instead.");
     }
-    const started = await audio.start();
-    setRecording(started);
-    setSpeechMessage(
-      "Listening for the sketchbook title. Tap Stop title when finished.",
-    );
   };
 
   const updateOrder = (nextOrder: string[]) => {
@@ -337,7 +357,7 @@ export function SketchbooksView({
       <header className="library-heading">
         <div>
           <p className="eyebrow">A home for drawings</p>
-          <h1 id="sketchbooks-heading">Sketchbooks</h1>
+          <h1 id="sketchbooks-heading">My Sketchbooks</h1>
         </div>
         <div className="library-actions">
           <button
@@ -346,7 +366,8 @@ export function SketchbooksView({
             onClick={() => setEditMode((current) => !current)}
             type="button"
           >
-            {editMode ? "Done editing" : "Edit"}
+            <Move aria-hidden="true" />
+            {editMode ? "Done arranging" : "Arrange"}
           </button>
           <button
             className="large-action"
@@ -363,7 +384,7 @@ export function SketchbooksView({
         </div>
       </header>
 
-      <div className="book-grid">
+      <div className="book-grid sketchbook-grid">
         {orderedSketchbooks.map((sketchbook) => {
           const firstPage = snapshot.pages.find(
             (page) => page.id === sketchbook.pageIds[0],
@@ -433,7 +454,7 @@ export function SketchbooksView({
                   onPointerUp={finishPointerDrag}
                   type="button"
                 >
-                  <GripVertical aria-hidden="true" />
+                  <GripHorizontal aria-hidden="true" />
                 </button>
                 <button
                   onClick={() => {
@@ -445,32 +466,83 @@ export function SketchbooksView({
                 >
                   Rename
                 </button>
+                <button
+                  aria-label={`Delete ${sketchbook.name}`}
+                  className="sketchbook-delete"
+                  onClick={() => setSketchbookPendingDelete(sketchbook)}
+                  type="button"
+                >
+                  <Trash2 aria-hidden="true" />
+                </button>
               </div>
             ) : null}
-            <button
-              aria-label={
-                sketchbook.favourite
-                  ? `Remove ${sketchbook.name} from favourites`
-                  : `Add ${sketchbook.name} to favourites`
-              }
-              aria-pressed={sketchbook.favourite}
-              className="favourite-button"
-              onClick={() =>
-                commit({
-                  type: "favourite-set",
-                  targetType: "sketchbook",
-                  targetId: sketchbook.id,
-                  favourite: !sketchbook.favourite,
-                })
-              }
-              type="button"
-            >
-              <Star aria-hidden="true" fill={sketchbook.favourite ? "currentColor" : "none"} />
-            </button>
+            {!editMode ? (
+              <button
+                aria-label={
+                  sketchbook.favourite
+                    ? `Remove ${sketchbook.name} from favourites`
+                    : `Add ${sketchbook.name} to favourites`
+                }
+                aria-pressed={sketchbook.favourite}
+                className="favourite-button"
+                onClick={() => void (async () => {
+                  const adding = !sketchbook.favourite;
+                  const saved = await commit({
+                    type: "favourite-set",
+                    targetType: "sketchbook",
+                    targetId: sketchbook.id,
+                    favourite: adding,
+                  });
+                  if (saved !== false) setFavouriteConfirmation(adding ? "Added to Your Favourites" : "Removed from Your Favourites");
+                })()}
+                type="button"
+              >
+                <ThumbsUp aria-hidden="true" />
+              </button>
+            ) : null}
           </article>
           );
         })}
       </div>
+      <FavouriteConfirmation message={favouriteConfirmation} onDone={() => setFavouriteConfirmation(undefined)} />
+
+      {sketchbookPendingDelete
+        ? createPortal(
+            <div
+              className="delete-dialog-backdrop"
+              onClick={() => setSketchbookPendingDelete(undefined)}
+            >
+              <div
+                aria-labelledby="delete-sketchbook-title"
+                aria-modal="true"
+                className="delete-dialog"
+                onClick={(event) => event.stopPropagation()}
+                role="alertdialog"
+              >
+                <Trash2 aria-hidden="true" />
+                <h2 id="delete-sketchbook-title">Delete this sketchbook?</h2>
+                <p>{sketchbookPendingDelete.name} and all of its pages will be deleted.</p>
+                <div className="delete-dialog-actions">
+                  <button autoFocus onClick={() => setSketchbookPendingDelete(undefined)} type="button">
+                    Keep sketchbook
+                  </button>
+                  <button
+                    className="confirm-delete"
+                    onClick={() => {
+                      const sketchbookId = sketchbookPendingDelete.id;
+                      setSketchbookPendingDelete(undefined);
+                      void onDeleteSketchbook(sketchbookId);
+                    }}
+                    type="button"
+                  >
+                    Delete sketchbook
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       {nameDialogOpen ? (
         <div className="dialog-backdrop">
@@ -569,32 +641,47 @@ export function EmptySketchbookView({
 }
 
 export function FavouritesView({
+  commit,
   onOpenFavourite,
   sketchRepository,
   snapshot,
 }: {
+  commit: (operation: DocumentOperationInput) => boolean | void | Promise<boolean | void>;
   onOpenFavourite: (favourite: Favourite) => void;
   sketchRepository: SketchRepository;
   snapshot: JournalSnapshot;
 }) {
+  const [arranging, setArranging] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState<Favourite>();
+  const [favouriteConfirmation, setFavouriteConfirmation] = useState<string>();
+  const displayName = snapshot.settings.displayName.trim() || "there";
+
   return (
     <section className="library-view" aria-labelledby="favourites-heading">
       <header className="library-heading">
         <div>
           <p className="eyebrow">Easy to find again</p>
-          <h1 id="favourites-heading">Favourites</h1>
+          <h1 id="favourites-heading">My Favourites</h1>
         </div>
-        <Star aria-hidden="true" />
+        <button
+          aria-pressed={arranging}
+          className={arranging ? "large-action selected" : "large-action"}
+          onClick={() => setArranging((current) => !current)}
+          type="button"
+        >
+          <Move aria-hidden="true" />
+          {arranging ? "Done arranging" : "Arrange"}
+        </button>
       </header>
 
       {snapshot.favourites.length === 0 ? (
         <div className="empty-library">
-          <Star aria-hidden="true" />
+          <ThumbsUp aria-hidden="true" />
           <h2>No favourites yet</h2>
-          <p>Use the star on a diary day or sketchbook to keep it here.</p>
+          <p>Use the thumbs-up on a diary day or sketchbook to keep it here.</p>
         </div>
       ) : (
-        <div className="book-grid">
+        <div className="book-grid favourites-grid">
           {snapshot.favourites.map((favourite) => {
             const sketchbook = snapshot.sketchbooks.find(
               (candidate) =>
@@ -651,11 +738,18 @@ export function FavouritesView({
                     ? `${pageSketchbook.name}, page ${pageNumber}`
                     : "Favourite page");
             return (
-              <article className="book-card favourite-card" key={favourite.id}>
+              <article
+                className={`book-card favourite-card${arranging ? " arranging" : ""}`}
+                key={favourite.id}
+              >
                 <button
                   aria-label={`Open favourite: ${title}`}
+                  aria-disabled={arranging}
                   className="favourite-card-link"
-                  onClick={() => onOpenFavourite(favourite)}
+                  onClick={() => {
+                    if (!arranging) onOpenFavourite(favourite);
+                  }}
+                  tabIndex={arranging ? -1 : undefined}
                   type="button"
                 >
                   {previewPage ? (
@@ -686,11 +780,66 @@ export function FavouritesView({
                     </p>
                   </div>
                 </button>
+                {arranging ? (
+                  <button
+                    aria-label={`Remove ${title} from favourites`}
+                    aria-pressed="true"
+                    className="favourite-button favourite-remove-button"
+                    onClick={() => setPendingRemoval(favourite)}
+                    type="button"
+                  >
+                    <ThumbsUp aria-hidden="true" />
+                  </button>
+                ) : null}
               </article>
             );
           })}
         </div>
       )}
+
+      {pendingRemoval
+        ? createPortal(
+            <div
+              className="delete-dialog-backdrop"
+              onClick={() => setPendingRemoval(undefined)}
+            >
+              <div
+                aria-labelledby="remove-favourite-title"
+                aria-modal="true"
+                className="delete-dialog favourite-removal-dialog"
+                onClick={(event) => event.stopPropagation()}
+                role="alertdialog"
+              >
+                <ThumbsUp aria-hidden="true" />
+                <h2 id="remove-favourite-title">Hi {displayName}</h2>
+                <p>Remove from your Favourites?</p>
+                <div className="delete-dialog-actions">
+                  <button autoFocus onClick={() => setPendingRemoval(undefined)} type="button">
+                    Keep favourite
+                  </button>
+                  <button
+                    className="confirm-delete"
+                    onClick={() => void (async () => {
+                      const saved = await commit({
+                        type: "favourite-set",
+                        targetType: pendingRemoval.targetType,
+                        targetId: pendingRemoval.targetId,
+                        favourite: false,
+                      });
+                      setPendingRemoval(undefined);
+                      if (saved !== false) setFavouriteConfirmation("Removed from Your Favourites");
+                    })()}
+                    type="button"
+                  >
+                    Remove favourite
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+      <FavouriteConfirmation message={favouriteConfirmation} onDone={() => setFavouriteConfirmation(undefined)} />
     </section>
   );
 }

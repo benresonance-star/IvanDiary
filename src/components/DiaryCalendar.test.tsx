@@ -6,9 +6,11 @@ import { DiaryCalendar } from "./DiaryCalendar";
 describe("DiaryCalendar", () => {
   it("opens the month view and selects a day with an entry marker", () => {
     const onSelectDate = vi.fn();
+    const onOpenChange = vi.fn();
     render(
       <DiaryCalendar
         entryDates={new Set(["2026-08-03"])}
+        onOpenChange={onOpenChange}
         onSelectDate={onSelectDate}
         selectedDate="2026-08-07"
       />,
@@ -20,6 +22,7 @@ describe("DiaryCalendar", () => {
     expect(
       screen.getByRole("dialog", { name: "Diary calendar" }),
     ).toBeInTheDocument();
+    expect(onOpenChange).toHaveBeenCalledWith(true);
     expect(
       screen.getByRole("button", {
         name: "2026-08-03, has diary entries",
@@ -32,6 +35,7 @@ describe("DiaryCalendar", () => {
       }),
     );
     expect(onSelectDate).toHaveBeenCalledWith("2026-08-03");
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
   });
 
   it("refreshes entry markers when the calendar opens", () => {

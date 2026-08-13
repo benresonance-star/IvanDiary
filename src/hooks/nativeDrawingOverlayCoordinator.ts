@@ -1,4 +1,5 @@
 import type { SaveHealth } from "../domain/models";
+import type { DrawingGridSettings } from "../domain/models";
 import {
   hideNativeDrawingOverlay,
   showNativeDrawingOverlay,
@@ -6,16 +7,25 @@ import {
 } from "../native/pencilKit";
 import { toLegacyInkDocument } from "../sketch/legacyInk";
 import type { SketchRepository } from "../sketch/types";
+import type { PenNib } from "../sketch/types";
 import type { OverlayRect } from "../sketch/drawingOverlayLayout";
 
 export type NativeDrawingOverlayRequest = {
   owner: symbol;
   documentId: string;
   color: string;
+  nib?: PenNib;
   width: number;
   opacity: number;
+  fingerDrawing?: boolean;
   tool: "pen" | "eraser";
   rect: OverlayRect;
+  clipShape?: "circle";
+  grid?: DrawingGridSettings;
+  gridOriginX?: number;
+  gridOriginY?: number;
+  gridPageWidth?: number;
+  gridPageHeight?: number;
   sketchRepository: SketchRepository;
   onError?: (message: string) => void;
 };
@@ -41,19 +51,35 @@ const defaultOperations: NativeDrawingOverlayOperations = {
     showNativeDrawingOverlay({
       documentId: request.documentId,
       color: request.color,
+      nib: request.nib ?? "pen",
       width: request.width,
       opacity: request.opacity,
+      fingerDrawing: request.fingerDrawing ?? true,
       tool: request.tool,
       rect: request.rect,
+      clipShape: request.clipShape,
       legacyInk,
+      grid: request.grid,
+      gridOriginX: request.gridOriginX,
+      gridOriginY: request.gridOriginY,
+      gridPageWidth: request.gridPageWidth,
+      gridPageHeight: request.gridPageHeight,
     }),
   update: (request) =>
     updateNativeDrawingOverlay({
       color: request.color,
+      nib: request.nib ?? "pen",
       width: request.width,
       opacity: request.opacity,
+      fingerDrawing: request.fingerDrawing ?? true,
       tool: request.tool,
       rect: request.rect,
+      clipShape: request.clipShape,
+      grid: request.grid,
+      gridOriginX: request.gridOriginX,
+      gridOriginY: request.gridOriginY,
+      gridPageWidth: request.gridPageWidth,
+      gridPageHeight: request.gridPageHeight,
     }),
 };
 
@@ -95,6 +121,14 @@ export class NativeDrawingOverlayCoordinator {
     this.#desired = undefined;
     this.#version += 1;
     this.#startReconciliation();
+  }
+
+  async releaseAndWait(owner: symbol): Promise<boolean> {
+    this.release(owner);
+    while (this.#reconciliation) {
+      await this.#reconciliation;
+    }
+    return !this.#state.active && this.#presentedDocumentId === undefined;
   }
 
   subscribe(listener: (state: NativeDrawingOverlayState) => void): () => void {

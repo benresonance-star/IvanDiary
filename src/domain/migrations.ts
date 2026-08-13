@@ -2,21 +2,39 @@ import {
   DOCUMENT_SCHEMA_VERSION,
   type JournalSnapshot,
   type JournalSettings,
+  type MyWord,
   type PageObject,
   type Size,
 } from "./models";
 
 const DEFAULT_SETTINGS: JournalSettings = {
-  simpleMode: true,
+  displayName: "Ivan",
+  lastSettingsTab: "about",
   textScale: "standard",
   contrast: "warm",
   reducedMotion: false,
   penColor: "#171410",
   penWidth: 4.2,
   penOpacity: 1,
+  fingerDrawingEnabled: true,
+  favouritePenColours: [
+    "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
+    "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
+  ],
+  penNib: "pen",
+  penNibProfiles: {
+    pen: { color: "#171410", width: 4.2, opacity: 1 },
+    marker: { color: "#171410", width: 4.2, opacity: 1 },
+    pencil: { color: "#171410", width: 4.2, opacity: 1 },
+    brush: { color: "#171410", width: 4.2, opacity: 1 },
+  },
   welcomeGreeting: "Welcome back Ivan!",
   welcomeTagline: "It's a Wonderful World!",
   welcomeMessage: "",
+  recordingLimitMinutes: 5,
+  automaticBackup: true,
+  backupOnWifiOnly: true,
+  myWords: [],
 };
 
 export class JournalMigrationError extends Error {
@@ -55,10 +73,17 @@ function migrateSettings(value: unknown): JournalSettings {
     return DEFAULT_SETTINGS;
   }
 
-  const simpleMode =
-    typeof value.simpleMode === "boolean"
-      ? value.simpleMode
-      : DEFAULT_SETTINGS.simpleMode;
+  const displayName = welcomeText(value.displayName, DEFAULT_SETTINGS.displayName, 60);
+  const lastSettingsTab = value.lastSettingsTab === "text"
+    ? "appearance"
+    : value.lastSettingsTab === "welcome" ||
+    value.lastSettingsTab === "canvas" ||
+    value.lastSettingsTab === "voice" ||
+    value.lastSettingsTab === "appearance" ||
+    value.lastSettingsTab === "backup"
+      ? value.lastSettingsTab
+      : "about";
+
   const textScale =
     value.textScale === "large" || value.textScale === "extra-large"
       ? value.textScale
@@ -79,6 +104,40 @@ function migrateSettings(value: unknown): JournalSettings {
     typeof value.penOpacity === "number" && Number.isFinite(value.penOpacity)
       ? Math.min(1, Math.max(0, value.penOpacity))
       : DEFAULT_SETTINGS.penOpacity;
+  const fingerDrawingEnabled = value.fingerDrawingEnabled !== false;
+  const favouritePenColours = Array.isArray(value.favouritePenColours) &&
+    value.favouritePenColours.length === 10
+    ? value.favouritePenColours.map((colour, index) =>
+        typeof colour === "string" && /^#[0-9a-f]{6}$/i.test(colour)
+          ? colour
+          : DEFAULT_SETTINGS.favouritePenColours[index]!,
+      )
+    : [...DEFAULT_SETTINGS.favouritePenColours];
+  const penNib =
+    value.penNib === "marker" ||
+    value.penNib === "pencil" ||
+    value.penNib === "brush"
+      ? value.penNib
+      : "pen";
+  const penNibProfiles = Object.fromEntries(
+    (["pen", "marker", "pencil", "brush"] as const).map((nib) => {
+      const candidate = isRecord(value.penNibProfiles)
+        ? value.penNibProfiles[nib]
+        : undefined;
+      const fallback = DEFAULT_SETTINGS.penNibProfiles[nib];
+      if (!isRecord(candidate)) return [nib, {
+        ...fallback,
+        color: penColor,
+        width: penWidth,
+        opacity: penOpacity,
+      }];
+      return [nib, {
+        color: penColor,
+        width: penWidth,
+        opacity: penOpacity,
+      }];
+    }),
+  ) as JournalSettings["penNibProfiles"];
   const welcomeGreeting = welcomeText(
     value.welcomeGreeting,
     DEFAULT_SETTINGS.welcomeGreeting,
@@ -93,18 +152,60 @@ function migrateSettings(value: unknown): JournalSettings {
     typeof value.welcomeMessage === "string"
       ? value.welcomeMessage.trim().slice(0, 500)
       : DEFAULT_SETTINGS.welcomeMessage;
+  const recordingLimitMinutes =
+    value.recordingLimitMinutes === null ||
+    value.recordingLimitMinutes === 2 ||
+    value.recordingLimitMinutes === 5 ||
+    value.recordingLimitMinutes === 10 ||
+    value.recordingLimitMinutes === 30
+      ? value.recordingLimitMinutes
+      : DEFAULT_SETTINGS.recordingLimitMinutes;
+  const automaticBackup =
+    typeof value.automaticBackup === "boolean"
+      ? value.automaticBackup
+      : DEFAULT_SETTINGS.automaticBackup;
+  const backupOnWifiOnly =
+    typeof value.backupOnWifiOnly === "boolean"
+      ? value.backupOnWifiOnly
+      : DEFAULT_SETTINGS.backupOnWifiOnly;
+  const myWords = Array.isArray(value.myWords)
+    ? value.myWords.flatMap((candidate) => {
+        if (!isRecord(candidate) || typeof candidate.id !== "string" || typeof candidate.text !== "string") return [];
+        const text = candidate.text.trim().slice(0, 80);
+        if (!text) return [];
+        return [{
+          id: candidate.id,
+          text,
+          enabled: candidate.enabled !== false,
+          correctionCount: typeof candidate.correctionCount === "number" ? Math.max(0, candidate.correctionCount) : 0,
+          ...(candidate.category === "people" || candidate.category === "places" || candidate.category === "activities" || candidate.category === "medical" || candidate.category === "other"
+            ? { category: candidate.category as MyWord["category"] }
+            : {}),
+          ...(isRecord(candidate.sample) ? { sample: candidate.sample as JournalSettings["myWords"][number]["sample"] } : {}),
+        }];
+      }).slice(0, 100)
+    : [];
 
   return {
-    simpleMode,
+    displayName,
+    lastSettingsTab,
     textScale,
     contrast,
     reducedMotion,
     penColor,
     penWidth,
     penOpacity,
+    fingerDrawingEnabled,
+    favouritePenColours,
+    penNib,
+    penNibProfiles,
     welcomeGreeting,
     welcomeTagline,
     welcomeMessage,
+    recordingLimitMinutes,
+    automaticBackup,
+    backupOnWifiOnly,
+    myWords,
   };
 }
 

@@ -2,6 +2,7 @@ import { createId } from "../utils/id";
 import type {
   AppleTranscriptionPlugin,
   AppLifecyclePlugin,
+  CloudBackupPlugin,
   JournalFilesPlugin,
   JournalAudioPlugin,
   RecordingSnapshot,
@@ -59,6 +60,18 @@ export class BrowserJournalAudioMock implements JournalAudioPlugin {
   async recoverInterrupted(): Promise<{ recordings: RecordingSnapshot[] }> {
     return { recordings: [] };
   }
+
+  async acknowledgeSaved() { return this.#recording; }
+  async play(): Promise<{ playing: boolean }> { return { playing: true }; }
+  async pausePlayback(): Promise<{ playing: boolean }> { return { playing: false }; }
+  async addListener(
+    _eventName: "playbackEnded",
+    _listener: (event: { assetUri: string }) => void,
+  ): Promise<{ remove: () => Promise<void> }> {
+    void _eventName;
+    void _listener;
+    return { remove: async () => undefined };
+  }
 }
 
 export class BrowserJournalFilesMock implements JournalFilesPlugin {
@@ -96,6 +109,29 @@ export class BrowserAppLifecycleMock implements AppLifecyclePlugin {
 
   async flushRequested(): Promise<{ requestedAt: string }> {
     return { requestedAt: new Date().toISOString() };
+  }
+}
+
+export class BrowserCloudBackupMock implements CloudBackupPlugin {
+  readonly isSimulation = true;
+
+  async status() {
+    return {
+      state: "error" as const,
+      message: "iCloud backup is only available in the iPad app.",
+    };
+  }
+
+  async backupSnapshot() {
+    return this.status();
+  }
+
+  async backupAssets() {
+    return this.status();
+  }
+
+  async restore(): Promise<never> {
+    throw new Error("iCloud restore is only available in the iPad app.");
   }
 }
 

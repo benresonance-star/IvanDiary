@@ -1,3 +1,4 @@
+#if canImport(UIKit)
 import PencilKit
 import UIKit
 
@@ -34,3 +35,4 @@ public enum PencilInkColor {
         return image
     }
 }
+#endif

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .swiftpm/
+.build/
 .DS_Store
 *.local
 *.log

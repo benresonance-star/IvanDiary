@@ -1,4 +1,5 @@
 export const DOCUMENT_SCHEMA_VERSION = 1 as const;
+export const MAX_PAGES_PER_COLLECTION = 10;
 
 export type EntityId = string;
 export type IsoDate = string;
@@ -38,11 +39,18 @@ export type PaperStyle =
   | "warm-grey"
   | "dark-paper";
 
+export type DrawingGridSettings = {
+  enabled: boolean;
+  spacing: 36 | 60 | 96;
+  rotationDegrees: number;
+};
+
 type PageObjectBase = {
   id: EntityId;
   pageId: EntityId;
   position: Position;
   frame?: Size;
+  layer?: "above-sketch" | "behind-sketch";
   createdAt: IsoDateTime;
   revision: number;
 };
@@ -66,6 +74,15 @@ export type TranscriptObject = PageObjectBase & {
   editedText?: string;
   locale: string;
   engine: "apple-speech";
+  segments?: TranscriptionSegment[];
+};
+
+export type TranscriptionSegment = {
+  text: string;
+  startMs: number;
+  durationMs: number;
+  confidence?: number;
+  alternatives?: string[];
 };
 
 export type PhotoObject = PageObjectBase & {
@@ -78,7 +95,9 @@ export type PhotoObject = PageObjectBase & {
 export type TextObject = PageObjectBase & {
   type: "text";
   text: string;
+  /** Retained for compatibility; canvas text size follows JournalSettings.textScale. */
   textScale: number;
+  textAlign?: "left" | "center";
 };
 
 export type LinkObject = PageObjectBase & {
@@ -103,6 +122,7 @@ export type Page = {
   sketchbookId?: EntityId;
   paperStyle: PaperStyle;
   drawingDocumentId: EntityId;
+  drawingGrid?: DrawingGridSettings;
   objects: PageObject[];
   revision: number;
   createdAt: IsoDateTime;
@@ -136,16 +156,58 @@ export type Favourite = {
 };
 
 export type JournalSettings = {
-  simpleMode: boolean;
+  displayName: string;
+  lastSettingsTab: SettingsTabId;
   textScale: "standard" | "large" | "extra-large";
   contrast: "warm" | "high";
   reducedMotion: boolean;
   penColor: string;
   penWidth: number;
   penOpacity: number;
+  fingerDrawingEnabled: boolean;
+  favouritePenColours: string[];
+  penNib: "pen" | "marker" | "pencil" | "brush";
+  penNibProfiles: Record<
+    "pen" | "marker" | "pencil" | "brush",
+    { color: string; width: number; opacity: number }
+  >;
   welcomeGreeting: string;
   welcomeTagline: string;
   welcomeMessage: string;
+  recordingLimitMinutes: 2 | 5 | 10 | 30 | null;
+  automaticBackup: boolean;
+  backupOnWifiOnly: boolean;
+  myWords: MyWord[];
+};
+
+export type SettingsTabId = "about" | "welcome" | "canvas" | "voice" | "appearance" | "backup";
+
+export type BackupStatus = {
+  state: "not-configured" | "available" | "waiting" | "syncing" | "synced" | "error";
+  pendingItemCount: number;
+  lastSuccessfulBackupAt?: IsoDateTime;
+  message: string;
+  accountDescription?: string;
+  containerIdentifier?: string;
+  databaseDescription?: string;
+  recordIdentifier?: string;
+  failedItems?: BackupFailedItem[];
+  backedUpRevision?: number;
+};
+
+export type BackupFailedItem = {
+  id: string;
+  kind: "audio" | "photo" | "drawing" | "unknown";
+  reason: string;
+};
+
+export type MyWord = {
+  id: EntityId;
+  text: string;
+  category?: "people" | "places" | "activities" | "medical" | "other";
+  enabled: boolean;
+  correctionCount: number;
+  sample?: AssetRef;
 };
 
 export type JournalSnapshot = {
@@ -205,9 +267,17 @@ export type DocumentOperation = OperationBase &
         pageIds: EntityId[];
       }
     | {
+        type: "page-delete";
+        pageId: EntityId;
+      }
+    | {
         type: "sketchbook-rename";
         sketchbookId: EntityId;
         name: string;
+      }
+    | {
+        type: "sketchbook-delete";
+        sketchbookId: EntityId;
       }
     | {
         type: "sketchbooks-reorder";
@@ -223,6 +293,11 @@ export type DocumentOperation = OperationBase &
       type: "page-object-add";
       pageId: EntityId;
       object: PageObject;
+    }
+    | {
+      type: "page-drawing-grid-update";
+      pageId: EntityId;
+      grid: DrawingGridSettings;
     }
     | {
       type: "page-object-update";

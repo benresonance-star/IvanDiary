@@ -1,5 +1,5 @@
-import { Pipette } from "lucide-react";
-import { useState, type CSSProperties } from "react";
+import { Grid3X3, Hand, Highlighter, Paintbrush, PenLine, Pencil, Pipette } from "lucide-react";
+import { useRef, useState, type CSSProperties } from "react";
 
 import {
   clampOpacity,
@@ -8,28 +8,33 @@ import {
   hslToHex,
   isHexColor,
 } from "../utils/colour";
+import type { DrawingGridSettings } from "../domain/models";
+import type { PenNib } from "../sketch/types";
+import { DEFAULT_FAVOURITE_PEN_COLOURS, favouriteColourName } from "./penColours";
 
-const INK_COLOURS = [
-  { name: "Black", value: "#171410" },
-  { name: "Blue", value: "#245b8a" },
-  { name: "Green", value: "#426b3a" },
-  { name: "Red", value: "#9b352f" },
-  { name: "Purple", value: "#6b4f82" },
-  { name: "Brown", value: "#76512f" },
-  { name: "Orange", value: "#c86f24" },
-  { name: "Teal", value: "#2f6f6d" },
-  { name: "Rose", value: "#a64b6b" },
-  { name: "Grey", value: "#686868" },
-] as const;
 
 export const PEN_WIDTH_MIN = 1;
 export const PEN_WIDTH_MAX = 28;
+const GRID_SIZES = [36, 60, 96] as const;
+const GRID_SIZE_NAMES = ["Small", "Medium", "Large"] as const;
+const ROTATION_LONG_PRESS_MS = 600;
 
 export type PenSettings = {
   color: string;
   width: number;
   opacity: number;
+  fingerDrawing?: boolean;
+  nib?: PenNib;
+  profiles?: Record<PenNib, { color: string; width: number; opacity: number }>;
+  favouriteColours?: readonly string[];
 };
+
+const NIBS = [
+  { id: "pen", label: "Pen", Icon: PenLine },
+  { id: "marker", label: "Marker", Icon: Highlighter },
+  { id: "pencil", label: "Pencil", Icon: Pencil },
+  { id: "brush", label: "Brush", Icon: Paintbrush },
+] as const;
 
 function clampWidth(value: number): number {
   if (!Number.isFinite(value)) {
@@ -39,20 +44,26 @@ function clampWidth(value: number): number {
 }
 
 export function PenSettingsHud({
+  grid,
   onChange,
   onDone,
+  onGridChange,
   settings,
-  simpleMode,
 }: {
+  grid?: DrawingGridSettings;
   onChange: (settings: PenSettings) => void;
   onDone: () => void;
+  onGridChange?: (grid: DrawingGridSettings) => void;
   settings: PenSettings;
-  simpleMode: boolean;
 }) {
-  const swatchSelected = INK_COLOURS.some(
-    (colour) => colour.value === settings.color,
-  );
+  const inkColours = settings.favouriteColours ?? DEFAULT_FAVOURITE_PEN_COLOURS;
+  const swatchSelected = inkColours.includes(settings.color);
+  const activeNib = settings.nib ?? "pen";
   const [pickerOpen, setPickerOpen] = useState(!swatchSelected);
+  const rotationTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const rotationLongPressedRef = useRef(false);
   const hsl = hexToHsl(isHexColor(settings.color) ? settings.color : "#171410");
   const opacityPercent = Math.round(clampOpacity(settings.opacity) * 100);
   const sampleStyle = {
@@ -61,10 +72,57 @@ export function PenSettingsHud({
   } as CSSProperties;
 
   const setHsl = (next: { h?: number; s?: number; l?: number }) => {
-    onChange({
+    changeSettings({
       ...settings,
       color: hslToHex(next.h ?? hsl.h, next.s ?? hsl.s, next.l ?? hsl.l),
     });
+  };
+
+  function changeSettings(next: PenSettings) {
+    const nib = next.nib ?? activeNib;
+    const profiles = Object.fromEntries(
+      (["pen", "marker", "pencil", "brush"] as PenNib[]).map((profileNib) => [
+        profileNib,
+        { color: next.color, width: next.width, opacity: next.opacity },
+      ]),
+    ) as NonNullable<PenSettings["profiles"]>;
+    const complete = { ...next, nib, profiles };
+    onChange(complete);
+  }
+
+  const cycleGridSize = () => {
+    if (!grid || !onGridChange) return;
+    const currentIndex = GRID_SIZES.indexOf(grid.spacing);
+    const nextIndex = (currentIndex + 1) % GRID_SIZES.length;
+    onGridChange({ ...grid, spacing: GRID_SIZES[nextIndex] ?? GRID_SIZES[0] });
+  };
+
+  const cycleGridRotation = () => {
+    if (!grid || !onGridChange) return;
+    if (rotationLongPressedRef.current) {
+      rotationLongPressedRef.current = false;
+      return;
+    }
+    const nextRotation = grid.rotationDegrees >= 75
+      ? 0
+      : grid.rotationDegrees + 15;
+    onGridChange({ ...grid, rotationDegrees: nextRotation });
+  };
+
+  const startRotationReset = () => {
+    if (!grid || !onGridChange) return;
+    rotationLongPressedRef.current = false;
+    rotationTimerRef.current = setTimeout(() => {
+      rotationLongPressedRef.current = true;
+      onGridChange({ ...grid, rotationDegrees: 0 });
+    }, ROTATION_LONG_PRESS_MS);
+  };
+
+  const cancelRotationReset = () => {
+    if (rotationTimerRef.current !== undefined) {
+      clearTimeout(rotationTimerRef.current);
+      rotationTimerRef.current = undefined;
+    }
   };
 
   return (
@@ -75,10 +133,44 @@ export function PenSettingsHud({
       role="dialog"
     >
       <div className="pen-hud-heading">
-        <strong>Pen</strong>
+        <div className="pen-hud-title">
+          <PenLine aria-hidden="true" />
+          <strong>Pen</strong>
+        </div>
         <button onClick={onDone} type="button">
           Done
         </button>
+      </div>
+      <button
+        aria-checked={settings.fingerDrawing !== false}
+        className={`finger-toggle${settings.fingerDrawing !== false ? " selected" : ""}`}
+        onClick={() => changeSettings({
+          ...settings,
+          fingerDrawing: settings.fingerDrawing === false,
+        })}
+        role="switch"
+        type="button"
+      >
+        <Hand aria-hidden="true" />
+        <span>Draw with Finger</span>
+        <span aria-hidden="true" className="grid-switch-track"><span /></span>
+        <strong>{settings.fingerDrawing !== false ? "On" : "Off"}</strong>
+      </button>
+
+      <div aria-label="Pen nib" className="pen-nib-selector" role="group">
+        {NIBS.map(({ id, label, Icon }) => (
+          <button
+            aria-pressed={activeNib === id}
+            key={id}
+            onClick={() => {
+              changeSettings({ ...settings, nib: id });
+            }}
+            type="button"
+          >
+            <Icon aria-hidden="true" />
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="pen-colour-layout">
@@ -100,17 +192,17 @@ export function PenSettingsHud({
           className="pen-colour-palette"
           role="group"
         >
-          {INK_COLOURS.map((colour) => (
+          {inkColours.map((colour, index) => (
             <button
-              aria-label={colour.name}
-              aria-pressed={settings.color === colour.value}
+              aria-label={favouriteColourName(index)}
+              aria-pressed={settings.color === colour}
               className="pen-colour-swatch"
-              key={colour.value}
+              key={`${index}-${colour}`}
               onClick={() => {
                 setPickerOpen(false);
-                onChange({ ...settings, color: colour.value });
+                changeSettings({ ...settings, color: colour });
               }}
-              style={{ backgroundColor: colour.value }}
+              style={{ backgroundColor: colour }}
               type="button"
             />
           ))}
@@ -183,7 +275,7 @@ export function PenSettingsHud({
           max={PEN_WIDTH_MAX}
           min={PEN_WIDTH_MIN}
           onChange={(event) =>
-            onChange({
+            changeSettings({
               ...settings,
               width: clampWidth(Number(event.target.value)),
             })
@@ -201,7 +293,7 @@ export function PenSettingsHud({
           max="100"
           min="5"
           onChange={(event) =>
-            onChange({
+            changeSettings({
               ...settings,
               opacity: clampOpacity(Number(event.target.value) / 100),
             })
@@ -212,34 +304,50 @@ export function PenSettingsHud({
         />
       </label>
 
-      {simpleMode ? (
-        <div
-          aria-label="Quick pen thickness"
-          className="pen-width-presets"
-          role="group"
-        >
-          {[
-            { label: "Thin", width: 2.5 },
-            { label: "Medium", width: 8 },
-            { label: "Thick", width: 18 },
-          ].map((preset) => (
-            <button
-              aria-pressed={settings.width === preset.width}
-              key={preset.label}
-              onClick={() =>
-                onChange({ ...settings, width: preset.width })
-              }
-              type="button"
-            >
-              {preset.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
       <div aria-label="Pen preview" className="pen-sample" style={sampleStyle}>
         <span />
       </div>
+
+      {grid && onGridChange ? (
+        <section className="grid-settings" aria-labelledby="grid-settings-heading">
+          <div className="grid-settings-heading">
+            <Grid3X3 aria-hidden="true" />
+            <strong id="grid-settings-heading">Drawing grid</strong>
+          </div>
+          <button
+            aria-checked={grid.enabled}
+            className={`grid-toggle${grid.enabled ? " selected" : ""}`}
+            onClick={() => onGridChange({ ...grid, enabled: !grid.enabled })}
+            role="switch"
+            type="button"
+          >
+            <span>Grid</span>
+            <span aria-hidden="true" className="grid-switch-track">
+              <span />
+            </span>
+            <strong>{grid.enabled ? "On" : "Off"}</strong>
+          </button>
+          {grid.enabled ? (
+            <div className="grid-cycle-controls">
+              <button onClick={cycleGridSize} type="button">
+                Grid size: {GRID_SIZE_NAMES[GRID_SIZES.indexOf(grid.spacing)]}
+              </button>
+              <button
+                onClick={cycleGridRotation}
+                onPointerCancel={cancelRotationReset}
+                onPointerDown={startRotationReset}
+                onPointerLeave={cancelRotationReset}
+                onPointerUp={cancelRotationReset}
+                type="button"
+              >
+                Grid rotation: {grid.rotationDegrees}°
+                <small>Hold to straighten</small>
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
     </div>
   );
 }

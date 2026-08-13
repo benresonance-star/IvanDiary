@@ -18,4 +18,5 @@ export type JournalCommitResult = {
 export interface JournalRepository {
   load(): Promise<JournalLoadResult>;
   commit(operation: DocumentOperation): Promise<JournalCommitResult>;
+  replace(snapshot: JournalSnapshot): Promise<JournalCommitResult>;
 }

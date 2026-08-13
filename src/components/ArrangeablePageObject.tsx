@@ -14,6 +14,7 @@ import {
   ArrowRight,
   ArrowUp,
   GripHorizontal,
+  Layers2,
   Maximize2,
   Trash2,
 } from "lucide-react";
@@ -61,11 +62,13 @@ export function ArrangeablePageObject({
   className,
   deleteDescription,
   frame,
+  layer,
   objectLabel,
   objectId,
   onCommit,
   onDelete,
   onSelect,
+  onToggleLayer,
   pageRef,
   position,
   selected,
@@ -76,11 +79,13 @@ export function ArrangeablePageObject({
   className: string;
   deleteDescription: string;
   frame: Size;
+  layer: "above-sketch" | "behind-sketch";
   objectLabel: string;
   objectId: string;
   onCommit: (change: LayoutChange) => void;
   onDelete: () => void;
   onSelect: () => void;
+  onToggleLayer: () => void;
   pageRef: RefObject<HTMLDivElement | null>;
   position: Position;
   selected: boolean;
@@ -252,7 +257,7 @@ export function ArrangeablePageObject({
           ? `${objectLabel}. Arrow keys move. Shift and arrow keys resize.`
           : undefined
       }
-      className={`${className}${arrange ? " arrangeable" : ""}${selected ? " selected-object" : ""}`}
+      className={`${className}${layer === "behind-sketch" ? " behind-sketch" : ""}${arrange ? " arrangeable" : ""}${selected ? " selected-object" : ""}`}
       data-object-id={objectId}
       onClick={arrange ? onSelect : undefined}
       onKeyDown={arrange ? handleKeyDown : undefined}
@@ -297,6 +302,22 @@ export function ArrangeablePageObject({
             type="button"
           >
             <Trash2 aria-hidden="true" />
+          </button>
+          <button
+            aria-label={`${layer === "behind-sketch" ? "Move in front of" : "Move behind"} sketch: ${objectLabel}`}
+            className="arrange-layer-toggle"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleLayer();
+            }}
+            type="button"
+          >
+            <Layers2 aria-hidden="true" className="layer-stack-icon" />
+            {layer === "behind-sketch" ? (
+              <ArrowUp aria-hidden="true" className="layer-direction-icon" />
+            ) : (
+              <ArrowDown aria-hidden="true" className="layer-direction-icon" />
+            )}
           </button>
           {showShortcuts ? (
             <div

@@ -13,11 +13,13 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export function DiaryCalendar({
   entryDates,
   onOpen,
+  onOpenChange,
   onSelectDate,
   selectedDate,
 }: {
   entryDates: ReadonlySet<string>;
   onOpen?: () => void;
+  onOpenChange?: (open: boolean) => void;
   onSelectDate: (dateKey: string) => void;
   selectedDate: string;
 }) {
@@ -47,6 +49,7 @@ export function DiaryCalendar({
     });
     onSelectDate(todayKey);
     setOpen(false);
+    onOpenChange?.(false);
   };
 
   return (
@@ -66,6 +69,7 @@ export function DiaryCalendar({
             if (next) {
               onOpen?.();
             }
+            onOpenChange?.(next);
             return next;
           });
         }}
@@ -79,7 +83,10 @@ export function DiaryCalendar({
           <button
             aria-label="Close diary calendar"
             className="diary-calendar-backdrop"
-            onClick={() => setOpen(false)}
+            onClick={() => {
+              setOpen(false);
+              onOpenChange?.(false);
+            }}
             type="button"
           />
           <div
@@ -148,6 +155,7 @@ export function DiaryCalendar({
                     onClick={() => {
                       onSelectDate(cell.dateKey);
                       setOpen(false);
+                      onOpenChange?.(false);
                     }}
                     type="button"
                   >

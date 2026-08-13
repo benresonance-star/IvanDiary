@@ -1,62 +1,114 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Navigation } from "./Navigation";
 import { SettingsView } from "./SettingsView";
+import { BrowserJournalAudioMock, BrowserJournalFilesMock } from "../native/browserMocks";
+
+const sketchRepository = {
+  load: vi.fn(async (id: string) => ({
+    schemaVersion: 1 as const,
+    id,
+    size: { width: 900, height: 900 },
+    strokes: [],
+    revision: 0,
+  })),
+  save: vi.fn(),
+};
+
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {}
+    disconnect() {}
+  });
+});
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("accessible navigation and settings", () => {
   it("exposes the active section and large named navigation actions", () => {
     const onSectionChange = vi.fn();
+    const onProfileSelect = vi.fn();
+    const onBackupWarningSelect = vi.fn();
     render(
       <Navigation
         activeSection="diary"
+        backupStatus={{ state: "error", pendingItemCount: 1, message: "Not connected" }}
+        displayName="Ivan"
+        onProfileSelect={onProfileSelect}
+        onBackupWarningSelect={onBackupWarningSelect}
         onSectionChange={onSectionChange}
+        sketchRepository={sketchRepository}
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Diary" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "My Journal" })).toHaveAttribute(
       "aria-current",
       "page",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Favourites" }));
+    fireEvent.click(screen.getByRole("button", { name: "My Favourites" }));
     expect(onSectionChange).toHaveBeenCalledWith("favourites");
+    fireEvent.click(screen.getByRole("button", { name: "Ivan profile and settings" }));
+    expect(onProfileSelect).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: /Backup issue/ }));
+    expect(onBackupWarningSelect).toHaveBeenCalledOnce();
   });
 
-  it("uses pressed states for accessibility preferences", () => {
+  it("uses choice and switch semantics for accessibility preferences", () => {
     const commit = vi.fn();
     const onPreviewWelcome = vi.fn();
     render(
       <SettingsView
+        audio={new BrowserJournalAudioMock()}
+        backupStatus={{
+          state: "not-configured",
+          pendingItemCount: 0,
+          message: "This version of the app is not connected to iCloud.",
+        }}
         commit={commit}
+        files={new BrowserJournalFilesMock()}
         onPreviewWelcome={onPreviewWelcome}
+        onEditPortrait={vi.fn()}
+        onBackupNow={vi.fn()}
+        onCheckBackup={vi.fn()}
+        onRestore={vi.fn()}
+        sketchRepository={sketchRepository}
         settings={{
-          simpleMode: true,
+          displayName: "Ivan",
+          lastSettingsTab: "welcome",
           textScale: "large",
           contrast: "warm",
           reducedMotion: false,
           penColor: "#171410",
           penWidth: 4.2,
           penOpacity: 1,
+          fingerDrawingEnabled: true,
+          favouritePenColours: [
+            "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
+            "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
+          ],
+          penNib: "pen",
+          penNibProfiles: {
+            pen: { color: "#171410", width: 4.2, opacity: 1 },
+            marker: { color: "#171410", width: 14, opacity: 0.45 },
+            pencil: { color: "#171410", width: 5, opacity: 0.72 },
+            brush: { color: "#171410", width: 12, opacity: 0.68 },
+          },
           welcomeGreeting: "Welcome back Ivan!",
           welcomeTagline: "It's a Wonderful World!",
           welcomeMessage: "",
+          recordingLimitMinutes: 5,
+          automaticBackup: true,
+          backupOnWifiOnly: true,
+          myWords: [],
         }}
       />,
     );
 
-    expect(screen.getByRole("button", { name: /Simple mode/i })).toHaveAttribute(
-      "aria-pressed",
+    expect(screen.getByRole("tab", { name: "Welcome" })).toHaveAttribute(
+      "aria-selected",
       "true",
     );
-    expect(screen.getByRole("button", { name: "Large" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    fireEvent.click(screen.getByRole("button", { name: /High contrast/i }));
-    expect(commit).toHaveBeenCalledWith({
-      type: "settings-update",
-      settings: { contrast: "high" },
-    });
     fireEvent.click(
       screen.getByRole("button", { name: "Preview welcome screen" }),
     );
@@ -65,5 +117,83 @@ describe("accessible navigation and settings", () => {
       tagline: "It's a Wonderful World!",
       message: "",
     });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Canvas" }));
+    expect(screen.getAllByRole("button", { name: /^(Black|Blue|Green|Red|Purple|Brown|Orange|Teal|Rose|Grey)$/ })).toHaveLength(10);
+    fireEvent.change(screen.getByRole("slider", { name: "Canvas colour hue" }), {
+      target: { value: "180" },
+    });
+    expect(commit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "settings-update",
+      settings: expect.objectContaining({
+        favouritePenColours: expect.any(Array),
+        penColor: expect.stringMatching(/^#[0-9a-f]{6}$/i),
+      }),
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "Brush" }));
+    expect(screen.getByRole("button", { name: "Brush" })).toHaveAttribute("aria-pressed", "true");
+
+    expect(screen.queryByRole("tab", { name: "Text size" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+    expect(screen.getByRole("button", { name: "Large" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const highContrast = screen.getByRole("checkbox", { name: "High contrast" });
+    expect(highContrast).not.toBeChecked();
+    fireEvent.click(highContrast);
+    expect(commit).toHaveBeenCalledWith({
+      type: "settings-update",
+      settings: { contrast: "high" },
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Backup" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Backup is not connected");
+    expect(screen.getByRole("button", { name: "Check iCloud connection" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("tab", { name: "About Me" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Display name" }), {
+      target: { value: "Super Ivan" },
+    });
+    fireEvent.blur(screen.getByRole("textbox", { name: "Display name" }));
+    expect(commit).toHaveBeenCalledWith({
+      type: "settings-update",
+      settings: { displayName: "Super Ivan" },
+    });
   });
+
+  it("keeps the profile and removes the warning after backup completes", () => {
+    render(
+      <Navigation
+        activeSection="diary"
+        backupStatus={{ state: "synced", pendingItemCount: 0, message: "Backup is up to date" }}
+        displayName="Ivan"
+        onBackupWarningSelect={vi.fn()}
+        onProfileSelect={vi.fn()}
+        onSectionChange={vi.fn()}
+        sketchRepository={sketchRepository}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Ivan profile and settings" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Not backed up/ })).not.toBeInTheDocument();
+  });
+
+  it.each(["not-configured", "available", "syncing", "synced"] as const)(
+    "does not show a backup alert for the normal %s state",
+    (state) => {
+      render(
+        <Navigation
+          activeSection="diary"
+          backupStatus={{ state, pendingItemCount: 0, message: "No action needed" }}
+          displayName="Ivan"
+          onBackupWarningSelect={vi.fn()}
+          onProfileSelect={vi.fn()}
+          onSectionChange={vi.fn()}
+          sketchRepository={sketchRepository}
+        />,
+      );
+      expect(screen.queryByText(/Backup issue|Backup incomplete/)).not.toBeInTheDocument();
+    },
+  );
 });

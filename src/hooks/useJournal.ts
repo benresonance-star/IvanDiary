@@ -111,11 +111,19 @@ export function useJournal(repository: JournalRepository) {
     [repository],
   );
 
+  const replace = useCallback(async (restored: JournalSnapshot) => {
+    const result = await repository.replace(restored);
+    snapshotRef.current = result.snapshot;
+    setSnapshot(result.snapshot);
+    setHealth(result.health);
+  }, [repository]);
+
   return {
     snapshot,
     health,
     message,
     clearMessage: () => setMessage(undefined),
     commit,
+    replace,
   };
 }

@@ -1,3 +1,4 @@
+#if canImport(UIKit)
 import PencilKit
 import UIKit
 
@@ -32,6 +33,28 @@ public struct NativeDrawingResult: Sendable {
 public enum NativeDrawingTool: String, Sendable {
     case pen
     case eraser
+}
+
+public enum NativeDrawingNib: String, Sendable {
+    case pen
+    case marker
+    case pencil
+    case brush
+
+    var inkType: PKInkingTool.InkType {
+        switch self {
+        case .pen: return .pen
+        case .marker: return .marker
+        case .pencil: return .pencil
+        // Watercolor gives Brush a soft, layered painted edge that is
+        // visibly distinct from Pencil and Marker.
+        case .brush:
+            if #available(iOS 17.0, *) {
+                return .watercolor
+            }
+            return .pencil
+        }
+    }
 }
 
 public struct ApplicationSupportPencilDrawingStore: PencilDrawingStore {
@@ -427,3 +450,4 @@ public extension UIColor {
         )
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if canImport(UIKit)
 import PencilKit
 import UIKit
 
@@ -99,3 +100,4 @@ public enum LegacyInkImport {
         return merged
     }
 }
+#endif

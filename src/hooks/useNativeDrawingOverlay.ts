@@ -9,6 +9,8 @@ import {
 import { hasNativePencilKit } from "../native/pencilKit";
 import { measureDrawingOverlayLayout } from "../sketch/drawingOverlayLayout";
 import type { SketchRepository } from "../sketch/types";
+import type { PenNib } from "../sketch/types";
+import type { DrawingGridSettings } from "../domain/models";
 import {
   nativeDrawingOverlayCoordinator,
   type NativeDrawingOverlayState,
@@ -31,23 +33,33 @@ export function useNativeDrawingOverlay({
   enabled,
   tool,
   color,
+  nib = "pen",
   width,
   opacity = 1,
+  fingerDrawing = true,
   paperRef,
+  protectedHeaderRef,
   toolPaletteRef,
   sketchRepository,
   onError,
+  clipShape,
+  grid,
 }: {
   documentId: string;
   enabled: boolean;
   tool: "pen" | "eraser" | "view" | "arrange";
   color: string;
+  nib?: PenNib;
   width: number;
   opacity?: number;
+  fingerDrawing?: boolean;
   paperRef: RefObject<HTMLDivElement | null>;
+  protectedHeaderRef?: RefObject<HTMLElement | null>;
   toolPaletteRef: RefObject<HTMLDivElement | null>;
   sketchRepository: SketchRepository;
   onError?: (message: string) => void;
+  clipShape?: "circle";
+  grid?: DrawingGridSettings;
 }) {
   const ownerRef = useRef(Symbol("native-drawing-overlay-owner"));
   const onErrorRef = useRef(onError);
@@ -61,6 +73,8 @@ export function useNativeDrawingOverlay({
       }
     | undefined
   >(undefined);
+  const [gridOrigin, setGridOrigin] = useState({ x: 0, y: 0 });
+  const [gridPageSize, setGridPageSize] = useState({ width: 1200, height: 820 });
   const nativeAvailable = hasNativePencilKit();
   const drawing =
     nativeAvailable && enabled && (tool === "pen" || tool === "eraser");
@@ -100,6 +114,7 @@ export function useNativeDrawingOverlay({
       const { overlayRect } = measureDrawingOverlayLayout(
         paper,
         toolPaletteRef.current,
+        protectedHeaderRef?.current,
       );
       if (overlayRect.width < 8 || overlayRect.height < 8) {
         return;
@@ -107,6 +122,19 @@ export function useNativeDrawingOverlay({
       setOverlayRect((current) =>
         current && rectsEqual(current, overlayRect) ? current : overlayRect,
       );
+      const paperBounds = paper.getBoundingClientRect();
+      const gridCanvasBounds =
+        paper
+          .querySelector<HTMLElement>(".sketch-layer")
+          ?.getBoundingClientRect() ?? paperBounds;
+      setGridOrigin({
+        x: overlayRect.x - gridCanvasBounds.left,
+        y: overlayRect.y - gridCanvasBounds.top,
+      });
+      setGridPageSize({
+        width: gridCanvasBounds.width,
+        height: gridCanvasBounds.height,
+      });
     };
 
     const updateFrame = () => {
@@ -126,7 +154,12 @@ export function useNativeDrawingOverlay({
     if (tools) {
       observer.observe(tools);
     }
+    const protectedHeader = protectedHeaderRef?.current;
+    if (protectedHeader) {
+      observer.observe(protectedHeader);
+    }
     globalThis.addEventListener("resize", updateFrame);
+    globalThis.addEventListener("scroll", updateFrame, true);
     globalThis.visualViewport?.addEventListener("resize", updateFrame);
 
     return () => {
@@ -135,9 +168,10 @@ export function useNativeDrawingOverlay({
       }
       observer.disconnect();
       globalThis.removeEventListener("resize", updateFrame);
+      globalThis.removeEventListener("scroll", updateFrame, true);
       globalThis.visualViewport?.removeEventListener("resize", updateFrame);
     };
-  }, [nativeAvailable, paperRef, toolPaletteRef]);
+  }, [nativeAvailable, paperRef, protectedHeaderRef, toolPaletteRef]);
 
   useLayoutEffect(() => {
     const owner = ownerRef.current;
@@ -149,18 +183,34 @@ export function useNativeDrawingOverlay({
       owner,
       documentId,
       color,
+      nib,
       width,
       opacity,
+      fingerDrawing,
       tool: tool === "eraser" ? "eraser" : "pen",
       rect: overlayRect,
+      clipShape,
+      grid,
+      gridOriginX: gridOrigin.x,
+      gridOriginY: gridOrigin.y,
+      gridPageWidth: gridPageSize.width,
+      gridPageHeight: gridPageSize.height,
       sketchRepository,
       onError: (message) => onErrorRef.current?.(message),
     });
   }, [
     color,
+    nib,
+    clipShape,
     documentId,
     drawing,
+    grid,
+    gridOrigin.x,
+    gridOrigin.y,
+    gridPageSize.height,
+    gridPageSize.width,
     opacity,
+    fingerDrawing,
     overlayRect,
     sketchRepository,
     tool,
@@ -171,5 +221,7 @@ export function useNativeDrawingOverlay({
     nativeAvailable,
     overlayActive,
     overlayRequested: drawing,
+    suspendOverlay: () =>
+      nativeDrawingOverlayCoordinator.releaseAndWait(ownerRef.current),
   };
 }

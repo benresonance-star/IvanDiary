@@ -4,6 +4,7 @@ import type {
   JournalSnapshot,
   Page,
 } from "./models";
+import { MAX_PAGES_PER_COLLECTION } from "./models";
 
 export class OperationConflictError extends Error {
   constructor(message: string) {
@@ -128,6 +129,15 @@ export function applyDocumentOperation(
         throw new OperationConflictError(
           `Journal day ${operation.journalDayId} does not exist.`,
         );
+      }
+      if (
+        snapshot.days.some(
+          (day) =>
+            day.id === operation.journalDayId &&
+            day.pageIds.length >= MAX_PAGES_PER_COLLECTION,
+        )
+      ) {
+        throw new OperationConflictError("A journal day can contain no more than 10 pages.");
       }
       if (
         snapshot.pages.some(
@@ -257,6 +267,15 @@ export function applyDocumentOperation(
         );
       }
       if (
+        snapshot.sketchbooks.some(
+          (sketchbook) =>
+            sketchbook.id === operation.sketchbookId &&
+            sketchbook.pageIds.length >= MAX_PAGES_PER_COLLECTION,
+        )
+      ) {
+        throw new OperationConflictError("A sketchbook can contain no more than 10 pages.");
+      }
+      if (
         snapshot.pages.some((page) => page.id === operation.page.id)
       ) {
         throw new OperationConflictError(
@@ -314,6 +333,65 @@ export function applyDocumentOperation(
       };
       break;
     }
+    case "page-delete": {
+      const page = snapshot.pages.find(
+        (candidate) => candidate.id === operation.pageId,
+      );
+      if (!page) {
+        throw new OperationConflictError(
+          `Page ${operation.pageId} does not exist.`,
+        );
+      }
+      const day = page.journalDayId
+        ? snapshot.days.find((candidate) => candidate.id === page.journalDayId)
+        : undefined;
+      const sketchbook = page.sketchbookId
+        ? snapshot.sketchbooks.find((candidate) => candidate.id === page.sketchbookId)
+        : undefined;
+      const ownerPageIds = day?.pageIds ?? sketchbook?.pageIds;
+      if (!ownerPageIds?.includes(page.id)) {
+        throw new OperationConflictError(
+          `Page ${page.id} does not have a valid owner.`,
+        );
+      }
+      if (ownerPageIds.length <= 1) {
+        throw new OperationConflictError(
+          "A diary day or sketchbook must keep at least one page.",
+        );
+      }
+      next = {
+        ...snapshot,
+        pages: snapshot.pages.filter((candidate) => candidate.id !== page.id),
+        days: day
+          ? snapshot.days.map((candidate) =>
+              candidate.id === day.id
+                ? {
+                    ...candidate,
+                    pageIds: candidate.pageIds.filter((pageId) => pageId !== page.id),
+                    revision: candidate.revision + 1,
+                  }
+                : candidate,
+            )
+          : snapshot.days,
+        sketchbooks: sketchbook
+          ? snapshot.sketchbooks.map((candidate) =>
+              candidate.id === sketchbook.id
+                ? {
+                    ...candidate,
+                    pageIds: candidate.pageIds.filter((pageId) => pageId !== page.id),
+                    revision: candidate.revision + 1,
+                    updatedAt: operation.createdAt,
+                  }
+                : candidate,
+            )
+          : snapshot.sketchbooks,
+        favourites: snapshot.favourites.filter(
+          (favourite) =>
+            favourite.targetType !== "page" || favourite.targetId !== page.id,
+        ),
+      };
+      break;
+    }
     case "sketchbook-rename": {
       const name = operation.name.trim();
       if (!name) {
@@ -341,6 +419,36 @@ export function applyDocumentOperation(
                 updatedAt: operation.createdAt,
               }
             : sketchbook,
+        ),
+      };
+      break;
+    }
+    case "sketchbook-delete": {
+      const sketchbook = snapshot.sketchbooks.find(
+        (candidate) => candidate.id === operation.sketchbookId,
+      );
+      if (!sketchbook) {
+        throw new OperationConflictError(
+          `Sketchbook ${operation.sketchbookId} does not exist.`,
+        );
+      }
+      const pageIds = new Set(sketchbook.pageIds);
+      next = {
+        ...snapshot,
+        sketchbooks: snapshot.sketchbooks.filter(
+          (candidate) => candidate.id !== sketchbook.id,
+        ),
+        pages: snapshot.pages.filter((page) => !pageIds.has(page.id)),
+        favourites: snapshot.favourites.filter(
+          (favourite) =>
+            !(
+              favourite.targetType === "sketchbook" &&
+              favourite.targetId === sketchbook.id
+            ) &&
+            !(
+              favourite.targetType === "page" &&
+              pageIds.has(favourite.targetId)
+            ),
         ),
       };
       break;
@@ -385,6 +493,22 @@ export function applyDocumentOperation(
         updatedAt: operation.createdAt,
       }));
       break;
+    case "page-drawing-grid-update": {
+      if (
+        ![36, 60, 96].includes(operation.grid.spacing) ||
+        !Number.isInteger(operation.grid.rotationDegrees / 15) ||
+        Math.abs(operation.grid.rotationDegrees) >= 90
+      ) {
+        throw new OperationConflictError("The drawing grid settings are invalid.");
+      }
+      next = updatePage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        drawingGrid: operation.grid,
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      break;
+    }
     case "page-object-update":
       next = updatePage(snapshot, operation.pageId, (page) => ({
         ...page,

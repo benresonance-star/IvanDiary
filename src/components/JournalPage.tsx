@@ -4,19 +4,21 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
+  type MutableRefObject,
 } from "react";
 import {
-  Check,
   ChevronLeft,
   Eraser,
-  Hand,
+  Eye,
   ImagePlus,
   Link as LinkIcon,
   Mic,
   Move,
   PenLine,
   Pencil,
-  Star,
+  Keyboard,
+  Redo2,
+  ThumbsUp,
   Type,
   Undo2,
 } from "lucide-react";
@@ -24,6 +26,7 @@ import {
 import type {
   DocumentOperationInput,
   LinkObject,
+  MyWord,
   Page,
   PageObject,
   SaveHealth,
@@ -35,11 +38,14 @@ import type {
 import type {
   AppleTranscriptionPlugin,
   JournalAudioPlugin,
+  JournalFilesPlugin,
   RecordingSnapshot,
 } from "../native/contracts";
+import { finalizeStoppedRecording } from "../native/durableAudio";
 import { useNativeDrawingOverlay } from "../hooks/useNativeDrawingOverlay";
 import {
   hasNativePencilKit,
+  redoNativeDrawingOverlay,
   undoNativeDrawingOverlay,
 } from "../native/pencilKit";
 import type { BrowserSketchRepository } from "../repository/browserSketchRepository";
@@ -61,14 +67,18 @@ import {
 import { defaultObjectFrame } from "./arrangeGeometry";
 import { DiaryCalendar } from "./DiaryCalendar";
 import { DiaryPageStrip } from "./DiaryPageStrip";
+import { insertSpokenText, type TextSelection } from "./textInsertion";
 import { FlowerPhoto } from "./JournalIllustrations";
+import { FavouriteConfirmation } from "./FavouriteConfirmation";
 import {
   PenSettingsHud,
   type PenSettings,
 } from "./PenSettingsHud";
+import { DEFAULT_DRAWING_GRID } from "../sketch/gridGeometry";
 
 type Commit = (operation: DocumentOperationInput) => Promise<boolean>;
-type PageTool = SketchTool | "arrange" | "view";
+export type PageTool = SketchTool | "arrange" | "view";
+const MAX_PHOTOS_PER_PAGE = 5;
 export type PageWorkspaceContext =
   | {
       kind: "diary";
@@ -86,6 +96,149 @@ type PageAction =
   | { kind: "drawing" }
   | { kind: "layout"; objectId: string; change: LayoutChange }
   | { kind: "delete"; objects: PageObject[] };
+
+type TextDraft = {
+  text: string;
+  textScale: number;
+  textAlign: "left" | "center";
+};
+
+const EMPTY_TEXT_DRAFT: TextDraft = {
+  text: "",
+  textScale: 2.5,
+  textAlign: "left",
+};
+
+export function TextComposer({
+  draft,
+  recording,
+  status,
+  onCancel,
+  onChange,
+  onSubmit,
+  onToggleVoice,
+  selectionRef,
+}: {
+  draft: TextDraft;
+  recording: boolean;
+  status?: string;
+  onCancel: () => void;
+  onChange: (draft: TextDraft) => void;
+  onSubmit: () => void;
+  onToggleVoice: () => void;
+  selectionRef: MutableRefObject<TextSelection>;
+}) {
+  const [input, setInput] = useState<"voice" | "keyboard">("voice");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [visibleViewport, setVisibleViewport] = useState<{
+    height: number;
+    offsetTop: number;
+  }>();
+
+  useEffect(() => {
+    const viewport = globalThis.visualViewport;
+    if (!viewport) return;
+    const updateVisibleViewport = () => {
+      setVisibleViewport({
+        height: viewport.height,
+        offsetTop: viewport.offsetTop,
+      });
+    };
+    updateVisibleViewport();
+    viewport.addEventListener("resize", updateVisibleViewport);
+    viewport.addEventListener("scroll", updateVisibleViewport);
+    return () => {
+      viewport.removeEventListener("resize", updateVisibleViewport);
+      viewport.removeEventListener("scroll", updateVisibleViewport);
+    };
+  }, []);
+
+  const rememberSelection = (next: TextSelection) => {
+    selectionRef.current = next;
+  };
+
+  const selectKeyboard = () => {
+    setInput("keyboard");
+    // iPadOS only presents its software keyboard when focus happens directly
+    // inside the trusted tap event. Deferring this loses that user activation.
+    textareaRef.current?.setAttribute("inputmode", "text");
+    textareaRef.current?.focus({ preventScroll: true });
+    textareaRef.current?.setSelectionRange(
+      selectionRef.current.start,
+      selectionRef.current.end,
+    );
+  };
+
+  return (
+    <div
+      aria-labelledby="text-composer-title"
+      aria-modal="true"
+      className="text-composer-backdrop"
+      role="dialog"
+      style={visibleViewport ? {
+        height: `${visibleViewport.height}px`,
+        top: `${visibleViewport.offsetTop}px`,
+      } : undefined}
+    >
+      <section className="text-composer">
+        <header>
+          <div>
+            <h2 id="text-composer-title">Add text</h2>
+          </div>
+          <button className="secondary-action" disabled={recording} onClick={onCancel} type="button">Cancel</button>
+        </header>
+        <div className="text-input-row">
+          <fieldset aria-label="Text input method" className={`text-input-toggle ${input === "keyboard" ? "keyboard-selected" : "voice-selected"}`}>
+            <legend className="visually-hidden">Text input method</legend>
+            <label className={input === "voice" ? "selected" : ""}>
+              <input checked={input === "voice"} name="text-input-method" onChange={() => { setInput("voice"); textareaRef.current?.blur(); }} type="radio" value="voice" />
+              <Mic aria-hidden="true" />Voice
+            </label>
+            <label className={input === "keyboard" ? "selected" : ""}>
+              <input checked={input === "keyboard"} name="text-input-method" onChange={selectKeyboard} type="radio" value="keyboard" />
+              <Keyboard aria-hidden="true" />Keyboard
+            </label>
+          </fieldset>
+          {input === "voice" ? (
+            <button
+              aria-pressed={recording}
+              className={`text-dictation-button${recording ? " recording" : " ready"}`}
+              onClick={onToggleVoice}
+              onPointerDown={(event) => {
+                // Keep the textarea focused so its caret remains visible while
+                // dictation begins at the selected insertion point.
+                event.preventDefault();
+              }}
+              type="button"
+            >
+              <Mic aria-hidden="true" />
+              {recording ? "Stop and turn voice into text" : "Tap to begin speaking"}
+            </button>
+          ) : null}
+          <button className="large-action text-add-action" disabled={!draft.text.trim() || recording} onClick={onSubmit} type="button">Add to canvas</button>
+        </div>
+        <p aria-live="polite" className="text-composer-status" role="status">{status ?? (input === "voice" ? "Ready to listen" : "Keyboard ready")}</p>
+        <textarea
+          aria-label="Text for the page"
+          className="text-composer-editor"
+          inputMode={input === "voice" ? "none" : "text"}
+          onClick={(event) => {
+            event.currentTarget.focus({ preventScroll: true });
+          }}
+          onChange={(event) => {
+            onChange({ ...draft, text: event.target.value });
+            rememberSelection({ start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd });
+          }}
+          onSelect={(event) => rememberSelection({ start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })}
+          placeholder="Your words will appear here…"
+          ref={textareaRef}
+          style={{ fontSize: `${draft.textScale}em`, textAlign: draft.textAlign }}
+          value={draft.text}
+        />
+      </section>
+    </div>
+  );
+}
 
 function deletionDescription(
   object: Exclude<PageObject, TranscriptObject>,
@@ -112,19 +265,27 @@ function deletionDescription(
 }
 
 function TranscriptEditor({
+  audio,
+  assetUri,
   transcript,
   readOnly,
   onSave,
+  onSuggestMyWord,
 }: {
+  audio: JournalAudioPlugin;
+  assetUri: string;
   readOnly: boolean;
   transcript: TranscriptObject;
   onSave: (next: TranscriptObject) => void;
+  onSuggestMyWord: (text: string) => void;
 }) {
   const [text, setText] = useState(
     transcript.editedText ?? transcript.rawText,
   );
+  const [suggestion, setSuggestion] = useState<string>();
 
   return (
+    <div className="transcript-editor-wrap">
     <textarea
       aria-label="Edit voice transcript"
       className="transcript-editor"
@@ -135,12 +296,36 @@ function TranscriptEditor({
             editedText: text,
             revision: transcript.revision + 1,
           });
+          const rawWords = new Set(transcript.rawText.toLocaleLowerCase().match(/[\p{L}\p{N}'’-]+/gu) ?? []);
+          const corrected = text.match(/[\p{L}\p{N}'’-]+/gu)?.find((word) => word.length > 1 && !rawWords.has(word.toLocaleLowerCase()));
+          setSuggestion(corrected);
         }
       }}
       onChange={(event) => setText(event.target.value)}
       readOnly={readOnly}
       value={text}
     />
+    {suggestion ? (
+      <button onClick={() => { onSuggestMyWord(suggestion); setSuggestion(undefined); }} type="button">
+        Add “{suggestion}” to My Words
+      </button>
+    ) : null}
+    {transcript.segments?.some((segment) => typeof segment.confidence === "number" && segment.confidence < 0.5) ? (
+      <div className="uncertain-words" aria-label="Words to check">
+        <span>Words to check:</span>
+        {transcript.segments.filter((segment) => typeof segment.confidence === "number" && segment.confidence < 0.5).map((segment, index) => (
+          <button
+            key={`${segment.startMs}-${index}`}
+            onClick={() => void audio.play({ assetUri, startMs: segment.startMs, durationMs: Math.max(800, segment.durationMs + 400) })}
+            title={segment.alternatives?.length ? `Other possibilities: ${segment.alternatives.join(", ")}` : undefined}
+            type="button"
+          >
+            ▶ {segment.text}
+          </button>
+        ))}
+      </div>
+    ) : null}
+    </div>
   );
 }
 
@@ -168,7 +353,7 @@ function TextCard({
       onChange={(event) => setText(event.target.value)}
       placeholder="Write here, or use Apple dictation…"
       readOnly={readOnly}
-      style={{ fontSize: `${object.textScale}em` }}
+      style={{ textAlign: object.textAlign ?? "left" }}
       value={text}
     />
   );
@@ -252,73 +437,148 @@ function nextPosition(page: Page): { x: number; y: number } {
 export function PageWorkspace({
   audio,
   commit,
+  files,
   context,
+  displayName,
   entryDates,
   health,
   onAddPage,
   onDrawingHealthChange,
+  onDeletePage,
   onRefreshEntryDates,
   onReorderPages,
   onSelectDate,
   onSelectPage,
+  onToolChange,
   page,
   pages,
   penColor,
+  fingerDrawingEnabled,
+  favouritePenColours,
+  penNib,
+  penNibProfiles,
   penOpacity,
   penWidth,
-  simpleMode,
+  myWords,
+  recordingLimitMinutes,
   sketchRepository,
+  tool,
   transcription,
 }: {
   audio: JournalAudioPlugin;
   commit: Commit;
+  files: JournalFilesPlugin;
   context: PageWorkspaceContext;
+  displayName: string;
   entryDates?: ReadonlySet<string>;
   health: SaveHealth;
-  onAddPage: () => void;
+  onAddPage: () => Promise<boolean>;
   onDrawingHealthChange: (health: SaveHealth) => void;
+  onDeletePage: (pageId: string) => Promise<boolean>;
   onRefreshEntryDates?: () => void;
   onReorderPages: (pageIds: string[]) => Promise<boolean>;
   onSelectDate?: (dateKey: string) => void;
   onSelectPage: (pageId: string) => void;
+  onToolChange: (tool: PageTool) => void;
   page: Page;
   pages: Page[];
   penColor: string;
+  fingerDrawingEnabled: boolean;
+  favouritePenColours: string[];
+  penNib: "pen" | "marker" | "pencil" | "brush";
+  penNibProfiles: PenSettings["profiles"];
   penOpacity: number;
   penWidth: number;
-  simpleMode: boolean;
+  myWords: MyWord[];
+  recordingLimitMinutes: 2 | 5 | 10 | 30 | null;
   sketchRepository: BrowserSketchRepository;
+  tool: PageTool;
   transcription: AppleTranscriptionPlugin;
 }) {
   const sketchRef = useRef<SketchSurfaceHandle>(null);
   const paperRef = useRef<HTMLDivElement>(null);
+  const pageHeaderRef = useRef<HTMLElement>(null);
   const toolPaletteRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const actionTimelineRef = useRef<PageAction[]>([]);
-  const [tool, setTool] = useState<PageTool>("view");
+  const setTool = onToolChange;
   const [penHudOpen, setPenHudOpen] = useState(false);
   const [penSettings, setPenSettings] = useState<PenSettings>({
     color: penColor,
+    nib: penNib,
+    profiles: penNibProfiles,
     width: penWidth,
     opacity: penOpacity,
+    fingerDrawing: fingerDrawingEnabled,
+    favouriteColours: favouritePenColours,
   });
+  const drawingGrid = page.drawingGrid ?? DEFAULT_DRAWING_GRID;
+  const photoCount = page.objects.filter((object) => object.type === "photo").length;
   const [selectedObjectId, setSelectedObjectId] = useState<string>();
+  const [favouriteConfirmation, setFavouriteConfirmation] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [linkComposerOpen, setLinkComposerOpen] = useState(false);
+  const [textComposerOpen, setTextComposerOpen] = useState(false);
+  const [textComposerRequested, setTextComposerRequested] = useState(false);
+  const [textDraft, setTextDraft] = useState<TextDraft>(EMPTY_TEXT_DRAFT);
+  const textSelectionRef = useRef<TextSelection>({ start: 0, end: 0 });
+  const [textRecording, setTextRecording] = useState<RecordingSnapshot>();
+  const [textStatus, setTextStatus] = useState<string>();
+  const [placingTextId, setPlacingTextId] = useState<string>();
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [linkBeingEdited, setLinkBeingEdited] = useState<LinkObject>();
   const [recording, setRecording] = useState<RecordingSnapshot>();
-  const { overlayActive, overlayRequested } = useNativeDrawingOverlay({
+  const autoStopStartedRef = useRef(false);
+  const toggleVoiceRef = useRef<() => Promise<void>>(async () => undefined);
+  useEffect(() => {
+    let active = true;
+    void audio.recoverInterrupted().then(({ recordings }) => {
+      const recovered = recordings[0];
+      if (active && recovered) {
+        setRecording(recovered);
+        setNotice("An unfinished voice recording was recovered. Tap Voice to finalize and save it.");
+      }
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [audio]);
+
+  useEffect(() => {
+    if (recording?.state !== "recording") return;
+    const timer = window.setInterval(() => {
+      void audio.status().then(setRecording).catch(() => undefined);
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [audio, recording?.state]);
+
+  const { overlayActive, overlayRequested, suspendOverlay } = useNativeDrawingOverlay({
     documentId: page.drawingDocumentId,
-    enabled: hasNativePencilKit() && !penHudOpen,
+    enabled: hasNativePencilKit() && !penHudOpen && !calendarOpen && !textComposerOpen && !textComposerRequested,
     tool,
     color: penSettings.color,
+    nib: penSettings.nib,
     width: penSettings.width,
     opacity: penSettings.opacity,
+    fingerDrawing: penSettings.fingerDrawing !== false,
+    grid: drawingGrid,
     paperRef,
+    protectedHeaderRef: pageHeaderRef,
     toolPaletteRef,
     sketchRepository,
     onError: setNotice,
   });
+
+  const openTextComposerAboveSketch = async () => {
+    setTool("view");
+    setSelectedObjectId(undefined);
+    setTextComposerRequested(true);
+    const hidden = await suspendOverlay();
+    setTextComposerRequested(false);
+    if (hidden) {
+      setTextComposerOpen(true);
+    } else {
+      setNotice("The drawing is still saving. Try Text again in a moment.");
+    }
+  };
   const [sketchPreviewInsetTop, setSketchPreviewInsetTop] = useState(0);
 
   useEffect(() => {
@@ -331,6 +591,7 @@ export function PageWorkspace({
       const { contentInsetTop } = measureDrawingOverlayLayout(
         paper,
         toolPaletteRef.current,
+        pageHeaderRef.current,
       );
       setSketchPreviewInsetTop((current) =>
         Math.abs(current - contentInsetTop) < 0.5 ? current : contentInsetTop,
@@ -400,6 +661,18 @@ export function PageWorkspace({
     void commit(operation);
   };
 
+  const toggleObjectLayer = (object: Exclude<PageObject, TranscriptObject>) => {
+    void commit({
+      type: "page-object-update",
+      pageId: page.id,
+      object: {
+        ...object,
+        layer: object.layer === "behind-sketch" ? "above-sketch" : "behind-sketch",
+        revision: object.revision + 1,
+      },
+    });
+  };
+
   const deletePageObject = (
     object: Exclude<PageObject, TranscriptObject>,
   ) => {
@@ -463,49 +736,52 @@ export function PageWorkspace({
     void commit(operation);
   };
 
+  const redoDrawing = () => {
+    if (overlayActive) {
+      void redoNativeDrawingOverlay();
+    } else {
+      sketchRef.current?.redo();
+    }
+  };
+
   const handlePhoto = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) {
       return;
     }
+    if (photoCount >= MAX_PHOTOS_PER_PAGE) {
+      setNotice("This page already has the maximum of five photos.");
+      return;
+    }
 
     setNotice("Preparing the photo…");
     try {
       const asset = await browserFileToAsset(file);
-      const existingPhoto = page.objects.find(
-        (object) => object.type === "photo",
-      );
-      const operation: DocumentOperationInput = existingPhoto
-        ? {
-            type: "page-object-update",
-            pageId: page.id,
-            object: {
-              ...existingPhoto,
-              asset,
-              revision: existingPhoto.revision + 1,
-            },
-          }
-        : {
-            type: "page-object-add",
-            pageId: page.id,
-            object: {
-              id: createId(),
-              type: "photo",
-              pageId: page.id,
-              position: nextPosition(page),
-              frame: { width: 0.22, height: 0.3 },
-              createdAt: new Date().toISOString(),
-              revision: 0,
-              asset,
-              size: { width: 1200, height: 900 },
-              altText: file.name,
-            },
-          };
-      const saved = await commit(operation);
+      const photoId = createId();
+      const saved = await commit({
+        type: "page-object-add",
+        pageId: page.id,
+        object: {
+          id: photoId,
+          type: "photo",
+          pageId: page.id,
+          position: nextPosition(page),
+          frame: { width: 0.22, height: 0.3 },
+          createdAt: new Date().toISOString(),
+          revision: 0,
+          asset,
+          size: { width: 1200, height: 900 },
+          altText: file.name,
+        },
+      });
+      if (saved) {
+        setSelectedObjectId(photoId);
+        setTool("arrange");
+      }
       setNotice(
         saved
-          ? "Photo saved on this device."
+          ? "Photo added. Move or resize it now."
           : "The photo could not be saved.",
       );
     } catch {
@@ -514,27 +790,72 @@ export function PageWorkspace({
   };
 
   const addText = async () => {
+    const width = 0.42;
     const object: TextObject = {
       id: createId(),
       type: "text",
       pageId: page.id,
-      position: nextPosition(page),
-      frame: { width: 0.26, height: 0.18 },
+      position: { x: (1 - width) / 2, y: 0.3 },
+      frame: { width, height: 0.24 },
       createdAt: new Date().toISOString(),
       revision: 0,
-      text: "",
+      text: textDraft.text.trim(),
       textScale: 1,
+      textAlign: "left",
+      layer: "above-sketch",
     };
     const saved = await commit({
       type: "page-object-add",
       pageId: page.id,
       object,
     });
-    setNotice(
-      saved
-        ? "Text box added. Use the keyboard or Apple dictation."
-        : "The text box could not be added.",
-    );
+    if (saved) {
+      setTextComposerOpen(false);
+      setPlacingTextId(object.id);
+      setSelectedObjectId(object.id);
+      setTool("arrange");
+    } else setNotice("The text box could not be added.");
+  };
+
+  const toggleTextVoice = async () => {
+    if (textRecording?.state === "recording") {
+      setTextStatus("Turning your voice into text…");
+      try {
+        const stopped = await finalizeStoppedRecording(audio, files);
+        setTextRecording(stopped);
+        if (!stopped.asset) throw new Error("No recording asset");
+        const permission = await transcription.requestPermission();
+        if (!permission.granted) throw new Error("Speech permission denied");
+        const result = await transcription.transcribe({ recordingId: stopped.id, asset: stopped.asset, locale: "en-AU", contextualStrings: myWords.filter((word) => word.enabled).map((word) => word.text).slice(0, 100) });
+        setTextDraft((current) => {
+          const inserted = insertSpokenText(current.text, result.rawText, textSelectionRef.current);
+          textSelectionRef.current = { start: inserted.cursor, end: inserted.cursor };
+          return { ...current, text: inserted.text };
+        });
+        setTextStatus(result.rawText.trim() ? "Voice added. Check or edit your words." : "No words were recognised. Try again or use the keyboard.");
+        await files.removeToTrash({ assetId: stopped.asset.id }).catch(() => undefined);
+      } catch {
+        setTextStatus("Voice could not be turned into text. Try again or use the keyboard.");
+      } finally {
+        setTextRecording(undefined);
+      }
+      return;
+    }
+    try {
+      const started = await audio.start({ maximumDurationMs: recordingLimitMinutes === null ? undefined : recordingLimitMinutes * 60_000 });
+      setTextRecording(started);
+      setTextStatus("Listening… Tap again when you are finished.");
+    } catch {
+      setTextStatus("Microphone could not start. Check permission or use the keyboard.");
+    }
+  };
+
+  const finishTextPlacement = () => {
+    setPlacingTextId(undefined);
+    setSelectedObjectId(undefined);
+    setTool("view");
+    setTextDraft(EMPTY_TEXT_DRAFT);
+    textSelectionRef.current = { start: 0, end: 0 };
   };
 
   const addLink = async (url: string, title: string) => {
@@ -583,14 +904,78 @@ export function PageWorkspace({
     );
   };
 
-  const toggleVoice = async () => {
-    if (recording?.state === "recording") {
-      const stopped = await audio.stop();
-      setRecording(stopped);
-      if (!stopped.asset) {
-        setNotice("The demonstration recording could not be saved.");
+  const transcribeVoice = async (voice: VoiceRecordingObject) => {
+    const markStatus = (status: VoiceRecordingObject["transcriptionStatus"], revision: number) =>
+      commit({
+        type: "page-object-update",
+        pageId: page.id,
+        object: { ...voice, transcriptionStatus: status, revision },
+      });
+
+    try {
+      const permission = await transcription.requestPermission();
+      if (!permission.granted) {
+        await markStatus("failed", voice.revision + 1);
+        setNotice("Speech permission is off. Your original recording is still saved.");
         return;
       }
+      const transcribingRevision = voice.revision + 1;
+      if (!await markStatus("transcribing", transcribingRevision)) {
+        throw new Error("Transcription state could not be saved.");
+      }
+      const result = await transcription.transcribe({
+        recordingId: voice.id,
+        asset: voice.asset,
+        locale: "en-AU",
+        contextualStrings: myWords.filter((word) => word.enabled).map((word) => word.text).slice(0, 100),
+      });
+      if (!result.rawText.trim()) {
+        throw new Error("No speech was recognized.");
+      }
+      const transcriptSaved = await commit({
+        type: "page-object-add",
+        pageId: page.id,
+        object: {
+          id: createId(),
+          type: "transcript",
+          pageId: page.id,
+          position: {
+            x: voice.position.x,
+            y: Math.min(0.82, voice.position.y + 0.1),
+          },
+          createdAt: new Date().toISOString(),
+          revision: 0,
+          recordingId: voice.id,
+          rawText: result.rawText,
+          locale: result.locale,
+          engine: result.engine,
+          ...(result.segments ? { segments: result.segments } : {}),
+        },
+      });
+      if (!transcriptSaved) {
+        throw new Error("Transcript could not be saved.");
+      }
+      await markStatus("complete", transcribingRevision + 1);
+      setNotice("Recording and editable text saved on this device.");
+    } catch {
+      await markStatus("failed", voice.revision + 2).catch(() => false);
+      setNotice("Text could not be generated. Your original recording is still saved.");
+    }
+  };
+
+  const toggleVoice = async () => {
+    if (recording?.state === "recording" || recording?.state === "interrupted" || recording?.state === "finalising") {
+      let stopped: RecordingSnapshot;
+      try {
+        setRecording({ ...recording, state: "finalising" });
+        stopped = await finalizeStoppedRecording(audio, files);
+        setRecording(stopped);
+      } catch {
+        setRecording({ ...recording, state: "error", message: "The original recording could not be finalized." });
+        setNotice("The original recording is recoverable, but it was not added to the page because finalization failed.");
+        return;
+      }
+      if (!stopped.asset) return;
 
       const voice: VoiceRecordingObject = {
         id: stopped.id,
@@ -610,49 +995,57 @@ export function PageWorkspace({
         object: voice,
       });
       if (!voiceSaved) {
-        setNotice("The demonstration recording could not be saved.");
+        setNotice("The finalized recording could not be added to this page.");
         return;
       }
 
-      const result = await transcription.transcribe({
-        recordingId: voice.id,
-        asset: voice.asset,
-        locale: "en-AU",
-      });
-      await commit({
-        type: "page-object-add",
-        pageId: page.id,
-        object: {
-          id: createId(),
-          type: "transcript",
-          pageId: page.id,
-          position: {
-            x: voice.position.x,
-            y: Math.min(0.82, voice.position.y + 0.1),
-          },
-          createdAt: new Date().toISOString(),
-          revision: 0,
-          recordingId: voice.id,
-          rawText: result.rawText,
-          locale: result.locale,
-          engine: result.engine,
-        },
-      });
-      setNotice(
-        "Browser demonstration saved. No microphone audio was captured.",
-      );
+      setNotice("Original voice recording saved. Generating editable text…");
+      await transcribeVoice(voice);
       return;
     }
 
-    const started = await audio.start();
-    setRecording(started);
-    setNotice("Browser demonstration only. Tap Voice again to stop.");
+    let started: RecordingSnapshot;
+    try {
+      started = await audio.start({
+        maximumDurationMs: recordingLimitMinutes === null ? undefined : recordingLimitMinutes * 60_000,
+      });
+      setRecording(started);
+    } catch {
+      setNotice("Microphone recording could not start. Check microphone permission and available storage.");
+      return;
+    }
+    setNotice((audio as { isSimulation?: boolean }).isSimulation === true
+      ? "Browser demonstration only. Tap Voice again to stop."
+      : "Recording original audio on this device. Tap Voice again to save.");
   };
+  useEffect(() => {
+    toggleVoiceRef.current = toggleVoice;
+  });
+
+  useEffect(() => {
+    if (recording?.state === "finalising" && !autoStopStartedRef.current) {
+      autoStopStartedRef.current = true;
+      setNotice("The recording time limit was reached. Saving the recording…");
+      void toggleVoiceRef.current();
+      return;
+    }
+    if (recording?.state !== "recording" || recordingLimitMinutes === null) {
+      autoStopStartedRef.current = false;
+      return;
+    }
+    if (recording.elapsedMs >= recordingLimitMinutes * 60_000 && !autoStopStartedRef.current) {
+      autoStopStartedRef.current = true;
+      setNotice(`The ${recordingLimitMinutes}-minute limit was reached. Saving the recording…`);
+      void toggleVoiceRef.current();
+    }
+  }, [recording?.state, recording?.elapsedMs, recordingLimitMinutes]);
 
   const closePenSettings = () => {
     setPenHudOpen(false);
     if (
       penSettings.color !== penColor ||
+      penSettings.nib !== penNib ||
+      penSettings.profiles !== penNibProfiles ||
       Math.abs(penSettings.width - penWidth) > 0.001 ||
       Math.abs(penSettings.opacity - penOpacity) > 0.001
     ) {
@@ -660,8 +1053,11 @@ export function PageWorkspace({
         type: "settings-update",
         settings: {
           penColor: penSettings.color,
+          penNib: penSettings.nib ?? "pen",
+          ...(penSettings.profiles ? { penNibProfiles: penSettings.profiles } : {}),
           penWidth: penSettings.width,
           penOpacity: penSettings.opacity,
+          fingerDrawingEnabled: penSettings.fingerDrawing !== false,
         },
       });
     }
@@ -681,7 +1077,8 @@ export function PageWorkspace({
         aria-label="Page tools"
         ref={toolPaletteRef}
       >
-        <button
+        <div aria-label="View and arrange tools" className="tool-hud" role="group">
+          <button
           aria-pressed={tool === "view"}
           className={tool === "view" ? "tool selected" : "tool"}
           onClick={() => {
@@ -691,10 +1088,21 @@ export function PageWorkspace({
           }}
           type="button"
         >
-          <Hand aria-hidden="true" />
+          <Eye aria-hidden="true" />
           <span>View</span>
-        </button>
-        <button
+          </button>
+          <button
+            aria-pressed={tool === "arrange"}
+            className={tool === "arrange" ? "tool selected" : "tool"}
+            onClick={() => setTool("arrange")}
+            type="button"
+          >
+            <Move aria-hidden="true" />
+            <span>Arrange</span>
+          </button>
+        </div>
+        <div aria-label="Drawing tools" className="tool-hud" role="group">
+          <button
           aria-expanded={penHudOpen}
           aria-haspopup="dialog"
           aria-pressed={tool === "pen"}
@@ -719,8 +1127,8 @@ export function PageWorkspace({
             className="draw-colour-indicator"
             style={{ backgroundColor: penSettings.color }}
           />
-        </button>
-        <button
+          </button>
+          <button
           aria-pressed={tool === "eraser"}
           className={tool === "eraser" ? "tool selected" : "tool"}
           onClick={() => {
@@ -734,29 +1142,20 @@ export function PageWorkspace({
         >
           <Eraser aria-hidden="true" />
           <span>Erase</span>
-        </button>
-        <button
-          aria-pressed={tool === "arrange"}
-          className={tool === "arrange" ? "tool selected" : "tool"}
-          onClick={() => setTool("arrange")}
-          type="button"
-        >
-          <Move aria-hidden="true" />
-          <span>Arrange</span>
-        </button>
-        <button
+          </button>
+        </div>
+        <div aria-label="Media tools" className="tool-hud content-tool-hud" role="group">
+          <button
+          aria-label={photoCount >= MAX_PHOTOS_PER_PAGE ? "Photo limit reached" : "Photo"}
           className="tool"
+          disabled={photoCount >= MAX_PHOTOS_PER_PAGE}
           onClick={() => photoInputRef.current?.click()}
           type="button"
         >
           <ImagePlus aria-hidden="true" />
           <span>Photo</span>
-        </button>
-        <button className="tool" onClick={() => void addText()} type="button">
-          <Type aria-hidden="true" />
-          <span>Text</span>
-        </button>
-        <button
+          </button>
+          <button
           className="tool"
           onClick={() => {
             setLinkBeingEdited(undefined);
@@ -766,8 +1165,19 @@ export function PageWorkspace({
         >
           <LinkIcon aria-hidden="true" />
           <span>Link</span>
-        </button>
-        <button
+          </button>
+        </div>
+        <div aria-label="Text and voice tools" className="tool-hud text-voice-tool-hud" role="group">
+          <button className="tool" onClick={() => {
+            setTextDraft(EMPTY_TEXT_DRAFT);
+            textSelectionRef.current = { start: 0, end: 0 };
+            setTextStatus(undefined);
+            void openTextComposerAboveSketch();
+          }} type="button">
+            <Type aria-hidden="true" />
+            <span>Text</span>
+          </button>
+          <button
           aria-pressed={recording?.state === "recording"}
           className={
             recording?.state === "recording"
@@ -778,16 +1188,32 @@ export function PageWorkspace({
           type="button"
         >
           <Mic aria-hidden="true" />
-          <span>{recording?.state === "recording" ? "Stop demo" : "Voice"}</span>
-        </button>
-        <button
-          className="tool"
-          onClick={undoLastAction}
-          type="button"
-        >
-          <Undo2 aria-hidden="true" />
-          <span>Undo</span>
-        </button>
+          <span>{recording?.state === "recording" ? "Stop recording" : "Voice"}</span>
+          {recording?.state === "recording" ? (
+            <small>{Math.floor(recording.elapsedMs / 60_000)}:{String(Math.floor(recording.elapsedMs / 1_000) % 60).padStart(2, "0")}</small>
+          ) : null}
+          </button>
+        </div>
+        <div aria-label="History tools" className="tool-hud" role="group">
+          <button
+            className="tool"
+            disabled={tool !== "pen" && tool !== "eraser" && tool !== "arrange"}
+            onClick={undoLastAction}
+            type="button"
+          >
+            <Undo2 aria-hidden="true" />
+            <span>Undo</span>
+          </button>
+          <button
+            className="tool"
+            disabled={tool !== "pen" && tool !== "eraser"}
+            onClick={redoDrawing}
+            type="button"
+          >
+            <Redo2 aria-hidden="true" />
+            <span>Redo</span>
+          </button>
+        </div>
       </div>
 
       {penHudOpen ? (
@@ -799,10 +1225,17 @@ export function PageWorkspace({
             type="button"
           />
           <PenSettingsHud
+            grid={drawingGrid}
             onChange={setPenSettings}
             onDone={closePenSettings}
+            onGridChange={(grid) => {
+              void commit({
+                type: "page-drawing-grid-update",
+                pageId: page.id,
+                grid,
+              });
+            }}
             settings={penSettings}
-            simpleMode={simpleMode}
           />
         </>
       ) : null}
@@ -820,7 +1253,13 @@ export function PageWorkspace({
       <div
         className={`paper-page paper-${page.paperStyle}${
           tool === "pen" || tool === "eraser" ? " drawing-active" : ""
-        }`}
+        }${tool === "arrange" ? " arranging" : ""}`}
+        onClick={(event) => {
+          if (!placingTextId || !(event.target instanceof Element)) return;
+          const clickedObject = event.target.closest<HTMLElement>("[data-object-id]");
+          if (clickedObject?.dataset.objectId === placingTextId) return;
+          finishTextPlacement();
+        }}
         ref={paperRef}
       >
         <SketchSurface
@@ -835,7 +1274,7 @@ export function PageWorkspace({
               : {
                   kind: "ipad",
                   tools: ["pen", "eraser"],
-                  fingerDrawing: false,
+                  fingerDrawing: penSettings.fingerDrawing !== false,
                   pressure: true,
                 }
           }
@@ -846,8 +1285,10 @@ export function PageWorkspace({
           }
           onSaveHealthChange={onDrawingHealthChange}
           penColor={penSettings.color}
+          penNib={penSettings.nib ?? "pen"}
           penOpacity={penSettings.opacity}
           penWidth={penSettings.width}
+          grid={drawingGrid}
           ref={sketchRef}
           repository={sketchRepository}
           tool={tool === "eraser" ? "eraser" : "pen"}
@@ -859,7 +1300,7 @@ export function PageWorkspace({
           />
         )}
 
-        <header className="page-date">
+        <header className="page-date" ref={pageHeaderRef}>
           {context.kind === "sketchbook" ? (
             <button
               aria-label="Back to sketchbooks"
@@ -874,11 +1315,16 @@ export function PageWorkspace({
             <DiaryCalendar
               entryDates={entryDates}
               onOpen={onRefreshEntryDates}
+              onOpenChange={setCalendarOpen}
               onSelectDate={onSelectDate}
               selectedDate={context.date}
             />
           ) : null}
           <p>{heading}</p>
+          {context.kind === "diary" &&
+          context.date === localDateKey(new Date()) ? (
+            <span className="today-diary-entry">TODAY</span>
+          ) : null}
           {context.kind === "diary" &&
           context.date !== localDateKey(new Date()) ? (
             <span className="earlier-diary-entry">EARLIER DIARY ENTRY</span>
@@ -895,8 +1341,9 @@ export function PageWorkspace({
             }
             aria-pressed={context.favourite}
             className="page-favourite"
-            onClick={() =>
-              void commit({
+            onClick={() => void (async () => {
+              const adding = !context.favourite;
+              const saved = await commit({
                 type: "favourite-set",
                 targetType:
                   context.kind === "diary" ? "journal-day" : "page",
@@ -904,14 +1351,14 @@ export function PageWorkspace({
                   context.kind === "diary"
                     ? context.journalDayId
                     : page.id,
-                favourite: !context.favourite,
-              })
-            }
+                favourite: adding,
+              });
+              if (saved) setFavouriteConfirmation(adding ? "Added to Your Favourites" : "Removed from Your Favourites");
+            })()}
             type="button"
           >
-            <Star
+            <ThumbsUp
               aria-hidden="true"
-              fill={context.favourite ? "currentColor" : "none"}
             />
           </button>
         </header>
@@ -930,6 +1377,7 @@ export function PageWorkspace({
                   deleteDescription={deletionDescription(object, transcript)}
                   frame={defaultObjectFrame(object)}
                   key={object.id}
+                  layer={object.layer ?? "above-sketch"}
                   objectLabel="text block"
                   objectId={object.id}
                   onCommit={(change) =>
@@ -937,18 +1385,38 @@ export function PageWorkspace({
                   }
                   onDelete={() => deletePageObject(object)}
                   onSelect={() => setSelectedObjectId(object.id)}
+                  onToggleLayer={() => toggleObjectLayer(object)}
                   pageRef={paperRef}
                   position={object.position}
                   selected={selectedObjectId === object.id}
-                  showShortcuts={!simpleMode}
+                  showShortcuts={false}
                 >
                   <AudioCard
                     disabled={tool === "arrange"}
+                    audio={audio}
+                    onRetryTranscription={(object.transcriptionStatus === "failed" ||
+                      object.transcriptionStatus === "pending") && !transcript
+                      ? () => void transcribeVoice(object)
+                      : undefined}
                     recording={object}
                   />
                   {transcript ? (
                     <TranscriptEditor
+                      assetUri={object.asset.localUri}
+                      audio={audio}
                       onSave={updateObject}
+                      onSuggestMyWord={(text) => {
+                        const existing = myWords.find((word) => word.text.toLocaleLowerCase() === text.toLocaleLowerCase());
+                        void commit({
+                          type: "settings-update",
+                          settings: { myWords: existing
+                            ? myWords.map((word) => word.id === existing.id
+                              ? { ...word, enabled: true, correctionCount: word.correctionCount + 1 }
+                              : word)
+                            : [...myWords, { id: createId(), text, enabled: true, correctionCount: 1 }] },
+                        });
+                        setNotice(`“${text}” was added to My Words.`);
+                      }}
                       readOnly={tool === "arrange"}
                       transcript={transcript}
                     />
@@ -964,6 +1432,7 @@ export function PageWorkspace({
                   deleteDescription={deletionDescription(object)}
                   frame={defaultObjectFrame(object)}
                   key={object.id}
+                  layer={object.layer ?? "above-sketch"}
                   objectLabel="image"
                   objectId={object.id}
                   onCommit={(change) =>
@@ -971,10 +1440,11 @@ export function PageWorkspace({
                   }
                   onDelete={() => deletePageObject(object)}
                   onSelect={() => setSelectedObjectId(object.id)}
+                  onToggleLayer={() => toggleObjectLayer(object)}
                   pageRef={paperRef}
                   position={object.position}
                   selected={selectedObjectId === object.id}
-                  showShortcuts={!simpleMode}
+                  showShortcuts={false}
                 >
                   {object.asset.localUri === "demo://garden-flowers" ? (
                     <FlowerPhoto />
@@ -994,6 +1464,7 @@ export function PageWorkspace({
                   deleteDescription={deletionDescription(object)}
                   frame={defaultObjectFrame(object)}
                   key={object.id}
+                  layer={object.layer ?? "above-sketch"}
                   objectLabel="text block"
                   objectId={object.id}
                   onCommit={(change) =>
@@ -1001,10 +1472,11 @@ export function PageWorkspace({
                   }
                   onDelete={() => deletePageObject(object)}
                   onSelect={() => setSelectedObjectId(object.id)}
+                  onToggleLayer={() => toggleObjectLayer(object)}
                   pageRef={paperRef}
                   position={object.position}
                   selected={selectedObjectId === object.id}
-                  showShortcuts={!simpleMode}
+                  showShortcuts={false}
                 >
                   <TextCard
                     object={object}
@@ -1021,6 +1493,7 @@ export function PageWorkspace({
                   deleteDescription={deletionDescription(object)}
                   frame={defaultObjectFrame(object)}
                   key={object.id}
+                  layer={object.layer ?? "above-sketch"}
                   objectLabel="text block"
                   objectId={object.id}
                   onCommit={(change) =>
@@ -1028,10 +1501,11 @@ export function PageWorkspace({
                   }
                   onDelete={() => deletePageObject(object)}
                   onSelect={() => setSelectedObjectId(object.id)}
+                  onToggleLayer={() => toggleObjectLayer(object)}
                   pageRef={paperRef}
                   position={object.position}
                   selected={selectedObjectId === object.id}
-                  showShortcuts={!simpleMode}
+                  showShortcuts={false}
                 >
                   {tool === "arrange" ? (
                     <div className="link-object">
@@ -1089,6 +1563,12 @@ export function PageWorkspace({
           />
         ) : null}
 
+        {textComposerOpen ? (
+          <TextComposer draft={textDraft} recording={textRecording?.state === "recording"} selectionRef={textSelectionRef} status={textStatus} onCancel={() => { setTextComposerOpen(false); setTextDraft(EMPTY_TEXT_DRAFT); textSelectionRef.current = { start: 0, end: 0 }; setTextStatus(undefined); }} onChange={setTextDraft} onSubmit={() => void addText()} onToggleVoice={() => void toggleTextVoice()} />
+        ) : null}
+
+        <FavouriteConfirmation message={favouriteConfirmation} onDone={() => setFavouriteConfirmation(undefined)} />
+
         {notice ? (
           <button
             className="notice"
@@ -1099,18 +1579,13 @@ export function PageWorkspace({
           </button>
         ) : null}
 
-        <div aria-live="polite" className={`save-status ${health.localDurability}`}>
-          {health.localDurability === "saving" ? (
-            "Saving on this device…"
-          ) : health.localDurability === "error" ? (
-            "Could not save on this device"
-          ) : (
-            <>
-              <Check aria-hidden="true" />
-              Saved on this device
-            </>
-          )}
-        </div>
+        {health.localDurability === "saving" || health.localDurability === "error" ? (
+          <div aria-live="polite" className={`save-status ${health.localDurability}`}>
+            {health.localDurability === "saving"
+              ? "Saving on this device…"
+              : "Could not save on this device"}
+          </div>
+        ) : null}
       </div>
       <DiaryPageStrip
         activePageId={page.id}
@@ -1125,7 +1600,10 @@ export function PageWorkspace({
             ? "Pages in today’s diary"
             : `Pages in ${context.sketchbook.name}`
         }
+        collectionType={context.kind === "diary" ? "journal" : "sketchbook"}
+        displayName={displayName}
         onAddPage={onAddPage}
+        onDeletePage={onDeletePage}
         onReorderPages={onReorderPages}
         onSelectPage={onSelectPage}
         pages={pages}

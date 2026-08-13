@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import type { SaveHealth } from "../domain/models";
+import type { DrawingGridSettings } from "../domain/models";
 import { createId } from "../utils/id";
 import {
   distance,
@@ -17,6 +18,7 @@ import {
   shouldAppendSample,
 } from "./geometry";
 import { drawStroke, renderDocument } from "./renderer";
+import { drawGrid, gridAxisForSample, snapSampleToGrid } from "./gridGeometry";
 import type {
   PencilSample,
   SketchCapabilityProfile,
@@ -25,6 +27,7 @@ import type {
   SketchStroke,
   SketchSurfaceError,
   SketchTool,
+  PenNib,
 } from "./types";
 
 type HistoryEntry =
@@ -33,13 +36,16 @@ type HistoryEntry =
 
 export interface SketchSurfaceHandle {
   exportPreviewDataUrl(): string | undefined;
+  redo(): void;
   undo(): void;
 }
 
 type SketchSurfaceProps = {
   capabilities: SketchCapabilityProfile;
   documentId: string;
+  grid?: DrawingGridSettings;
   penColor: string;
+  penNib?: PenNib;
   penWidth: number;
   penOpacity?: number;
   repository: SketchRepository;
@@ -93,7 +99,9 @@ function SketchSurfaceComponent(
   {
     capabilities,
     documentId,
+    grid,
     penColor,
+    penNib = "pen",
     penWidth,
     penOpacity = 1,
     repository,
@@ -110,8 +118,10 @@ function SketchSurfaceComponent(
   const documentRef = useRef<SketchDocument | undefined>(undefined);
   const activeStrokeRef = useRef<SketchStroke | undefined>(undefined);
   const activePointerRef = useRef<number | undefined>(undefined);
+  const activeGridAxisRef = useRef<"horizontal" | "vertical" | undefined>(undefined);
   const frameRef = useRef<number | undefined>(undefined);
   const historyRef = useRef<HistoryEntry[]>([]);
+  const redoHistoryRef = useRef<HistoryEntry[]>([]);
   const onErrorRef = useRef(onError);
   const [loading, setLoading] = useState(true);
 
@@ -183,10 +193,13 @@ function SketchSurfaceComponent(
     }
 
     context.clearRect(0, 0, document.size.width, document.size.height);
+    if (grid) {
+      drawGrid(context, document.size.width, document.size.height, grid);
+    }
     if (activeStrokeRef.current) {
       drawStroke(context, activeStrokeRef.current);
     }
-  }, [configureContext]);
+  }, [configureContext, grid]);
 
   const scheduleSceneRender = useCallback(() => {
     if (frameRef.current !== undefined) {
@@ -199,6 +212,10 @@ function SketchSurfaceComponent(
       renderLiveStroke();
     });
   }, [renderLiveStroke, renderScene]);
+
+  useEffect(() => {
+    scheduleSceneRender();
+  }, [grid, scheduleSceneRender]);
 
   const persist = useCallback(
     async (document: SketchDocument) => {
@@ -252,6 +269,24 @@ function SketchSurfaceComponent(
       }
     }
 
+    redoHistoryRef.current.push(entry);
+
+    replaceDocument({
+      ...document,
+      strokes,
+      revision: document.revision + 1,
+    });
+  }, [replaceDocument]);
+
+  const redo = useCallback(() => {
+    const document = documentRef.current;
+    const entry = redoHistoryRef.current.pop();
+    if (!document || !entry) return;
+
+    const strokes = entry.type === "stroke-add"
+      ? [...document.strokes, entry.stroke]
+      : document.strokes.filter((stroke) => stroke.id !== entry.stroke.id);
+    historyRef.current.push(entry);
     replaceDocument({
       ...document,
       strokes,
@@ -266,8 +301,8 @@ function SketchSurfaceComponent(
 
   useImperativeHandle(
     ref,
-    () => ({ exportPreviewDataUrl, undo }),
-    [exportPreviewDataUrl, undo],
+    () => ({ exportPreviewDataUrl, redo, undo }),
+    [exportPreviewDataUrl, redo, undo],
   );
 
   useEffect(() => {
@@ -279,6 +314,8 @@ function SketchSurfaceComponent(
           return;
         }
         documentRef.current = document;
+        historyRef.current = [];
+        redoHistoryRef.current = [];
         setLoading(false);
         scheduleSceneRender();
         onSaveHealthChange?.({
@@ -354,6 +391,7 @@ function SketchSurfaceComponent(
           continue;
         }
         historyRef.current.push({ type: "stroke-delete", stroke, index });
+        redoHistoryRef.current = [];
         onMutation?.();
         replaceDocument({
           ...document,
@@ -396,10 +434,12 @@ function SketchSurfaceComponent(
         tool: "pen",
         points: [point],
         color: penColor,
+        nib: penNib,
         width: penWidth,
         opacity: penOpacity,
         createdAt: new Date().toISOString(),
       };
+      activeGridAxisRef.current = undefined;
       renderLiveStroke();
     },
     [
@@ -407,6 +447,7 @@ function SketchSurfaceComponent(
       inputAllowed,
       loading,
       penColor,
+      penNib,
       penOpacity,
       penWidth,
       renderLiveStroke,
@@ -443,14 +484,40 @@ function SketchSurfaceComponent(
         return;
       }
       for (const sampleEvent of events) {
-        const sample = sampleFromEvent(sampleEvent, canvas, document);
+        let sample = sampleFromEvent(sampleEvent, canvas, document);
+        const start = active.points[0];
+        if (grid?.enabled && start) {
+          if (!activeGridAxisRef.current && distance(start, sample) >= 8) {
+            activeGridAxisRef.current = gridAxisForSample(
+              sample,
+              start,
+              grid.rotationDegrees,
+            );
+            active.points = active.points.map((point) =>
+              snapSampleToGrid(
+                point,
+                start,
+                grid,
+                activeGridAxisRef.current,
+              ),
+            );
+          }
+          if (activeGridAxisRef.current) {
+            sample = snapSampleToGrid(
+              sample,
+              start,
+              grid,
+              activeGridAxisRef.current,
+            );
+          }
+        }
         if (shouldAppendSample(active.points.at(-1), sample)) {
           active.points.push(sample);
         }
       }
       renderLiveStroke();
     },
-    [eraseAt, renderLiveStroke, tool],
+    [eraseAt, grid, renderLiveStroke, tool],
   );
 
   const finishPointer = useCallback(
@@ -464,7 +531,16 @@ function SketchSurfaceComponent(
       const canvas = liveCanvasRef.current;
       const previous = active?.points.at(-1);
       if (!cancelled && active && document && canvas && previous) {
-        const released = sampleFromEvent(event, canvas, document);
+        let released = sampleFromEvent(event, canvas, document);
+        const start = active.points[0];
+        if (grid?.enabled && start && activeGridAxisRef.current) {
+          released = snapSampleToGrid(
+            released,
+            start,
+            grid,
+            activeGridAxisRef.current,
+          );
+        }
         if (distance(previous, released) >= 0.1) {
           active.points.push({
             ...released,
@@ -476,6 +552,7 @@ function SketchSurfaceComponent(
 
       activePointerRef.current = undefined;
       activeStrokeRef.current = undefined;
+      activeGridAxisRef.current = undefined;
       renderLiveStroke();
 
       if (!document || !active || active.points.length === 0) {
@@ -490,6 +567,7 @@ function SketchSurfaceComponent(
       }
 
       historyRef.current.push({ type: "stroke-add", stroke: active });
+      redoHistoryRef.current = [];
       onMutation?.();
       replaceDocument({
         ...document,
@@ -497,7 +575,7 @@ function SketchSurfaceComponent(
         revision: document.revision + 1,
       });
     },
-    [onError, onMutation, renderLiveStroke, replaceDocument],
+    [grid, onError, onMutation, renderLiveStroke, replaceDocument],
   );
 
   useEffect(() => {

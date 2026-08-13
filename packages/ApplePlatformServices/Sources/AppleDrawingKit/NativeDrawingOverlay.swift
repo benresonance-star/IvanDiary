@@ -1,3 +1,4 @@
+#if canImport(UIKit)
 import PencilKit
 import UIKit
 
@@ -5,11 +6,17 @@ import UIKit
 public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
     public private(set) var documentID: String?
     public private(set) var isPresented = false
+    public var onDrawingChanged: ((String) -> Void)?
 
     private let canvasView = PKCanvasView()
+    private let gridInputView = GridStrokeInputView()
     private let store: any PencilDrawingStore
     private var color: UIColor = .label
     private var width: CGFloat = 4
+    private var grid: DrawingGridSettings = .off
+    private var selectedTool: NativeDrawingTool = .pen
+    private var selectedNib: NativeDrawingNib = .pen
+    private var fingerDrawing = true
     private var loadError: Error?
     private var pendingSave: Task<Void, Never>?
     private var persistenceError: Error?
@@ -37,12 +44,22 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         canvasView.drawingPolicy = .anyInput
         canvasView.delegate = self
         addSubview(canvasView)
+        gridInputView.translatesAutoresizingMaskIntoConstraints = false
+        gridInputView.isUserInteractionEnabled = false
+        addSubview(gridInputView)
         NSLayoutConstraint.activate([
             canvasView.leadingAnchor.constraint(equalTo: leadingAnchor),
             canvasView.trailingAnchor.constraint(equalTo: trailingAnchor),
             canvasView.topAnchor.constraint(equalTo: topAnchor),
-            canvasView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            canvasView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            gridInputView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            gridInputView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            gridInputView.topAnchor.constraint(equalTo: topAnchor),
+            gridInputView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
+        gridInputView.onStroke = { [weak self] points in
+            self?.commitGridStroke(points)
+        }
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(saveForBackground(_:)),
@@ -65,8 +82,12 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         documentID: String,
         color: UIColor,
         width: CGFloat,
+        nib: NativeDrawingNib = .pen,
+        fingerDrawing: Bool = true,
         tool: NativeDrawingTool,
+        grid: DrawingGridSettings = .off,
         frame: CGRect,
+        clipToCircle: Bool = false,
         legacyInk: LegacyInkDocument? = nil
     ) throws -> Bool {
         pendingSave?.cancel()
@@ -77,8 +98,14 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         self.documentID = documentID
         self.color = color
         self.width = width
+        self.selectedNib = nib
+        self.fingerDrawing = fingerDrawing
+        canvasView.drawingPolicy = fingerDrawing ? .anyInput : .pencilOnly
+        self.grid = grid
+        updateGridInput()
         self.frame = frame
         layoutIfNeeded()
+        applyClipping(circle: clipToCircle)
         apply(tool: tool)
         if !isPresented || previousDocumentID != documentID {
             try loadDrawing(documentID: documentID)
@@ -110,8 +137,12 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
     public func update(
         color: UIColor?,
         width: CGFloat?,
+        nib: NativeDrawingNib? = nil,
+        fingerDrawing: Bool? = nil,
         tool: NativeDrawingTool?,
-        frame: CGRect?
+        grid: DrawingGridSettings? = nil,
+        frame: CGRect?,
+        clipToCircle: Bool? = nil
     ) {
         if let color {
             self.color = color
@@ -119,8 +150,23 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         if let width {
             self.width = width
         }
+        if let nib {
+            self.selectedNib = nib
+        }
+        if let fingerDrawing {
+            self.fingerDrawing = fingerDrawing
+            canvasView.drawingPolicy = fingerDrawing ? .anyInput : .pencilOnly
+        }
+        if let grid {
+            self.grid = grid
+            updateGridInput()
+        }
         if let frame {
             self.frame = frame
+            layoutIfNeeded()
+        }
+        if let clipToCircle {
+            applyClipping(circle: clipToCircle)
         }
         if let tool {
             apply(tool: tool)
@@ -159,8 +205,30 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         return try saveDrawing()
     }
 
+    public func clearDrawing() throws -> PencilDrawingPreview? {
+        pendingSave?.cancel()
+        guard isPresented else {
+            return nil
+        }
+        if loadError != nil {
+            throw DrawingPersistenceError.loadFailed
+        }
+        canvasView.drawing = PKDrawing()
+        if let documentID { onDrawingChanged?(documentID) }
+        return try saveDrawing()
+    }
+
     public func undo() {
         canvasView.undoManager?.undo()
+    }
+
+    public func redo() {
+        canvasView.undoManager?.redo()
+    }
+
+    private func applyClipping(circle: Bool) {
+        clipsToBounds = circle
+        layer.cornerRadius = circle ? min(bounds.width, bounds.height) / 2 : 0
     }
 
     public func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
@@ -174,17 +242,45 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         }
     }
 
+    public func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+        if let documentID { onDrawingChanged?(documentID) }
+    }
+
     private func apply(tool: NativeDrawingTool) {
+        selectedTool = tool
+        updateGridInput()
         switch tool {
         case .pen:
             canvasView.tool = PKInkingTool(
-                .pen,
+                selectedNib.inkType,
                 color: PencilInkColor.forLightPaper(color),
                 width: width
             )
         case .eraser:
             canvasView.tool = PKEraserTool(.vector)
         }
+    }
+
+    private func updateGridInput() {
+        gridInputView.grid = DrawingGridSettings(
+            enabled: grid.enabled && selectedTool == .pen,
+            spacing: grid.spacing,
+            rotationDegrees: grid.rotationDegrees,
+            origin: grid.origin,
+            pageSize: grid.pageSize
+        )
+        gridInputView.inkColor = PencilInkColor.forLightPaper(color)
+        gridInputView.inkWidth = width
+    }
+
+    private func commitGridStroke(_ points: [PKStrokePoint]) {
+        guard !points.isEmpty else { return }
+        let stroke = PKStroke(
+            ink: PKInk(selectedNib.inkType, color: PencilInkColor.forLightPaper(color)),
+            path: PKStrokePath(controlPoints: points, creationDate: Date())
+        )
+        canvasView.drawing = PKDrawing(strokes: canvasView.drawing.strokes + [stroke])
+        if let documentID { onDrawingChanged?(documentID) }
     }
 
     private func loadDrawing(documentID: String) throws {
@@ -250,3 +346,4 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         saveAndRememberFailure()
     }
 }
+#endif

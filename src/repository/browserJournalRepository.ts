@@ -145,4 +145,22 @@ export class BrowserJournalRepository implements JournalRepository {
       );
     }
   }
+
+  async replace(snapshot: JournalSnapshot): Promise<JournalCommitResult> {
+    const instance = await developmentDatabase();
+    const restored = migrateJournalSnapshot(snapshot);
+    const transaction = instance.transaction(
+      ["journalSnapshots", "journalBaselines", "journalOperations"],
+      "readwrite",
+    );
+    await transaction.objectStore("journalSnapshots").put(restored);
+    await transaction.objectStore("journalBaselines").put(restored);
+    const operations = await transaction.objectStore("journalOperations").index("by-journal").getAllKeys(restored.id);
+    await Promise.all(operations.map((key) => transaction.objectStore("journalOperations").delete(key)));
+    await transaction.done;
+    return {
+      snapshot: restored,
+      health: { localDurability: "saved", remoteSync: "synced", durableRevision: restored.revision, pendingOperationCount: 0 },
+    };
+  }
 }

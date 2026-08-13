@@ -15,11 +15,13 @@ describe("ArrangeablePageObject", () => {
           className="page-object"
           deleteDescription="Remember this"
           frame={{ width: 0.3, height: 0.2 }}
+          layer="above-sketch"
           objectLabel="text block"
           objectId="text-one"
           onCommit={onCommit}
           onDelete={vi.fn()}
           onSelect={vi.fn()}
+          onToggleLayer={vi.fn()}
           pageRef={pageRef}
           position={{ x: 0.2, y: 0.3 }}
           selected
@@ -51,11 +53,13 @@ describe("ArrangeablePageObject", () => {
           className="page-object"
           deleteDescription="Remember this"
           frame={{ width: 0.3, height: 0.2 }}
+          layer="above-sketch"
           objectLabel="text block"
           objectId="text-one"
           onCommit={onCommit}
           onDelete={vi.fn()}
           onSelect={vi.fn()}
+          onToggleLayer={vi.fn()}
           pageRef={pageRef}
           position={{ x: 0.2, y: 0.3 }}
           selected
@@ -78,7 +82,7 @@ describe("ArrangeablePageObject", () => {
     );
   });
 
-  it("hides shortcut buttons in simple mode", () => {
+  it("can hide the small shortcut buttons", () => {
     const pageRef = createRef<HTMLDivElement>();
     render(
       <div ref={pageRef}>
@@ -87,11 +91,13 @@ describe("ArrangeablePageObject", () => {
           className="page-object"
           deleteDescription="holiday.jpg"
           frame={{ width: 0.3, height: 0.2 }}
+          layer="above-sketch"
           objectLabel="image"
           objectId="image-one"
           onCommit={vi.fn()}
           onDelete={vi.fn()}
           onSelect={vi.fn()}
+          onToggleLayer={vi.fn()}
           pageRef={pageRef}
           position={{ x: 0.2, y: 0.3 }}
           selected
@@ -110,6 +116,39 @@ describe("ArrangeablePageObject", () => {
     ).toBeInTheDocument();
   });
 
+  it("toggles an object's position in front of or behind the sketch", () => {
+    const pageRef = createRef<HTMLDivElement>();
+    const onToggleLayer = vi.fn();
+    render(
+      <div ref={pageRef}>
+        <ArrangeablePageObject
+          arrange
+          className="page-object"
+          deleteDescription="holiday.jpg"
+          frame={{ width: 0.3, height: 0.2 }}
+          layer="above-sketch"
+          objectLabel="image"
+          objectId="image-one"
+          onCommit={vi.fn()}
+          onDelete={vi.fn()}
+          onSelect={vi.fn()}
+          onToggleLayer={onToggleLayer}
+          pageRef={pageRef}
+          position={{ x: 0.2, y: 0.3 }}
+          selected
+          showShortcuts={false}
+        >
+          <span>Image</span>
+        </ArrangeablePageObject>
+      </div>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move behind sketch: image" }),
+    );
+    expect(onToggleLayer).toHaveBeenCalledOnce();
+  });
+
   it("confirms deletion using the object's content", () => {
     const pageRef = createRef<HTMLDivElement>();
     const onDelete = vi.fn();
@@ -120,11 +159,13 @@ describe("ArrangeablePageObject", () => {
           className="page-object"
           deleteDescription="A day at the beach"
           frame={{ width: 0.3, height: 0.2 }}
+          layer="above-sketch"
           objectLabel="text block"
           objectId="text-one"
           onCommit={vi.fn()}
           onDelete={onDelete}
           onSelect={vi.fn()}
+          onToggleLayer={vi.fn()}
           pageRef={pageRef}
           position={{ x: 0.2, y: 0.3 }}
           selected

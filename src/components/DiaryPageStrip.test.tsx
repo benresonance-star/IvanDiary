@@ -22,11 +22,13 @@ function pages(): Page[] {
 
 describe("DiaryPageStrip", () => {
   it("shows ordered visual pages and exposes the current page", () => {
-    render(
+    const { container } = render(
       <DiaryPageStrip
         activePageId="page-two"
         arrange={false}
+        displayName="Ivan"
         onAddPage={vi.fn()}
+        onDeletePage={vi.fn()}
         onReorderPages={vi.fn()}
         onSelectPage={vi.fn()}
         pages={pages()}
@@ -40,16 +42,50 @@ describe("DiaryPageStrip", () => {
       screen.getByRole("button", { name: "Open page 2" }),
     ).toHaveAttribute("aria-current", "page");
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(container.querySelector(".page-preview-object")).not.toBeInTheDocument();
+    expect(container.querySelector(".sketch-thumbnail")).not.toBeInTheDocument();
+  });
+
+  it("limits a journal or sketchbook strip to ten pages", () => {
+    const onAddPage = vi.fn();
+    const first = pages()[0]!;
+    const tenPages = Array.from({ length: 10 }, (_, index) => ({
+      ...first,
+      id: `page-${index + 1}`,
+      drawingDocumentId: `drawing-${index + 1}`,
+    }));
+
+    render(
+      <DiaryPageStrip
+        activePageId="page-1"
+        arrange={false}
+        displayName="Ivan"
+        onAddPage={onAddPage}
+        onDeletePage={vi.fn()}
+        onReorderPages={vi.fn()}
+        onSelectPage={vi.fn()}
+        pages={tenPages}
+      />,
+    );
+
+    const addButton = screen.getByRole("button", {
+      name: "Maximum of 10 pages reached",
+    });
+    expect(addButton).toBeDisabled();
+    fireEvent.click(addButton);
+    expect(onAddPage).not.toHaveBeenCalled();
   });
 
   it("selects pages and requests another page", () => {
-    const onAddPage = vi.fn();
+    const onAddPage = vi.fn().mockResolvedValue(true);
     const onSelectPage = vi.fn();
     render(
       <DiaryPageStrip
         activePageId={pages()[0]!.id}
         arrange={false}
+        displayName="Ivan"
         onAddPage={onAddPage}
+        onDeletePage={vi.fn()}
         onReorderPages={vi.fn()}
         onSelectPage={onSelectPage}
         pages={pages()}
@@ -65,6 +101,35 @@ describe("DiaryPageStrip", () => {
     expect(onAddPage).toHaveBeenCalledOnce();
   });
 
+  it("warns by name when the tenth page is added", async () => {
+    const first = pages()[0]!;
+    const ninePages = Array.from({ length: 9 }, (_, index) => ({
+      ...first,
+      id: `page-${index + 1}`,
+      drawingDocumentId: `drawing-${index + 1}`,
+    }));
+
+    render(
+      <DiaryPageStrip
+        activePageId="page-1"
+        arrange={false}
+        collectionType="sketchbook"
+        displayName="Ivan"
+        onAddPage={vi.fn().mockResolvedValue(true)}
+        onDeletePage={vi.fn()}
+        onReorderPages={vi.fn()}
+        onSelectPage={vi.fn()}
+        pages={ninePages}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add another diary page" }));
+
+    expect(await screen.findByRole("alertdialog", { name: "Last page" })).toHaveTextContent(
+      "Hey Ivan this is the last page we can fit on this sketchbook",
+    );
+  });
+
   it("reorders thumbnails with accessible controls in Arrange mode", () => {
     const onReorderPages = vi.fn().mockResolvedValue(true);
     const journalPages = pages();
@@ -72,7 +137,9 @@ describe("DiaryPageStrip", () => {
       <DiaryPageStrip
         activePageId={journalPages[0]!.id}
         arrange
+        displayName="Ivan"
         onAddPage={vi.fn()}
+        onDeletePage={vi.fn()}
         onReorderPages={onReorderPages}
         onSelectPage={vi.fn()}
         pages={journalPages}
@@ -105,7 +172,9 @@ describe("DiaryPageStrip", () => {
       <DiaryPageStrip
         activePageId={journalPages[0]!.id}
         arrange
+        displayName="Ivan"
         onAddPage={vi.fn()}
+        onDeletePage={vi.fn()}
         onReorderPages={onReorderPages}
         onSelectPage={vi.fn()}
         pages={journalPages}
@@ -131,5 +200,26 @@ describe("DiaryPageStrip", () => {
       "page-two",
       journalPages[0]!.id,
     ]);
+  });
+
+  it("confirms page deletion from the bottom-left Arrange control", () => {
+    const onDeletePage = vi.fn().mockResolvedValue(true);
+    render(
+      <DiaryPageStrip
+        activePageId={pages()[0]!.id}
+        arrange
+        displayName="Ivan"
+        onAddPage={vi.fn()}
+        onDeletePage={onDeletePage}
+        onReorderPages={vi.fn()}
+        onSelectPage={vi.fn()}
+        pages={pages()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete page 2" }));
+    expect(screen.getByRole("alertdialog", { name: "Delete this page?" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete page" }));
+    expect(onDeletePage).toHaveBeenCalledWith("page-two");
   });
 });

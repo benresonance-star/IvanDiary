@@ -29,16 +29,33 @@ describe("journal migrations", () => {
     const migrated = migrateJournalSnapshot(legacy);
     expect(migrated.schemaVersion).toBe(1);
     expect(migrated.settings).toEqual({
-      simpleMode: true,
+      displayName: "Ivan",
+      lastSettingsTab: "about",
       textScale: "standard",
       contrast: "warm",
       reducedMotion: false,
       penColor: "#171410",
       penWidth: 4.2,
       penOpacity: 1,
+      fingerDrawingEnabled: true,
+      favouritePenColours: [
+        "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
+        "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
+      ],
+      penNib: "pen",
+      penNibProfiles: {
+        pen: { color: "#171410", width: 4.2, opacity: 1 },
+        marker: { color: "#171410", width: 4.2, opacity: 1 },
+        pencil: { color: "#171410", width: 4.2, opacity: 1 },
+        brush: { color: "#171410", width: 4.2, opacity: 1 },
+      },
       welcomeGreeting: "Welcome back Ivan!",
       welcomeTagline: "It's a Wonderful World!",
       welcomeMessage: "",
+      recordingLimitMinutes: 5,
+      automaticBackup: true,
+      backupOnWifiOnly: true,
+      myWords: [],
     });
     expect(migrated.favourites).toEqual([]);
     expect(
@@ -52,6 +69,16 @@ describe("journal migrations", () => {
     expect(() =>
       migrateJournalSnapshot({ ...current, schemaVersion: 99 }),
     ).toThrow(JournalMigrationError);
+  });
+
+  it("moves the retired text-size tab to Appearance", () => {
+    const current = createInitialJournalSnapshot();
+    const migrated = migrateJournalSnapshot({
+      ...current,
+      settings: { ...current.settings, lastSettingsTab: "text" },
+    });
+
+    expect(migrated.settings.lastSettingsTab).toBe("appearance");
   });
 
 });

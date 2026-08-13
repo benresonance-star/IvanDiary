@@ -11,6 +11,7 @@ import type { Favourite } from "../domain/models";
 import {
   BrowserAppleTranscriptionMock,
   BrowserJournalAudioMock,
+  BrowserJournalFilesMock,
 } from "../native/browserMocks";
 import { BrowserSketchRepository } from "../repository/browserSketchRepository";
 import {
@@ -34,6 +35,7 @@ describe("FavouritesView", () => {
     const onOpenFavourite = vi.fn();
     const { container } = render(
       <FavouritesView
+        commit={vi.fn()}
         onOpenFavourite={onOpenFavourite}
         sketchRepository={new BrowserSketchRepository()}
         snapshot={{ ...snapshot, favourites: [favourite] }}
@@ -50,6 +52,43 @@ describe("FavouritesView", () => {
     );
     expect(onOpenFavourite).toHaveBeenCalledWith(favourite);
   });
+
+  it("removes a favourite through Arrange mode after confirmation", () => {
+    const snapshot = createInitialJournalSnapshot(
+      new Date("2026-08-03T09:00:00.000Z"),
+    );
+    const day = snapshot.days[0]!;
+    const favourite: Favourite = {
+      id: "favourite-day",
+      targetType: "journal-day",
+      targetId: day.id,
+      createdAt: "2026-08-03T10:00:00.000Z",
+    };
+    const commit = vi.fn();
+    render(
+      <FavouritesView
+        commit={commit}
+        onOpenFavourite={vi.fn()}
+        sketchRepository={new BrowserSketchRepository()}
+        snapshot={{ ...snapshot, favourites: [favourite] }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Arrange" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Remove 3 August 2026 from favourites/i }),
+    );
+    expect(
+      screen.getByRole("alertdialog", { name: `Hi ${snapshot.settings.displayName}` }),
+    ).toHaveTextContent("Remove from your Favourites?");
+    fireEvent.click(screen.getByRole("button", { name: "Remove favourite" }));
+    expect(commit).toHaveBeenCalledWith({
+      type: "favourite-set",
+      targetType: "journal-day",
+      targetId: day.id,
+      favourite: false,
+    });
+  });
 });
 
 describe("SketchbooksView", () => {
@@ -62,7 +101,9 @@ describe("SketchbooksView", () => {
       <SketchbooksView
         audio={new BrowserJournalAudioMock()}
         commit={vi.fn()}
+        files={new BrowserJournalFilesMock()}
         onCreateSketchbook={onCreateSketchbook}
+        onDeleteSketchbook={vi.fn()}
         onOpenSketchbook={vi.fn()}
         onRenameSketchbook={vi.fn()}
         onReorderSketchbooks={vi.fn()}
@@ -97,7 +138,9 @@ describe("SketchbooksView", () => {
       <SketchbooksView
         audio={new BrowserJournalAudioMock()}
         commit={vi.fn()}
+        files={new BrowserJournalFilesMock()}
         onCreateSketchbook={vi.fn()}
+        onDeleteSketchbook={vi.fn()}
         onOpenSketchbook={onOpenSketchbook}
         onRenameSketchbook={vi.fn()}
         onReorderSketchbooks={vi.fn()}
@@ -123,7 +166,9 @@ describe("SketchbooksView", () => {
       <SketchbooksView
         audio={new BrowserJournalAudioMock()}
         commit={vi.fn()}
+        files={new BrowserJournalFilesMock()}
         onCreateSketchbook={vi.fn()}
+        onDeleteSketchbook={vi.fn()}
         onOpenSketchbook={vi.fn()}
         onRenameSketchbook={vi.fn()}
         onReorderSketchbooks={vi.fn()}
@@ -152,7 +197,7 @@ describe("SketchbooksView", () => {
     );
   });
 
-  it("renames and reorders sketchbooks in Edit mode", async () => {
+  it("renames and reorders sketchbooks in Arrange mode", async () => {
     const snapshot = createInitialJournalSnapshot(
       new Date("2026-08-03T09:00:00.000Z"),
     );
@@ -168,7 +213,9 @@ describe("SketchbooksView", () => {
       <SketchbooksView
         audio={new BrowserJournalAudioMock()}
         commit={vi.fn()}
+        files={new BrowserJournalFilesMock()}
         onCreateSketchbook={vi.fn()}
+        onDeleteSketchbook={vi.fn()}
         onOpenSketchbook={vi.fn()}
         onRenameSketchbook={onRenameSketchbook}
         onReorderSketchbooks={onReorderSketchbooks}
@@ -181,7 +228,7 @@ describe("SketchbooksView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Arrange" }));
     fireEvent.click(screen.getAllByRole("button", { name: "Rename" })[0]!);
     fireEvent.change(
       screen.getByRole("textbox", { name: "Sketchbook name" }),
@@ -206,6 +253,39 @@ describe("SketchbooksView", () => {
       second.id,
       first.id,
     ]);
+  });
+
+  it("confirms sketchbook deletion from Arrange mode", () => {
+    const snapshot = createInitialJournalSnapshot(
+      new Date("2026-08-03T09:00:00.000Z"),
+    );
+    const sketchbook = snapshot.sketchbooks[0]!;
+    const onDeleteSketchbook = vi.fn().mockResolvedValue(true);
+    render(
+      <SketchbooksView
+        audio={new BrowserJournalAudioMock()}
+        commit={vi.fn()}
+        files={new BrowserJournalFilesMock()}
+        onCreateSketchbook={vi.fn()}
+        onDeleteSketchbook={onDeleteSketchbook}
+        onOpenSketchbook={vi.fn()}
+        onRenameSketchbook={vi.fn()}
+        onReorderSketchbooks={vi.fn()}
+        sketchRepository={new BrowserSketchRepository()}
+        snapshot={snapshot}
+        transcription={new BrowserAppleTranscriptionMock()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Arrange" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: `Delete ${sketchbook.name}` }),
+    );
+    expect(
+      screen.getByRole("alertdialog", { name: "Delete this sketchbook?" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete sketchbook" }));
+    expect(onDeleteSketchbook).toHaveBeenCalledWith(sketchbook.id);
   });
 
   it("offers a first page for legacy empty sketchbooks", () => {

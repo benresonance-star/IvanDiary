@@ -46,7 +46,7 @@ The primary success criterion is:
 -   Auto-save continuously. No manual save workflow.
 -   A change is not described as saved until it is durable on the device.
 -   Local durability and cloud synchronization are separate states.
--   Default to a **simple mode** with only essential controls. Helper and
+-   Default to a simple interface with only essential controls. Helper and
     appearance settings must not clutter the normal journal workflow.
 -   Keep the first release focused. AI memory, reflection, story
     generation, and semantic search are later features.
@@ -131,8 +131,8 @@ journal entries.
 ### 3.4 Favourites
 
 Ivan or a helper can mark a journal day, page or sketchbook page as a
-favourite. Favourites are available through a simple visual filter; they do
-not introduce another complex navigation section in simple mode.
+favourite. Favourites are available through a simple visual filter without
+introducing another complex navigation section.
 
 ------------------------------------------------------------------------
 
@@ -775,11 +775,12 @@ Requirements:
 -   forgiving drag thresholds and generous hit areas
 -   confirmation or an undo window for destructive actions
 -   no required precision gestures
--   a simple mode that hides helper and advanced settings
+-   keep helper and advanced settings out of the primary workflow
 
-Simple mode initially exposes only Diary, Sketchbooks and Settings navigation;
+The primary interface exposes Diary, Sketchbooks and Settings navigation;
 Draw, Erase, Photo, Text, Voice and Undo in the workspace; and direct playback
-of saved recordings.
+of saved recordings. Large pen-width presets remain available, while precision
+nudge and size shortcut buttons stay hidden.
 
 ------------------------------------------------------------------------
 

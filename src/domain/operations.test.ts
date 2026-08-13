@@ -152,6 +152,32 @@ describe("document operations", () => {
     expect(applyDocumentOperation(created, operation)).toBe(created);
   });
 
+  it("rejects an eleventh page in a journal day", () => {
+    const day = initial.days[0]!;
+    const full = {
+      ...initial,
+      days: initial.days.map((candidate) =>
+        candidate.id === day.id
+          ? { ...candidate, pageIds: Array.from({ length: 10 }, (_, index) => `page-${index + 1}`) }
+          : candidate,
+      ),
+    };
+    const page = emptyPage(day.id);
+
+    expect(() =>
+      applyDocumentOperation(full, {
+        id: "create-eleventh-page",
+        type: "page-create",
+        journalId: initial.id,
+        baseRevision: 0,
+        resultingRevision: 1,
+        createdAt: page.createdAt,
+        journalDayId: day.id,
+        page,
+      }),
+    ).toThrow("no more than 10 pages");
+  });
+
   it("rejects a page whose owner does not match the target day", () => {
     const day = initial.days[0]!;
     const page = emptyPage("another-day");
@@ -233,6 +259,47 @@ describe("document operations", () => {
     ).toThrow(OperationConflictError);
   });
 
+  it("deletes a journal page while retaining an adjacent page", () => {
+    const day = initial.days[0]!;
+    const secondPage = emptyPage(day.id);
+    const withSecondPage = applyDocumentOperation(initial, {
+      id: "create-page-before-delete",
+      type: "page-create",
+      journalId: initial.id,
+      baseRevision: 0,
+      resultingRevision: 1,
+      createdAt: secondPage.createdAt,
+      journalDayId: day.id,
+      page: secondPage,
+    });
+    const deleted = applyDocumentOperation(withSecondPage, {
+      id: "delete-second-page",
+      type: "page-delete",
+      journalId: initial.id,
+      baseRevision: 1,
+      resultingRevision: 2,
+      createdAt: "2026-08-03T10:01:00.000Z",
+      pageId: secondPage.id,
+    });
+
+    expect(deleted.pages).not.toContainEqual(expect.objectContaining({ id: secondPage.id }));
+    expect(deleted.days[0]?.pageIds).toEqual(day.pageIds);
+  });
+
+  it("does not delete the only page in a collection", () => {
+    expect(() =>
+      applyDocumentOperation(initial, {
+        id: "delete-only-page",
+        type: "page-delete",
+        journalId: initial.id,
+        baseRevision: 0,
+        resultingRevision: 1,
+        createdAt: "2026-08-03T10:01:00.000Z",
+        pageId: initial.days[0]!.pageIds[0]!,
+      }),
+    ).toThrow(OperationConflictError);
+  });
+
   it("creates a named sketchbook and first page atomically", () => {
     const page = sketchbookPage("sketchbook-animals");
     const sketchbook = sketchbookWithPage(page);
@@ -292,6 +359,32 @@ describe("document operations", () => {
       secondPage.id,
       firstPage.id,
     ]);
+  });
+
+  it("rejects an eleventh page in a sketchbook", () => {
+    const firstPage = sketchbookPage("sketchbook-full");
+    const sketchbook = {
+      ...sketchbookWithPage(firstPage),
+      pageIds: Array.from({ length: 10 }, (_, index) => `sketch-page-${index + 1}`),
+    };
+    const full = {
+      ...initial,
+      sketchbooks: [...initial.sketchbooks, sketchbook],
+    };
+    const page = sketchbookPage(sketchbook.id, "sketch-page-11");
+
+    expect(() =>
+      applyDocumentOperation(full, {
+        id: "create-eleventh-sketch-page",
+        type: "sketchbook-page-create",
+        journalId: initial.id,
+        baseRevision: 0,
+        resultingRevision: 1,
+        createdAt: page.createdAt,
+        sketchbookId: sketchbook.id,
+        page,
+      }),
+    ).toThrow("no more than 10 pages");
   });
 
   it("rejects sketchbook pages owned by a diary day", () => {
@@ -354,6 +447,45 @@ describe("document operations", () => {
     ]);
   });
 
+  it("deletes a sketchbook, its pages, and related favourites", () => {
+    const page = sketchbookPage("sketchbook-to-delete");
+    const sketchbook = sketchbookWithPage(page);
+    const deleted = applyDocumentOperation(
+      {
+        ...initial,
+        sketchbooks: [...initial.sketchbooks, sketchbook],
+        pages: [...initial.pages, page],
+        favourites: [
+          {
+            id: "favourite-sketchbook",
+            targetType: "sketchbook",
+            targetId: sketchbook.id,
+            createdAt: "2026-08-03T10:00:00.000Z",
+          },
+          {
+            id: "favourite-sketchbook-page",
+            targetType: "page",
+            targetId: page.id,
+            createdAt: "2026-08-03T10:00:00.000Z",
+          },
+        ],
+      },
+      {
+        id: "delete-sketchbook",
+        type: "sketchbook-delete",
+        journalId: initial.id,
+        baseRevision: 0,
+        resultingRevision: 1,
+        createdAt: "2026-08-03T10:01:00.000Z",
+        sketchbookId: sketchbook.id,
+      },
+    );
+
+    expect(deleted.sketchbooks).not.toContainEqual(sketchbook);
+    expect(deleted.pages.some((candidate) => candidate.id === page.id)).toBe(false);
+    expect(deleted.favourites).toEqual([]);
+  });
+
   it("rejects blank sketchbook names and incomplete directory orders", () => {
     const sketchbook = initial.sketchbooks[0]!;
     expect(() =>
@@ -403,6 +535,25 @@ describe("document operations", () => {
       )?.frame,
     ).toEqual({ width: 0.4, height: 0.3 });
     expect(applyDocumentOperation(resized, operation)).toBe(resized);
+  });
+
+  it("persists accessible drawing grid presets on a page", () => {
+    const page = initial.pages[0]!;
+    const updated = applyDocumentOperation(initial, {
+      id: "enable-page-grid",
+      type: "page-drawing-grid-update",
+      journalId: initial.id,
+      baseRevision: 0,
+      resultingRevision: 1,
+      createdAt: "2026-08-03T10:00:00.000Z",
+      pageId: page.id,
+      grid: { enabled: true, spacing: 96, rotationDegrees: 45 },
+    });
+    expect(updated.pages[0]?.drawingGrid).toEqual({
+      enabled: true,
+      spacing: 96,
+      rotationDegrees: 45,
+    });
   });
 
   it("moves a page object with one durable operation", () => {

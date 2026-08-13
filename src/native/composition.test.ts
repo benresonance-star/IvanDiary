@@ -3,12 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import {
   BrowserAppleTranscriptionMock,
   BrowserAppLifecycleMock,
+  BrowserCloudBackupMock,
   BrowserJournalAudioMock,
   BrowserJournalFilesMock,
 } from "./browserMocks";
 import {
   CapacitorAppleTranscriptionAdapter,
   CapacitorAppLifecycleAdapter,
+  CapacitorCloudBackupAdapter,
   CapacitorJournalAudioAdapter,
   CapacitorJournalFilesAdapter,
   type CapacitorPluginContracts,
@@ -42,7 +44,11 @@ function pluginDoubles(): CapacitorPluginContracts {
       start: vi.fn(async () => RECORDING),
       status: vi.fn(async () => RECORDING),
       stop: vi.fn(async () => RECORDING),
+      acknowledgeSaved: vi.fn(async () => RECORDING),
       recoverInterrupted: vi.fn(async () => ({ recordings: [RECORDING] })),
+      play: vi.fn(async () => ({ playing: true })),
+      pausePlayback: vi.fn(async () => ({ playing: false })),
+      addListener: vi.fn(async () => ({ remove: async () => undefined })),
     },
     transcription: {
       requestPermission: vi.fn(async () => ({ granted: true })),
@@ -72,6 +78,27 @@ function pluginDoubles(): CapacitorPluginContracts {
         requestedAt: "2026-08-08T00:00:00.000Z",
       })),
     },
+    backup: {
+      status: vi.fn(async () => ({
+        state: "available" as const,
+        message: "iCloud is connected.",
+      })),
+      backupSnapshot: vi.fn(async () => ({
+        state: "synced" as const,
+        message: "Diary information was backed up.",
+        lastSuccessfulBackupAt: "2026-08-10T00:00:00Z",
+      })),
+      backupAssets: vi.fn(async ({ assets }) => ({
+        state: "synced" as const,
+        message: "Assets backed up.",
+        uploadedItemCount: assets.length,
+        failedItemCount: 0,
+      })),
+      restore: vi.fn(async () => ({
+        snapshotJson: "{}",
+        restoredAssetUris: {},
+      })),
+    },
   };
 }
 
@@ -90,6 +117,7 @@ describe("service composition", () => {
     );
     expect(services.files).toBeInstanceOf(BrowserJournalFilesMock);
     expect(services.lifecycle).toBeInstanceOf(BrowserAppLifecycleMock);
+    expect(services.backup).toBeInstanceOf(BrowserCloudBackupMock);
     expect(nativePlugins).not.toHaveBeenCalled();
   });
 
@@ -106,6 +134,7 @@ describe("service composition", () => {
     );
     expect(services.files).toBeInstanceOf(CapacitorJournalFilesAdapter);
     expect(services.lifecycle).toBeInstanceOf(CapacitorAppLifecycleAdapter);
+    expect(services.backup).toBeInstanceOf(CapacitorCloudBackupAdapter);
   });
 });
 
@@ -119,6 +148,9 @@ describe("Capacitor service adapters", () => {
     );
     await adapter.status();
     await adapter.stop();
+    await adapter.acknowledgeSaved();
+    await adapter.play({ assetUri: "file:///recording.m4a" });
+    await adapter.pausePlayback();
     await expect(adapter.recoverInterrupted()).resolves.toEqual({
       recordings: [RECORDING],
     });
@@ -126,6 +158,8 @@ describe("Capacitor service adapters", () => {
     expect(plugin.start).toHaveBeenCalledWith({ preferredFormat: "m4a" });
     expect(plugin.status).toHaveBeenCalledWith();
     expect(plugin.stop).toHaveBeenCalledWith();
+    expect(plugin.acknowledgeSaved).toHaveBeenCalledWith();
+    expect(plugin.play).toHaveBeenCalledWith({ assetUri: "file:///recording.m4a" });
     expect(plugin.recoverInterrupted).toHaveBeenCalledWith();
   });
 

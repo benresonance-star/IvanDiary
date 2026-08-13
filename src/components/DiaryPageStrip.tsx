@@ -1,4 +1,5 @@
-import { GripHorizontal, Plus } from "lucide-react";
+import { GripHorizontal, Plus, Trash2 } from "lucide-react";
+import { createPortal } from "react-dom";
 import {
   useEffect,
   useRef,
@@ -9,7 +10,7 @@ import {
   type PointerEvent,
 } from "react";
 
-import type { Page, PageObject } from "../domain/models";
+import { MAX_PAGES_PER_COLLECTION, type Page, type PageObject } from "../domain/models";
 import type { SketchRepository } from "../sketch/types";
 import { defaultObjectFrame } from "./arrangeGeometry";
 import { SketchThumbnail } from "./SketchThumbnail";
@@ -136,7 +137,10 @@ export function DiaryPageStrip({
   addPageLabel = "Add another diary page",
   arrange,
   collectionLabel = "Pages in today’s diary",
+  collectionType = "journal",
+  displayName,
   onAddPage,
+  onDeletePage,
   onReorderPages,
   onSelectPage,
   pages,
@@ -145,7 +149,10 @@ export function DiaryPageStrip({
   addPageLabel?: string;
   arrange: boolean;
   collectionLabel?: string;
-  onAddPage: () => void;
+  collectionType?: "journal" | "sketchbook";
+  displayName: string;
+  onAddPage: () => Promise<boolean>;
+  onDeletePage: (pageId: string) => Promise<boolean>;
   onReorderPages: (pageIds: string[]) => Promise<boolean>;
   onSelectPage: (pageId: string) => void;
   pages: Page[];
@@ -156,6 +163,8 @@ export function DiaryPageStrip({
   const orderRef = useRef(initialOrder);
   const suppressClickRef = useRef(false);
   const [draggedPageId, setDraggedPageId] = useState<string>();
+  const [pageLimitWarningOpen, setPageLimitWarningOpen] = useState(false);
+  const [pagePendingDelete, setPagePendingDelete] = useState<Page>();
   const [orderedPageIds, setOrderedPageIds] = useState(initialOrder);
 
   useEffect(() => {
@@ -175,6 +184,7 @@ export function DiaryPageStrip({
     const page = pages.find((candidate) => candidate.id === pageId);
     return page ? [page] : [];
   });
+  const pageLimitReached = pages.length >= MAX_PAGES_PER_COLLECTION;
 
   const beginDrag = (
     event: PointerEvent<HTMLButtonElement>,
@@ -424,7 +434,10 @@ export function DiaryPageStrip({
                 onPointerUp={finishDrag}
                 type="button"
               >
-                <PagePreview page={page} />
+                <span
+                  aria-hidden="true"
+                  className={`diary-page-preview paper-${page.paperStyle}`}
+                />
                 <span>Page {pageNumber}</span>
                 {arrange ? (
                   <GripHorizontal
@@ -433,14 +446,36 @@ export function DiaryPageStrip({
                   />
                 ) : null}
               </button>
+              {arrange ? (
+                <button
+                  aria-label={
+                    pages.length <= 1
+                      ? `Page ${pageNumber} cannot be deleted because at least one page is required`
+                      : `Delete page ${pageNumber}`
+                  }
+                  className="page-thumbnail-delete"
+                  disabled={pages.length <= 1}
+                  onClick={() => setPagePendingDelete(page)}
+                  type="button"
+                >
+                  <Trash2 aria-hidden="true" />
+                </button>
+              ) : null}
             </div>
           );
         })}
         <div className="diary-page-list-item" role="listitem">
           <button
-            aria-label={addPageLabel}
+            aria-label={pageLimitReached ? "Maximum of 10 pages reached" : addPageLabel}
             className="diary-page-button add-diary-page"
-            onClick={onAddPage}
+            disabled={pageLimitReached}
+            onClick={() => {
+              void onAddPage().then((added) => {
+                if (added && pages.length === MAX_PAGES_PER_COLLECTION - 1) {
+                  setPageLimitWarningOpen(true);
+                }
+              });
+            }}
             type="button"
           >
             <span aria-hidden="true" className="add-page-preview">
@@ -450,6 +485,67 @@ export function DiaryPageStrip({
           </button>
         </div>
       </div>
+      {pagePendingDelete
+        ? createPortal(
+            <div
+              className="delete-dialog-backdrop"
+              onClick={() => setPagePendingDelete(undefined)}
+              role="presentation"
+            >
+              <div
+                aria-labelledby="delete-page-title"
+                aria-modal="true"
+                className="delete-dialog"
+                onClick={(event) => event.stopPropagation()}
+                role="alertdialog"
+              >
+                <Trash2 aria-hidden="true" />
+                <h2 id="delete-page-title">Delete this page?</h2>
+                <p>This removes its drawing, text, photos and recordings from this diary.</p>
+                <div className="delete-dialog-actions">
+                  <button autoFocus onClick={() => setPagePendingDelete(undefined)} type="button">
+                    Keep it
+                  </button>
+                  <button
+                    className="confirm-delete"
+                    onClick={() => {
+                      const pageId = pagePendingDelete.id;
+                      setPagePendingDelete(undefined);
+                      void onDeletePage(pageId);
+                    }}
+                    type="button"
+                  >
+                    Delete page
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+      {pageLimitWarningOpen
+        ? createPortal(
+            <div className="delete-dialog-backdrop" role="presentation">
+              <div
+                aria-labelledby="page-limit-warning-title"
+                aria-modal="true"
+                className="delete-dialog"
+                role="alertdialog"
+              >
+                <h2 id="page-limit-warning-title">Last page</h2>
+                <p>
+                  Hey {displayName.trim() || "there"} this is the last page we can fit on this {collectionType}
+                </p>
+                <div className="delete-dialog-actions">
+                  <button autoFocus onClick={() => setPageLimitWarningOpen(false)} type="button">
+                    OK
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </nav>
   );
 }

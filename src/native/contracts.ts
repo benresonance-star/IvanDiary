@@ -1,4 +1,5 @@
 import type { AssetRef, EntityId } from "../domain/models";
+import type { DrawingGridSettings } from "../domain/models";
 
 export type RecordingState =
   | "idle"
@@ -12,15 +13,23 @@ export type RecordingSnapshot = {
   id: EntityId;
   state: RecordingState;
   elapsedMs: number;
+  temporaryUri?: string;
   asset?: AssetRef;
   message?: string;
 };
 
 export interface JournalAudioPlugin {
-  start(options?: { preferredFormat?: "m4a" }): Promise<RecordingSnapshot>;
+  start(options?: { preferredFormat?: "m4a"; maximumDurationMs?: number }): Promise<RecordingSnapshot>;
   status(): Promise<RecordingSnapshot>;
   stop(): Promise<RecordingSnapshot>;
+  acknowledgeSaved(): Promise<RecordingSnapshot>;
   recoverInterrupted(): Promise<{ recordings: RecordingSnapshot[] }>;
+  play(options: { assetUri: string; startMs?: number; durationMs?: number }): Promise<{ playing: boolean }>;
+  pausePlayback(): Promise<{ playing: boolean }>;
+  addListener(
+    eventName: "playbackEnded",
+    listener: (event: { assetUri: string }) => void,
+  ): Promise<{ remove: () => Promise<void> }>;
 }
 
 export type TranscriptionResult = {
@@ -32,6 +41,8 @@ export type TranscriptionResult = {
     text: string;
     startMs: number;
     durationMs: number;
+    confidence?: number;
+    alternatives?: string[];
   }>;
 };
 
@@ -41,6 +52,7 @@ export interface AppleTranscriptionPlugin {
     recordingId: EntityId;
     asset: AssetRef;
     locale?: string;
+    contextualStrings?: string[];
   }): Promise<TranscriptionResult>;
 }
 
@@ -61,6 +73,47 @@ export interface AppLifecyclePlugin {
   flushRequested(): Promise<{ requestedAt: string }>;
 }
 
+export type CloudBackupResult = {
+  state: "available" | "no-account" | "restricted" | "waiting" | "synced" | "error";
+  message: string;
+  lastSuccessfulBackupAt?: string;
+  accountDescription?: string;
+  containerIdentifier?: string;
+  databaseDescription?: string;
+  recordIdentifier?: string;
+  uploadedItemCount?: number;
+  failedItemCount?: number;
+  failedItems?: Array<{
+    id: string;
+    kind: "audio" | "photo" | "drawing" | "unknown";
+    reason: string;
+  }>;
+  backedUpRevision?: number;
+};
+
+export type CloudBackupAsset = {
+  id: string;
+  kind: "audio" | "photo" | "drawing";
+  localUri?: string;
+  drawingDocumentId?: string;
+  mimeType: string;
+  checksum?: string;
+};
+
+export interface CloudBackupPlugin {
+  status(): Promise<CloudBackupResult>;
+  backupSnapshot(options: {
+    snapshotJson: string;
+    revision: number;
+  }): Promise<CloudBackupResult>;
+  backupAssets(options: { assets: CloudBackupAsset[] }): Promise<CloudBackupResult>;
+  restore(): Promise<{
+    snapshotJson: string;
+    backedUpAt?: string;
+    restoredAssetUris: Record<string, string>;
+  }>;
+}
+
 export type JournalServiceErrorCode =
   | "permission-denied"
   | "interrupted"
@@ -75,7 +128,7 @@ export type JournalServiceErrorDetails = {
   message: string;
   action: string;
   retryable: boolean;
-  service: "audio" | "transcription" | "files" | "lifecycle";
+  service: "audio" | "transcription" | "files" | "lifecycle" | "backup";
 };
 
 export interface NativeSharePlugin {
@@ -113,33 +166,56 @@ export type LegacyInkDocument = {
 };
 
 export interface PencilKitPlugin {
+  addListener(
+    eventName: "drawingChanged",
+    listener: (event: { documentId: string }) => void,
+  ): Promise<{ remove(): Promise<void> }>;
   open(options: {
     documentId: EntityId;
     color: string;
     width: number;
     opacity?: number;
+    fingerDrawing?: boolean;
     initialTool: "pen" | "eraser";
     backgroundDataUrl?: string;
   }): Promise<PencilKitPreview>;
   showOverlay(options: {
     documentId: EntityId;
     color: string;
+    nib?: "pen" | "marker" | "pencil" | "brush";
     width: number;
     opacity?: number;
+    fingerDrawing?: boolean;
     tool: "pen" | "eraser";
     rect: PencilKitOverlayRect;
+    clipShape?: "circle";
     legacyInk?: LegacyInkDocument;
+    grid?: DrawingGridSettings;
+    gridOriginX?: number;
+    gridOriginY?: number;
+    gridPageWidth?: number;
+    gridPageHeight?: number;
   }): Promise<{ visible: boolean; importedLegacyStrokes?: boolean }>;
   updateOverlay(options: {
     color?: string;
+    nib?: "pen" | "marker" | "pencil" | "brush";
     width?: number;
     opacity?: number;
+    fingerDrawing?: boolean;
     tool?: "pen" | "eraser";
     rect?: PencilKitOverlayRect;
+    clipShape?: "circle";
+    grid?: DrawingGridSettings;
+    gridOriginX?: number;
+    gridOriginY?: number;
+    gridPageWidth?: number;
+    gridPageHeight?: number;
   }): Promise<{ visible: boolean }>;
   hideOverlay(options?: { save?: boolean }): Promise<PencilKitPreview>;
   flushOverlay(): Promise<PencilKitPreview>;
+  clearOverlay(): Promise<PencilKitPreview>;
   undoOverlay(): Promise<{ undone: boolean }>;
+  redoOverlay(): Promise<{ redone: boolean }>;
   getPreview(options: { documentId: EntityId }): Promise<PencilKitPreview>;
 }
 

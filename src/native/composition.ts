@@ -3,12 +3,14 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
   BrowserAppleTranscriptionMock,
   BrowserAppLifecycleMock,
+  BrowserCloudBackupMock,
   BrowserJournalAudioMock,
   BrowserJournalFilesMock,
 } from "./browserMocks";
 import {
   CapacitorAppleTranscriptionAdapter,
   CapacitorAppLifecycleAdapter,
+  CapacitorCloudBackupAdapter,
   CapacitorJournalAudioAdapter,
   CapacitorJournalFilesAdapter,
   type CapacitorPluginContracts,
@@ -16,6 +18,7 @@ import {
 import type {
   AppleTranscriptionPlugin,
   AppLifecyclePlugin,
+  CloudBackupPlugin,
   JournalAudioPlugin,
   JournalFilesPlugin,
 } from "./contracts";
@@ -25,6 +28,7 @@ export type JournalServices = {
   transcription: AppleTranscriptionPlugin;
   files: JournalFilesPlugin;
   lifecycle: AppLifecyclePlugin;
+  backup: CloudBackupPlugin;
   runtime: "native" | "browser-simulation";
 };
 
@@ -41,6 +45,7 @@ function registerNativePlugins(): CapacitorPluginContracts {
     ),
     files: registerPlugin<JournalFilesPlugin>("JournalFiles"),
     lifecycle: registerPlugin<AppLifecyclePlugin>("AppLifecycle"),
+    backup: registerPlugin<CloudBackupPlugin>("CloudBackup"),
   };
 }
 
@@ -58,6 +63,7 @@ export function createAppServices(
       transcription: new BrowserAppleTranscriptionMock(),
       files: new BrowserJournalFilesMock(),
       lifecycle: new BrowserAppLifecycleMock(),
+      backup: new BrowserCloudBackupMock(),
       runtime: "browser-simulation",
     };
   }
@@ -70,6 +76,7 @@ export function createAppServices(
     ),
     files: new CapacitorJournalFilesAdapter(plugins.files),
     lifecycle: new CapacitorAppLifecycleAdapter(plugins.lifecycle),
+    backup: new CapacitorCloudBackupAdapter(plugins.backup),
     runtime: "native",
   };
 }

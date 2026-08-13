@@ -1,9 +1,10 @@
 import UIKit
-import Capacitor
+@preconcurrency import Capacitor
 import AppleDrawingKit
 
 @objc(PencilKitPlugin)
-public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
+@MainActor
+public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin {
     public let identifier = "PencilKitPlugin"
     public let jsName = "PencilKit"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -12,19 +13,25 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "updateOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "hideOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "flushOverlay", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "undoOverlay", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "redoOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPreview", returnType: CAPPluginReturnPromise)
     ]
 
-    @MainActor
     private var overlay: NativeDrawingOverlay?
 
-    @MainActor
     private func drawingOverlay() -> NativeDrawingOverlay {
         if let overlay {
             return overlay
         }
         let created = NativeDrawingOverlay()
+        created.onDrawingChanged = { [weak self] documentID in
+            self?.notifyListeners(
+                "drawingChanged",
+                data: ["documentId": documentID]
+            )
+        }
         self.overlay = created
         return created
     }
@@ -99,10 +106,14 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             alpha: opacity
         )
         let width = max(1, min(call.getDouble("width") ?? 4, 28))
+        let nib = NativeDrawingNib(rawValue: call.getString("nib") ?? "") ?? .pen
+        let fingerDrawing = call.getBool("fingerDrawing") ?? true
         let tool = NativeDrawingTool(
             rawValue: call.getString("tool") ?? ""
         ) ?? .pen
         let legacyInk = legacyInkDocument(from: call)
+        let clipToCircle = call.getString("clipShape") == "circle"
+        let grid = drawingGrid(from: call)
 
         Task { @MainActor [weak self] in
             guard let self else {
@@ -120,8 +131,12 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
                     documentID: documentID,
                     color: color,
                     width: CGFloat(width),
+                    nib: nib,
+                    fingerDrawing: fingerDrawing,
                     tool: tool,
+                    grid: grid,
                     frame: frame,
+                    clipToCircle: clipToCircle,
                     legacyInk: legacyInk
                 )
                 call.resolve([
@@ -141,8 +156,12 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             PencilInkColor.fromHexRGB($0, alpha: opacity ?? 1)
         }
         let width = call.getDouble("width").map { max(1, min($0, 28)) }
+        let nib = call.getString("nib").flatMap(NativeDrawingNib.init(rawValue:))
+        let fingerDrawing = call.getBool("fingerDrawing")
         let tool = call.getString("tool").flatMap(NativeDrawingTool.init(rawValue:))
         let frame = call.getObject("rect") == nil ? nil : rect(from: call)
+        let clipToCircle = call.getString("clipShape").map { $0 == "circle" }
+        let grid = call.getObject("grid") == nil ? nil : drawingGrid(from: call)
 
         Task { @MainActor [weak self] in
             guard let self else {
@@ -153,11 +172,33 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
             overlay.update(
                 color: color,
                 width: width.map { CGFloat($0) },
+                nib: nib,
+                fingerDrawing: fingerDrawing,
                 tool: tool,
-                frame: frame
+                grid: grid,
+                frame: frame,
+                clipToCircle: clipToCircle
             )
             call.resolve(["visible": overlay.isPresented])
         }
+    }
+
+    private func drawingGrid(from call: CAPPluginCall) -> DrawingGridSettings {
+        guard let value = call.getObject("grid") else { return .off }
+        let enabled = value["enabled"] as? Bool ?? false
+        let spacing = value["spacing"] as? Double ?? 60
+        let rotation = value["rotationDegrees"] as? Double ?? 0
+        let originX = call.getDouble("gridOriginX") ?? 0
+        let originY = call.getDouble("gridOriginY") ?? 0
+        let pageWidth = call.getDouble("gridPageWidth") ?? 1200
+        let pageHeight = call.getDouble("gridPageHeight") ?? 820
+        return DrawingGridSettings(
+            enabled: enabled,
+            spacing: CGFloat(max(36, min(spacing, 96))),
+            rotationDegrees: CGFloat(max(-45, min(rotation, 45))),
+            origin: CGPoint(x: originX, y: originY),
+            pageSize: CGSize(width: pageWidth, height: pageHeight)
+        )
     }
 
     @objc public func hideOverlay(_ call: CAPPluginCall) {
@@ -205,6 +246,34 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
         Task { @MainActor [weak self] in
             self?.drawingOverlay().undo()
             call.resolve(["undone": true])
+        }
+    }
+
+    @objc public func clearOverlay(_ call: CAPPluginCall) {
+        Task { @MainActor [weak self] in
+            guard let self else {
+                call.reject("The PencilKit plugin is unavailable.")
+                return
+            }
+            do {
+                let overlay = self.drawingOverlay()
+                let preview = try overlay.clearDrawing()
+                call.resolve(
+                    self.response(
+                        saved: overlay.isPresented,
+                        preview: preview
+                    )
+                )
+            } catch {
+                call.reject("The drawing could not be cleared.", nil, error)
+            }
+        }
+    }
+
+    @objc public func redoOverlay(_ call: CAPPluginCall) {
+        Task { @MainActor [weak self] in
+            self?.drawingOverlay().redo()
+            call.resolve(["redone": true])
         }
     }
 
@@ -344,6 +413,10 @@ public final class PencilKitPlugin: CAPPlugin, CAPBridgedPlugin {
 final class AppViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(PencilKitPlugin())
+        bridge?.registerPluginInstance(JournalAudioPlugin())
+        bridge?.registerPluginInstance(AppleTranscriptionPlugin())
+        bridge?.registerPluginInstance(JournalFilesPlugin())
+        bridge?.registerPluginInstance(CloudBackupPlugin())
     }
 }
 
