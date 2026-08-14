@@ -214,6 +214,9 @@ export interface PencilKitPlugin {
   hideOverlay(options?: { save?: boolean }): Promise<PencilKitPreview>;
   flushOverlay(): Promise<PencilKitPreview>;
   clearOverlay(): Promise<PencilKitPreview>;
+  deleteDrawing(options: {
+    documentId: EntityId;
+  }): Promise<{ deleted: boolean }>;
   undoOverlay(): Promise<{ undone: boolean }>;
   redoOverlay(): Promise<{ redone: boolean }>;
   getPreview(options: { documentId: EntityId }): Promise<PencilKitPreview>;

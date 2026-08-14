@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JournalAudioPlugin, JournalFilesPlugin, RecordingSnapshot } from "./contracts";
-import { finalizeStoppedRecording } from "./durableAudio";
+import {
+  finalizeStoppedRecording,
+  recordingStorageAvailable,
+} from "./durableAudio";
 
 const finalising: RecordingSnapshot = { id: "stable-recording", state: "finalising", elapsedMs: 500, temporaryUri: "file:///tmp/a.m4a" };
 const asset = { id: "stable-recording", localUri: "file:///support/a.m4a", mimeType: "audio/mp4", byteLength: 12, checksum: "sha256" };
@@ -38,5 +41,15 @@ describe("durable recording finalization", () => {
     await finalizeStoppedRecording(audio, files);
     expect(audio.stop).not.toHaveBeenCalled();
     expect(files.finaliseTemporaryAsset).toHaveBeenCalled();
+  });
+
+  it("blocks new recordings when storage health is low", async () => {
+    const { files } = doubles();
+    vi.mocked(files.storageHealth).mockResolvedValue({
+      availableBytes: 1024,
+      lowStorage: true,
+    });
+
+    await expect(recordingStorageAvailable(files)).resolves.toBe(false);
   });
 });

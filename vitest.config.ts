@@ -5,5 +5,15 @@ export default defineConfig({
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./src/test/setup.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary", "html"],
+      thresholds: {
+        statements: 52,
+        branches: 45,
+        functions: 52,
+        lines: 53,
+      },
+    },
   },
 });

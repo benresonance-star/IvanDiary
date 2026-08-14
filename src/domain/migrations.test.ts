@@ -81,4 +81,47 @@ describe("journal migrations", () => {
     expect(migrated.settings.lastSettingsTab).toBe("appearance");
   });
 
+  it("preserves valid per-nib pen profile values", () => {
+    const current = createInitialJournalSnapshot();
+    const penNibProfiles = {
+      pen: { color: "#112233", width: 2.5, opacity: 0.9 },
+      marker: { color: "#445566", width: 8, opacity: 0.6 },
+      pencil: { color: "#778899", width: 1.25, opacity: 0.4 },
+      brush: { color: "#aabbcc", width: 16, opacity: 0.75 },
+    };
+
+    const migrated = migrateJournalSnapshot({
+      ...current,
+      settings: { ...current.settings, penNibProfiles },
+    });
+
+    expect(migrated.settings.penNibProfiles).toEqual(penNibProfiles);
+  });
+
+  it("validates per-nib pen profiles with safe legacy fallbacks", () => {
+    const current = createInitialJournalSnapshot();
+    const migrated = migrateJournalSnapshot({
+      ...current,
+      settings: {
+        ...current.settings,
+        penColor: "#123456",
+        penWidth: 6,
+        penOpacity: 0.6,
+        penNibProfiles: {
+          pen: { color: "invalid", width: Number.NaN, opacity: Infinity },
+          marker: "invalid",
+          pencil: { color: "#abcdef", width: 99, opacity: -1 },
+          brush: { color: "#fedcba", width: 0, opacity: "invalid" },
+        },
+      },
+    });
+
+    expect(migrated.settings.penNibProfiles).toEqual({
+      pen: { color: "#123456", width: 6, opacity: 0.6 },
+      marker: { color: "#123456", width: 6, opacity: 0.6 },
+      pencil: { color: "#abcdef", width: 28, opacity: 0 },
+      brush: { color: "#fedcba", width: 1, opacity: 0.6 },
+    });
+  });
+
 });

@@ -65,6 +65,38 @@ describe("TextComposer", () => {
     expect(screen.getByRole("button", { name: "Add to canvas" })).toBeVisible();
   });
 
+  it("restarts editor focus when switching from the voice input view", () => {
+    render(
+      <TextComposer
+        draft={{ ...emptyDraft, text: "A remembered day" }}
+        recording={false}
+        onCancel={vi.fn()}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onToggleVoice={vi.fn()}
+        selectionRef={{ current: { start: 3, end: 3 } }}
+      />,
+    );
+
+    const editor = screen.getByLabelText(
+      "Text for the page",
+    ) as HTMLTextAreaElement;
+    editor.focus();
+    const blur = vi.spyOn(editor, "blur");
+    const focus = vi.spyOn(editor, "focus");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Keyboard" }));
+
+    expect(blur).toHaveBeenCalled();
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(blur.mock.invocationCallOrder[0]!).toBeLessThan(
+      focus.mock.invocationCallOrder[0]!,
+    );
+    expect(editor).toHaveAttribute("inputmode", "text");
+    expect(editor).toHaveFocus();
+    expect(editor.selectionStart).toBe(3);
+  });
+
   it("keeps voice mode and shows the caret when the text canvas is tapped", () => {
     render(
       <TextComposer

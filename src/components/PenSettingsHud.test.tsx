@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { hslToHex } from "../utils/colour";
 import { PenSettingsHud } from "./PenSettingsHud";
 
 describe("PenSettingsHud", () => {
@@ -172,6 +173,42 @@ describe("PenSettingsHud", () => {
     expect(onChange).toHaveBeenCalled();
     const next = onChange.mock.calls.at(-1)?.[0] as { color: string };
     expect(next.color).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+
+  it("keeps hue, colour strength, and lightness independent", () => {
+    const onChange = vi.fn();
+    render(
+      <PenSettingsHud
+        onChange={onChange}
+        onDone={vi.fn()}
+        settings={{ color: "#245b8a", width: 5, opacity: 1 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Custom colour" }));
+    const hue = screen.getByRole("slider", { name: "Hue" });
+    const strength = screen.getByRole("slider", {
+      name: "Colour strength",
+    });
+    const lightness = screen.getByRole("slider", { name: "Lightness" });
+
+    fireEvent.change(hue, { target: { value: "210" } });
+    fireEvent.change(strength, { target: { value: "80" } });
+    fireEvent.change(lightness, { target: { value: "0" } });
+    fireEvent.change(hue, { target: { value: "300" } });
+
+    expect(hue).toHaveValue("300");
+    expect(strength).toHaveValue("80");
+    expect(lightness).toHaveValue("0");
+
+    fireEvent.change(lightness, { target: { value: "50" } });
+
+    expect(hue).toHaveValue("300");
+    expect(strength).toHaveValue("80");
+    expect(lightness).toHaveValue("50");
+    expect(onChange.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ color: hslToHex(300, 80, 50) }),
+    );
   });
 
   it("toggles the grid with a single switch", () => {

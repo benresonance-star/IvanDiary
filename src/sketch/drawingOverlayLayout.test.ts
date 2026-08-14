@@ -77,4 +77,19 @@ describe("measureDrawingOverlayLayout", () => {
     expect(layout.contentInsetTop).toBe(186);
     expect(layout.overlayRect.y).toBe(286);
   });
+
+  it("uses the full paper when the page header is laid out above it", () => {
+    const paper = fakeElement({ left: 40, top: 200, width: 800, height: 600 });
+    const header = fakeElement({ left: 40, top: 130, width: 800, height: 58 });
+
+    const layout = measureDrawingOverlayLayout(paper, null, header);
+
+    expect(layout.contentInsetTop).toBe(0);
+    expect(layout.overlayRect).toEqual({
+      x: 40,
+      y: 200,
+      width: 800,
+      height: 600,
+    });
+  });
 });

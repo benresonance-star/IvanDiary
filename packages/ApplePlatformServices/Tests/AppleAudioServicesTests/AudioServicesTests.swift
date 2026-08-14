@@ -79,3 +79,55 @@ import Testing
     let reconciled = try store.finalize(temporaryURL: second, assetID: "same-id", mimeType: "audio/mp4")
     #expect(reconciled.checksum == original.checksum)
 }
+
+@Test func trashRemovalIncludesDurablePhotoAndFileAssets() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let support = root.appendingPathComponent("support", isDirectory: true)
+    let files = support.appendingPathComponent("OriginalFiles", isDirectory: true)
+    try FileManager.default.createDirectory(at: files, withIntermediateDirectories: true)
+    let photo = files.appendingPathComponent("photo-id.jpg")
+    let document = files.appendingPathComponent("file-id.pdf")
+    try Data("photo".utf8).write(to: photo)
+    try Data("document".utf8).write(to: document)
+    let store = try JournalFileStore(applicationSupportRoot: support)
+
+    try store.moveToTrash(assetID: "photo-id")
+    try store.moveToTrash(assetID: "file-id")
+
+    #expect(!FileManager.default.fileExists(atPath: photo.path))
+    #expect(!FileManager.default.fileExists(atPath: document.path))
+    let trash = support.appendingPathComponent("Trash", isDirectory: true)
+    let trashedFiles = try FileManager.default.contentsOfDirectory(at: trash, includingPropertiesForKeys: nil)
+    #expect(trashedFiles.count == 2)
+    #expect(trashedFiles.contains { $0.pathExtension == "jpg" })
+    #expect(trashedFiles.contains { $0.pathExtension == "pdf" })
+}
+
+@Test func trashRemovalCannotEscapeManagedAssetDirectories() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let support = root.appendingPathComponent("support", isDirectory: true)
+    let outside = root.appendingPathComponent("outside.m4a")
+    try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+    try Data("keep".utf8).write(to: outside)
+    let store = try JournalFileStore(applicationSupportRoot: support)
+
+    try store.moveToTrash(assetID: "../outside")
+
+    #expect(FileManager.default.fileExists(atPath: outside.path))
+}
+
+@Test func trashRemovalPreservesPreviouslySupportedAudioIdentifiers() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let temporary = root.appendingPathComponent("capture.m4a")
+    try Data("audio".utf8).write(to: temporary)
+    let store = try JournalFileStore(applicationSupportRoot: root.appendingPathComponent("support"))
+    let asset = try store.finalize(temporaryURL: temporary, assetID: "audio.v1", mimeType: "audio/mp4")
+
+    try store.moveToTrash(assetID: asset.id)
+
+    #expect(!FileManager.default.fileExists(atPath: asset.url.path))
+}

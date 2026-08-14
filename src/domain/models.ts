@@ -284,6 +284,10 @@ export type DocumentOperation = OperationBase &
         sketchbookIds: EntityId[];
       }
     | {
+        type: "favourites-reorder";
+        favouriteIds: EntityId[];
+      }
+    | {
       type: "favourite-set";
       targetType: Favourite["targetType"];
       targetId: EntityId;

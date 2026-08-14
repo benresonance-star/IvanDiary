@@ -61,6 +61,14 @@ export class BrowserSketchRepository implements SketchRepository {
     }
   }
 
+  async remove(documentId: string): Promise<void> {
+    const instance = await developmentDatabase();
+    await instance.delete("sketchDocuments", documentId);
+    this.listeners
+      .get(documentId)
+      ?.forEach((listener) => listener());
+  }
+
   subscribe(documentId: string, listener: () => void): () => void {
     const documentListeners =
       this.listeners.get(documentId) ?? new Set<() => void>();

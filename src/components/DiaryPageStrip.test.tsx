@@ -217,8 +217,16 @@ describe("DiaryPageStrip", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete page 2" }));
+    const deleteTrigger = screen.getByRole("button", { name: "Delete page 2" });
+    deleteTrigger.focus();
+    fireEvent.click(deleteTrigger);
     expect(screen.getByRole("alertdialog", { name: "Delete this page?" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Keep it" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(deleteTrigger).toHaveFocus();
+
+    fireEvent.click(deleteTrigger);
     fireEvent.click(screen.getByRole("button", { name: "Delete page" }));
     expect(onDeletePage).toHaveBeenCalledWith("page-two");
   });

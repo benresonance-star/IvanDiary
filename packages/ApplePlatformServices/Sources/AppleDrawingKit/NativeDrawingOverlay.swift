@@ -11,6 +11,18 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
     private let canvasView = PKCanvasView()
     private let gridInputView = GridStrokeInputView()
     private let store: any PencilDrawingStore
+    private lazy var twoFingerUndoRecognizer: UITapGestureRecognizer = {
+        let recognizer = UITapGestureRecognizer(
+            target: self,
+            action: #selector(handleTwoFingerUndo(_:))
+        )
+        recognizer.numberOfTouchesRequired = 2
+        recognizer.cancelsTouchesInView = true
+        recognizer.allowedTouchTypes = [
+            NSNumber(value: UITouch.TouchType.direct.rawValue)
+        ]
+        return recognizer
+    }()
     private var color: UIColor = .label
     private var width: CGFloat = 4
     private var grid: DrawingGridSettings = .off
@@ -43,6 +55,10 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         canvasView.isOpaque = false
         canvasView.drawingPolicy = .anyInput
         canvasView.delegate = self
+        canvasView.addGestureRecognizer(twoFingerUndoRecognizer)
+        canvasView.drawingGestureRecognizer.require(
+            toFail: twoFingerUndoRecognizer
+        )
         addSubview(canvasView)
         gridInputView.translatesAutoresizingMaskIntoConstraints = false
         gridInputView.isUserInteractionEnabled = false
@@ -218,12 +234,30 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         return try saveDrawing()
     }
 
+    public func removeDrawing(documentID requestedDocumentID: String) throws {
+        pendingSave?.cancel()
+        if isPresented, documentID == requestedDocumentID {
+            _ = try hide(save: false)
+            canvasView.drawing = PKDrawing()
+            documentID = nil
+        }
+        try store.remove(documentID: requestedDocumentID)
+    }
+
     public func undo() {
         canvasView.undoManager?.undo()
     }
 
     public func redo() {
         canvasView.undoManager?.redo()
+    }
+
+    @objc
+    private func handleTwoFingerUndo(_ recognizer: UITapGestureRecognizer) {
+        guard recognizer.state == .ended else {
+            return
+        }
+        undo()
     }
 
     private func applyClipping(circle: Bool) {

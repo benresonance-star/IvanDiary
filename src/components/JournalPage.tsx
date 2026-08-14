@@ -3,8 +3,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type FormEvent,
-  type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   ChevronLeft,
@@ -16,7 +15,6 @@ import {
   Move,
   PenLine,
   Pencil,
-  Keyboard,
   Redo2,
   ThumbsUp,
   Type,
@@ -41,7 +39,11 @@ import type {
   JournalFilesPlugin,
   RecordingSnapshot,
 } from "../native/contracts";
-import { finalizeStoppedRecording } from "../native/durableAudio";
+import {
+  finalizeStoppedRecording,
+  recordingStorageAvailable,
+} from "../native/durableAudio";
+import { transcribeEphemeralRecording } from "../native/ephemeralTranscription";
 import { useNativeDrawingOverlay } from "../hooks/useNativeDrawingOverlay";
 import {
   hasNativePencilKit,
@@ -70,15 +72,30 @@ import { DiaryPageStrip } from "./DiaryPageStrip";
 import { insertSpokenText, type TextSelection } from "./textInsertion";
 import { FlowerPhoto } from "./JournalIllustrations";
 import { FavouriteConfirmation } from "./FavouriteConfirmation";
+import { LinkComposer } from "./LinkComposer";
 import {
   PenSettingsHud,
   type PenSettings,
 } from "./PenSettingsHud";
+import { TextCard } from "./TextCard";
+import {
+  TextComposer,
+  type TextDraft,
+} from "./TextComposer";
+import { TranscriptEditor } from "./TranscriptEditor";
+import { TwoFingerTapRecognizer } from "./twoFingerTap";
 import { DEFAULT_DRAWING_GRID } from "../sketch/gridGeometry";
+
+export { LinkComposer, TextComposer };
 
 type Commit = (operation: DocumentOperationInput) => Promise<boolean>;
 export type PageTool = SketchTool | "arrange" | "view";
 const MAX_PHOTOS_PER_PAGE = 5;
+const EMPTY_TEXT_DRAFT: TextDraft = {
+  text: "",
+  textScale: 2.5,
+  textAlign: "left",
+};
 export type PageWorkspaceContext =
   | {
       kind: "diary";
@@ -96,149 +113,6 @@ type PageAction =
   | { kind: "drawing" }
   | { kind: "layout"; objectId: string; change: LayoutChange }
   | { kind: "delete"; objects: PageObject[] };
-
-type TextDraft = {
-  text: string;
-  textScale: number;
-  textAlign: "left" | "center";
-};
-
-const EMPTY_TEXT_DRAFT: TextDraft = {
-  text: "",
-  textScale: 2.5,
-  textAlign: "left",
-};
-
-export function TextComposer({
-  draft,
-  recording,
-  status,
-  onCancel,
-  onChange,
-  onSubmit,
-  onToggleVoice,
-  selectionRef,
-}: {
-  draft: TextDraft;
-  recording: boolean;
-  status?: string;
-  onCancel: () => void;
-  onChange: (draft: TextDraft) => void;
-  onSubmit: () => void;
-  onToggleVoice: () => void;
-  selectionRef: MutableRefObject<TextSelection>;
-}) {
-  const [input, setInput] = useState<"voice" | "keyboard">("voice");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [visibleViewport, setVisibleViewport] = useState<{
-    height: number;
-    offsetTop: number;
-  }>();
-
-  useEffect(() => {
-    const viewport = globalThis.visualViewport;
-    if (!viewport) return;
-    const updateVisibleViewport = () => {
-      setVisibleViewport({
-        height: viewport.height,
-        offsetTop: viewport.offsetTop,
-      });
-    };
-    updateVisibleViewport();
-    viewport.addEventListener("resize", updateVisibleViewport);
-    viewport.addEventListener("scroll", updateVisibleViewport);
-    return () => {
-      viewport.removeEventListener("resize", updateVisibleViewport);
-      viewport.removeEventListener("scroll", updateVisibleViewport);
-    };
-  }, []);
-
-  const rememberSelection = (next: TextSelection) => {
-    selectionRef.current = next;
-  };
-
-  const selectKeyboard = () => {
-    setInput("keyboard");
-    // iPadOS only presents its software keyboard when focus happens directly
-    // inside the trusted tap event. Deferring this loses that user activation.
-    textareaRef.current?.setAttribute("inputmode", "text");
-    textareaRef.current?.focus({ preventScroll: true });
-    textareaRef.current?.setSelectionRange(
-      selectionRef.current.start,
-      selectionRef.current.end,
-    );
-  };
-
-  return (
-    <div
-      aria-labelledby="text-composer-title"
-      aria-modal="true"
-      className="text-composer-backdrop"
-      role="dialog"
-      style={visibleViewport ? {
-        height: `${visibleViewport.height}px`,
-        top: `${visibleViewport.offsetTop}px`,
-      } : undefined}
-    >
-      <section className="text-composer">
-        <header>
-          <div>
-            <h2 id="text-composer-title">Add text</h2>
-          </div>
-          <button className="secondary-action" disabled={recording} onClick={onCancel} type="button">Cancel</button>
-        </header>
-        <div className="text-input-row">
-          <fieldset aria-label="Text input method" className={`text-input-toggle ${input === "keyboard" ? "keyboard-selected" : "voice-selected"}`}>
-            <legend className="visually-hidden">Text input method</legend>
-            <label className={input === "voice" ? "selected" : ""}>
-              <input checked={input === "voice"} name="text-input-method" onChange={() => { setInput("voice"); textareaRef.current?.blur(); }} type="radio" value="voice" />
-              <Mic aria-hidden="true" />Voice
-            </label>
-            <label className={input === "keyboard" ? "selected" : ""}>
-              <input checked={input === "keyboard"} name="text-input-method" onChange={selectKeyboard} type="radio" value="keyboard" />
-              <Keyboard aria-hidden="true" />Keyboard
-            </label>
-          </fieldset>
-          {input === "voice" ? (
-            <button
-              aria-pressed={recording}
-              className={`text-dictation-button${recording ? " recording" : " ready"}`}
-              onClick={onToggleVoice}
-              onPointerDown={(event) => {
-                // Keep the textarea focused so its caret remains visible while
-                // dictation begins at the selected insertion point.
-                event.preventDefault();
-              }}
-              type="button"
-            >
-              <Mic aria-hidden="true" />
-              {recording ? "Stop and turn voice into text" : "Tap to begin speaking"}
-            </button>
-          ) : null}
-          <button className="large-action text-add-action" disabled={!draft.text.trim() || recording} onClick={onSubmit} type="button">Add to canvas</button>
-        </div>
-        <p aria-live="polite" className="text-composer-status" role="status">{status ?? (input === "voice" ? "Ready to listen" : "Keyboard ready")}</p>
-        <textarea
-          aria-label="Text for the page"
-          className="text-composer-editor"
-          inputMode={input === "voice" ? "none" : "text"}
-          onClick={(event) => {
-            event.currentTarget.focus({ preventScroll: true });
-          }}
-          onChange={(event) => {
-            onChange({ ...draft, text: event.target.value });
-            rememberSelection({ start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd });
-          }}
-          onSelect={(event) => rememberSelection({ start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })}
-          placeholder="Your words will appear here…"
-          ref={textareaRef}
-          style={{ fontSize: `${draft.textScale}em`, textAlign: draft.textAlign }}
-          value={draft.text}
-        />
-      </section>
-    </div>
-  );
-}
 
 function deletionDescription(
   object: Exclude<PageObject, TranscriptObject>,
@@ -262,164 +136,6 @@ function deletionDescription(
       throw new Error(`Unsupported page object: ${exhaustiveObject}`);
     }
   }
-}
-
-function TranscriptEditor({
-  audio,
-  assetUri,
-  transcript,
-  readOnly,
-  onSave,
-  onSuggestMyWord,
-}: {
-  audio: JournalAudioPlugin;
-  assetUri: string;
-  readOnly: boolean;
-  transcript: TranscriptObject;
-  onSave: (next: TranscriptObject) => void;
-  onSuggestMyWord: (text: string) => void;
-}) {
-  const [text, setText] = useState(
-    transcript.editedText ?? transcript.rawText,
-  );
-  const [suggestion, setSuggestion] = useState<string>();
-
-  return (
-    <div className="transcript-editor-wrap">
-    <textarea
-      aria-label="Edit voice transcript"
-      className="transcript-editor"
-      onBlur={() => {
-        if (text !== (transcript.editedText ?? transcript.rawText)) {
-          onSave({
-            ...transcript,
-            editedText: text,
-            revision: transcript.revision + 1,
-          });
-          const rawWords = new Set(transcript.rawText.toLocaleLowerCase().match(/[\p{L}\p{N}'’-]+/gu) ?? []);
-          const corrected = text.match(/[\p{L}\p{N}'’-]+/gu)?.find((word) => word.length > 1 && !rawWords.has(word.toLocaleLowerCase()));
-          setSuggestion(corrected);
-        }
-      }}
-      onChange={(event) => setText(event.target.value)}
-      readOnly={readOnly}
-      value={text}
-    />
-    {suggestion ? (
-      <button onClick={() => { onSuggestMyWord(suggestion); setSuggestion(undefined); }} type="button">
-        Add “{suggestion}” to My Words
-      </button>
-    ) : null}
-    {transcript.segments?.some((segment) => typeof segment.confidence === "number" && segment.confidence < 0.5) ? (
-      <div className="uncertain-words" aria-label="Words to check">
-        <span>Words to check:</span>
-        {transcript.segments.filter((segment) => typeof segment.confidence === "number" && segment.confidence < 0.5).map((segment, index) => (
-          <button
-            key={`${segment.startMs}-${index}`}
-            onClick={() => void audio.play({ assetUri, startMs: segment.startMs, durationMs: Math.max(800, segment.durationMs + 400) })}
-            title={segment.alternatives?.length ? `Other possibilities: ${segment.alternatives.join(", ")}` : undefined}
-            type="button"
-          >
-            ▶ {segment.text}
-          </button>
-        ))}
-      </div>
-    ) : null}
-    </div>
-  );
-}
-
-function TextCard({
-  object,
-  readOnly,
-  onSave,
-}: {
-  object: TextObject;
-  readOnly: boolean;
-  onSave: (next: TextObject) => void;
-}) {
-  const [text, setText] = useState(object.text);
-
-  return (
-    <textarea
-      aria-label="Journal text"
-      autoFocus={object.text.length === 0}
-      className="page-text-card"
-      onBlur={() => {
-        if (text !== object.text) {
-          onSave({ ...object, text, revision: object.revision + 1 });
-        }
-      }}
-      onChange={(event) => setText(event.target.value)}
-      placeholder="Write here, or use Apple dictation…"
-      readOnly={readOnly}
-      style={{ textAlign: object.textAlign ?? "left" }}
-      value={text}
-    />
-  );
-}
-
-export function LinkComposer({
-  initialTitle = "",
-  initialUrl = "",
-  onClose,
-  onSave,
-}: {
-  initialTitle?: string;
-  initialUrl?: string;
-  onClose: () => void;
-  onSave: (url: string, title: string) => void;
-}) {
-  const [url, setUrl] = useState(initialUrl);
-  const [title, setTitle] = useState(initialTitle);
-  const [error, setError] = useState<string>();
-  const editing = initialUrl.length > 0;
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-        throw new Error("Unsupported protocol");
-      }
-      onSave(parsed.toString(), title.trim() || parsed.hostname);
-    } catch {
-      setError("Enter a complete web address, such as https://example.com");
-    }
-  };
-
-  return (
-    <form className="link-composer" onSubmit={submit}>
-      <h2>{editing ? "Edit web link" : "Add a web link"}</h2>
-      <label>
-        Web address
-        <input
-          autoFocus
-          inputMode="url"
-          onChange={(event) => setUrl(event.target.value)}
-          placeholder="https://"
-          value={url}
-        />
-      </label>
-      <label>
-        Name
-        <input
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="Optional"
-          value={title}
-        />
-      </label>
-      {error ? <p role="alert">{error}</p> : null}
-      <div>
-        <button className="secondary-action" onClick={onClose} type="button">
-          Cancel
-        </button>
-        <button className="large-action" type="submit">
-          {editing ? "Save changes" : "Add link"}
-        </button>
-      </div>
-    </form>
-  );
 }
 
 function nextPosition(page: Page): { x: number; y: number } {
@@ -460,6 +176,7 @@ export function PageWorkspace({
   penOpacity,
   penWidth,
   myWords,
+  navigationObscured = false,
   recordingLimitMinutes,
   sketchRepository,
   tool,
@@ -490,6 +207,7 @@ export function PageWorkspace({
   penOpacity: number;
   penWidth: number;
   myWords: MyWord[];
+  navigationObscured?: boolean;
   recordingLimitMinutes: 2 | 5 | 10 | 30 | null;
   sketchRepository: BrowserSketchRepository;
   tool: PageTool;
@@ -501,6 +219,8 @@ export function PageWorkspace({
   const toolPaletteRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const actionTimelineRef = useRef<PageAction[]>([]);
+  const twoFingerTapRecognizerRef = useRef(new TwoFingerTapRecognizer());
+  const transcriptionInFlightRef = useRef(new Set<string>());
   const setTool = onToolChange;
   const [penHudOpen, setPenHudOpen] = useState(false);
   const [penSettings, setPenSettings] = useState<PenSettings>({
@@ -518,6 +238,7 @@ export function PageWorkspace({
   const [favouriteConfirmation, setFavouriteConfirmation] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [linkComposerOpen, setLinkComposerOpen] = useState(false);
+  const [linkComposerRequested, setLinkComposerRequested] = useState(false);
   const [textComposerOpen, setTextComposerOpen] = useState(false);
   const [textComposerRequested, setTextComposerRequested] = useState(false);
   const [textDraft, setTextDraft] = useState<TextDraft>(EMPTY_TEXT_DRAFT);
@@ -530,6 +251,10 @@ export function PageWorkspace({
   const [recording, setRecording] = useState<RecordingSnapshot>();
   const autoStopStartedRef = useRef(false);
   const toggleVoiceRef = useRef<() => Promise<void>>(async () => undefined);
+  useEffect(() => {
+    twoFingerTapRecognizerRef.current.reset();
+  }, [page.id, tool]);
+
   useEffect(() => {
     let active = true;
     void audio.recoverInterrupted().then(({ recordings }) => {
@@ -552,7 +277,7 @@ export function PageWorkspace({
 
   const { overlayActive, overlayRequested, suspendOverlay } = useNativeDrawingOverlay({
     documentId: page.drawingDocumentId,
-    enabled: hasNativePencilKit() && !penHudOpen && !calendarOpen && !textComposerOpen && !textComposerRequested,
+    enabled: hasNativePencilKit() && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested,
     tool,
     color: penSettings.color,
     nib: penSettings.nib,
@@ -566,6 +291,21 @@ export function PageWorkspace({
     sketchRepository,
     onError: setNotice,
   });
+
+  const openLinkComposerAboveSketch = async (link?: LinkObject) => {
+    setTool("view");
+    setSelectedObjectId(undefined);
+    setLinkBeingEdited(link);
+    setLinkComposerRequested(true);
+    const hidden = await suspendOverlay();
+    setLinkComposerRequested(false);
+    if (hidden) {
+      setLinkComposerOpen(true);
+    } else {
+      setLinkBeingEdited(undefined);
+      setNotice("The drawing is still saving. Try Link again in a moment.");
+    }
+  };
 
   const openTextComposerAboveSketch = async () => {
     setTool("view");
@@ -659,6 +399,35 @@ export function PageWorkspace({
             frame: change.after.frame,
           };
     void commit(operation);
+  };
+
+  const twoFingerUndoEnabled =
+    tool === "pen" || tool === "eraser" || tool === "arrange";
+  const handleTwoFingerPointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (!twoFingerUndoEnabled) return;
+    twoFingerTapRecognizerRef.current.pointerDown(event.nativeEvent);
+  };
+  const handleTwoFingerPointerMove = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (!twoFingerUndoEnabled) return;
+    twoFingerTapRecognizerRef.current.pointerMove(event.nativeEvent);
+  };
+  const handleTwoFingerPointerUp = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (!twoFingerUndoEnabled) return;
+    if (twoFingerTapRecognizerRef.current.pointerUp(event.nativeEvent)) {
+      event.preventDefault();
+      globalThis.queueMicrotask(undoLastAction);
+    }
+  };
+  const handleTwoFingerPointerCancel = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    twoFingerTapRecognizerRef.current.pointerCancel(event.nativeEvent);
   };
 
   const toggleObjectLayer = (object: Exclude<PageObject, TranscriptObject>) => {
@@ -778,12 +547,10 @@ export function PageWorkspace({
       if (saved) {
         setSelectedObjectId(photoId);
         setTool("arrange");
+        setNotice(undefined);
+      } else {
+        setNotice("The photo could not be saved.");
       }
-      setNotice(
-        saved
-          ? "Photo added. Move or resize it now."
-          : "The photo could not be saved.",
-      );
     } catch {
       setNotice("The photo could not be read.");
     }
@@ -821,19 +588,22 @@ export function PageWorkspace({
     if (textRecording?.state === "recording") {
       setTextStatus("Turning your voice into text…");
       try {
-        const stopped = await finalizeStoppedRecording(audio, files);
-        setTextRecording(stopped);
-        if (!stopped.asset) throw new Error("No recording asset");
-        const permission = await transcription.requestPermission();
-        if (!permission.granted) throw new Error("Speech permission denied");
-        const result = await transcription.transcribe({ recordingId: stopped.id, asset: stopped.asset, locale: "en-AU", contextualStrings: myWords.filter((word) => word.enabled).map((word) => word.text).slice(0, 100) });
+        const result = await transcribeEphemeralRecording({
+          audio,
+          contextualStrings: myWords
+            .filter((word) => word.enabled)
+            .map((word) => word.text)
+            .slice(0, 100),
+          files,
+          onFinalized: setTextRecording,
+          transcription,
+        });
         setTextDraft((current) => {
           const inserted = insertSpokenText(current.text, result.rawText, textSelectionRef.current);
           textSelectionRef.current = { start: inserted.cursor, end: inserted.cursor };
           return { ...current, text: inserted.text };
         });
         setTextStatus(result.rawText.trim() ? "Voice added. Check or edit your words." : "No words were recognised. Try again or use the keyboard.");
-        await files.removeToTrash({ assetId: stopped.asset.id }).catch(() => undefined);
       } catch {
         setTextStatus("Voice could not be turned into text. Try again or use the keyboard.");
       } finally {
@@ -842,6 +612,12 @@ export function PageWorkspace({
       return;
     }
     try {
+      if (!await recordingStorageAvailable(files)) {
+        setTextStatus(
+          "Storage is too low to record safely. Free some space or use the keyboard.",
+        );
+        return;
+      }
       const started = await audio.start({ maximumDurationMs: recordingLimitMinutes === null ? undefined : recordingLimitMinutes * 60_000 });
       setTextRecording(started);
       setTextStatus("Listening… Tap again when you are finished.");
@@ -912,6 +688,18 @@ export function PageWorkspace({
         object: { ...voice, transcriptionStatus: status, revision },
       });
 
+    if (transcriptionInFlightRef.current.has(voice.id)) {
+      return;
+    }
+    const existingTranscript = transcripts.get(voice.id);
+    if (existingTranscript) {
+      if (voice.transcriptionStatus !== "complete") {
+        await markStatus("complete", voice.revision + 1);
+      }
+      return;
+    }
+
+    transcriptionInFlightRef.current.add(voice.id);
     try {
       const permission = await transcription.requestPermission();
       if (!permission.granted) {
@@ -960,6 +748,8 @@ export function PageWorkspace({
     } catch {
       await markStatus("failed", voice.revision + 2).catch(() => false);
       setNotice("Text could not be generated. Your original recording is still saved.");
+    } finally {
+      transcriptionInFlightRef.current.delete(voice.id);
     }
   };
 
@@ -987,7 +777,7 @@ export function PageWorkspace({
         revision: 0,
         asset: stopped.asset,
         durationMs: stopped.elapsedMs,
-        transcriptionStatus: "pending",
+        transcriptionStatus: "not-requested",
       };
       const voiceSaved = await commit({
         type: "page-object-add",
@@ -999,13 +789,18 @@ export function PageWorkspace({
         return;
       }
 
-      setNotice("Original voice recording saved. Generating editable text…");
-      await transcribeVoice(voice);
+      setNotice("Voice recording saved.");
       return;
     }
 
     let started: RecordingSnapshot;
     try {
+      if (!await recordingStorageAvailable(files)) {
+        setNotice(
+          "Storage is too low to record safely. Free some space and try again.",
+        );
+        return;
+      }
       started = await audio.start({
         maximumDurationMs: recordingLimitMinutes === null ? undefined : recordingLimitMinutes * 60_000,
       });
@@ -1093,7 +888,7 @@ export function PageWorkspace({
           </button>
           <button
             aria-pressed={tool === "arrange"}
-            className={tool === "arrange" ? "tool selected" : "tool"}
+            className={tool === "arrange" ? "tool arrange-tool selected" : "tool arrange-tool"}
             onClick={() => setTool("arrange")}
             type="button"
           >
@@ -1158,8 +953,7 @@ export function PageWorkspace({
           <button
           className="tool"
           onClick={() => {
-            setLinkBeingEdited(undefined);
-            setLinkComposerOpen(true);
+            void openLinkComposerAboveSketch();
           }}
           type="button"
         >
@@ -1214,6 +1008,46 @@ export function PageWorkspace({
             <span>Redo</span>
           </button>
         </div>
+        <div aria-label="Favourite tool" className="tool-hud" role="group">
+          <button
+            aria-label={
+              context.favourite
+                ? context.kind === "diary"
+                  ? "Remove today from favourites"
+                  : "Remove this page from favourites"
+                : context.kind === "diary"
+                  ? "Add today to favourites"
+                  : "Add this page to favourites"
+            }
+            aria-pressed={context.favourite}
+            className="tool favourite-tool"
+            onClick={() => void (async () => {
+              const adding = !context.favourite;
+              const saved = await commit({
+                type: "favourite-set",
+                targetType:
+                  context.kind === "diary" ? "journal-day" : "page",
+                targetId:
+                  context.kind === "diary"
+                    ? context.journalDayId
+                    : page.id,
+                favourite: adding,
+              });
+              if (saved) {
+                await suspendOverlay();
+                setFavouriteConfirmation(
+                  adding
+                    ? "Added to Your Favourites"
+                    : "Removed from Your Favourites",
+                );
+              }
+            })()}
+            type="button"
+          >
+            <ThumbsUp aria-hidden="true" />
+            <span>Favourite</span>
+          </button>
+        </div>
       </div>
 
       {penHudOpen ? (
@@ -1250,6 +1084,37 @@ export function PageWorkspace({
         type="file"
       />
 
+      <header className="page-date" ref={pageHeaderRef}>
+        {context.kind === "sketchbook" ? (
+          <button
+            aria-label="Back to sketchbooks"
+            className="back-to-library"
+            onClick={context.onBack}
+            type="button"
+          >
+            <ChevronLeft aria-hidden="true" />
+          </button>
+        ) : null}
+        {context.kind === "diary" && entryDates && onSelectDate ? (
+          <DiaryCalendar
+            entryDates={entryDates}
+            onOpen={onRefreshEntryDates}
+            onOpenChange={setCalendarOpen}
+            onSelectDate={onSelectDate}
+            selectedDate={context.date}
+          />
+        ) : null}
+        <p>{heading}</p>
+        {context.kind === "diary" &&
+        context.date === localDateKey(new Date()) ? (
+          <span className="today-diary-entry">TODAY</span>
+        ) : null}
+        {context.kind === "diary" &&
+        context.date !== localDateKey(new Date()) ? (
+          <span className="earlier-diary-entry">EARLIER DIARY ENTRY</span>
+        ) : null}
+      </header>
+
       <div
         className={`paper-page paper-${page.paperStyle}${
           tool === "pen" || tool === "eraser" ? " drawing-active" : ""
@@ -1260,6 +1125,10 @@ export function PageWorkspace({
           if (clickedObject?.dataset.objectId === placingTextId) return;
           finishTextPlacement();
         }}
+        onPointerCancelCapture={handleTwoFingerPointerCancel}
+        onPointerDownCapture={handleTwoFingerPointerDown}
+        onPointerMoveCapture={handleTwoFingerPointerMove}
+        onPointerUpCapture={handleTwoFingerPointerUp}
         ref={paperRef}
       >
         <SketchSurface
@@ -1300,69 +1169,6 @@ export function PageWorkspace({
           />
         )}
 
-        <header className="page-date" ref={pageHeaderRef}>
-          {context.kind === "sketchbook" ? (
-            <button
-              aria-label="Back to sketchbooks"
-              className="back-to-library"
-              onClick={context.onBack}
-              type="button"
-            >
-              <ChevronLeft aria-hidden="true" />
-            </button>
-          ) : null}
-          {context.kind === "diary" && entryDates && onSelectDate ? (
-            <DiaryCalendar
-              entryDates={entryDates}
-              onOpen={onRefreshEntryDates}
-              onOpenChange={setCalendarOpen}
-              onSelectDate={onSelectDate}
-              selectedDate={context.date}
-            />
-          ) : null}
-          <p>{heading}</p>
-          {context.kind === "diary" &&
-          context.date === localDateKey(new Date()) ? (
-            <span className="today-diary-entry">TODAY</span>
-          ) : null}
-          {context.kind === "diary" &&
-          context.date !== localDateKey(new Date()) ? (
-            <span className="earlier-diary-entry">EARLIER DIARY ENTRY</span>
-          ) : null}
-          <button
-            aria-label={
-              context.favourite
-                ? context.kind === "diary"
-                  ? "Remove today from favourites"
-                  : "Remove this page from favourites"
-                : context.kind === "diary"
-                  ? "Add today to favourites"
-                  : "Add this page to favourites"
-            }
-            aria-pressed={context.favourite}
-            className="page-favourite"
-            onClick={() => void (async () => {
-              const adding = !context.favourite;
-              const saved = await commit({
-                type: "favourite-set",
-                targetType:
-                  context.kind === "diary" ? "journal-day" : "page",
-                targetId:
-                  context.kind === "diary"
-                    ? context.journalDayId
-                    : page.id,
-                favourite: adding,
-              });
-              if (saved) setFavouriteConfirmation(adding ? "Added to Your Favourites" : "Removed from Your Favourites");
-            })()}
-            type="button"
-          >
-            <ThumbsUp
-              aria-hidden="true"
-            />
-          </button>
-        </header>
-
         {page.objects.map((object) => {
           if (object.type === "transcript") {
             return null;
@@ -1378,7 +1184,7 @@ export function PageWorkspace({
                   frame={defaultObjectFrame(object)}
                   key={object.id}
                   layer={object.layer ?? "above-sketch"}
-                  objectLabel="text block"
+                  objectLabel="voice recording"
                   objectId={object.id}
                   onCommit={(change) =>
                     commitLayoutChange(object.id, change)
@@ -1394,8 +1200,8 @@ export function PageWorkspace({
                   <AudioCard
                     disabled={tool === "arrange"}
                     audio={audio}
-                    onRetryTranscription={(object.transcriptionStatus === "failed" ||
-                      object.transcriptionStatus === "pending") && !transcript
+                    onConvertToText={!transcript &&
+                      object.transcriptionStatus !== "complete"
                       ? () => void transcribeVoice(object)
                       : undefined}
                     recording={object}
@@ -1516,8 +1322,7 @@ export function PageWorkspace({
                           className="link-name-edit"
                           onClick={(event) => {
                             event.stopPropagation();
-                            setLinkBeingEdited(object);
-                            setLinkComposerOpen(true);
+                            void openLinkComposerAboveSketch(object);
                           }}
                           type="button"
                         >

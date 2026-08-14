@@ -12,6 +12,8 @@ import type {
   JournalRepository,
 } from "./journalRepository";
 
+const OPERATION_CHECKPOINT_INTERVAL = 100;
+
 export class JournalCommitError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -110,10 +112,11 @@ export class BrowserJournalRepository implements JournalRepository {
     try {
       const instance = await developmentDatabase();
       const transaction = instance.transaction(
-        ["journalSnapshots", "journalOperations"],
+        ["journalSnapshots", "journalBaselines", "journalOperations"],
         "readwrite",
       );
       const snapshotStore = transaction.objectStore("journalSnapshots");
+      const baselineStore = transaction.objectStore("journalBaselines");
       const operationStore = transaction.objectStore("journalOperations");
       const stored = await snapshotStore.get(this.#journalId);
       const snapshot = stored
@@ -123,19 +126,26 @@ export class BrowserJournalRepository implements JournalRepository {
 
       await operationStore.put(operation);
       await snapshotStore.put(next);
+      const operationIndex = operationStore.index("by-journal");
+      const operationCount = await operationIndex.count(this.#journalId);
+      if (operationCount >= OPERATION_CHECKPOINT_INTERVAL) {
+        await baselineStore.put(next);
+        const operationKeys = await operationIndex.getAllKeys(this.#journalId);
+        await Promise.all(
+          operationKeys.map((key) => operationStore.delete(key)),
+        );
+      }
       await transaction.done;
 
+      const pendingOperationCount =
+        operationCount >= OPERATION_CHECKPOINT_INTERVAL ? 0 : operationCount;
       return {
         snapshot: next,
         health: {
           localDurability: "saved",
           remoteSync: "offline",
           durableRevision: next.revision,
-          pendingOperationCount: await instance.countFromIndex(
-            "journalOperations",
-            "by-journal",
-            this.#journalId,
-          ),
+          pendingOperationCount,
         },
       };
     } catch (error) {

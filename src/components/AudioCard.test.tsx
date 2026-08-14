@@ -48,25 +48,27 @@ describe("AudioCard transcription state", () => {
     render(
       <AudioCard
         audio={new BrowserJournalAudioMock()}
-        onRetryTranscription={retry}
+        onConvertToText={retry}
         recording={recording}
       />,
     );
 
     expect(screen.getByRole("button", { name: "Play voice recording" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Try text again" }));
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(retry).toHaveBeenCalledOnce();
   });
 
-  it("announces transcription while preserving playback", () => {
+  it("announces transcription, disables conversion, and preserves playback", () => {
     render(
       <AudioCard
         audio={new BrowserJournalAudioMock()}
+        onConvertToText={vi.fn()}
         recording={{ ...recording, transcriptionStatus: "transcribing" }}
       />,
     );
 
-    expect(screen.getByText("Turning this recording into text…")).toBeInTheDocument();
+    expect(screen.getByText("Converting recording to text…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Converting…" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Play voice recording" })).toBeEnabled();
   });
 
@@ -75,12 +77,29 @@ describe("AudioCard transcription state", () => {
     render(
       <AudioCard
         audio={new BrowserJournalAudioMock()}
-        onRetryTranscription={generate}
+        onConvertToText={generate}
         recording={{ ...recording, transcriptionStatus: "pending" }}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Generate text" }));
+    fireEvent.click(screen.getByRole("button", { name: "Convert to text" }));
     expect(generate).toHaveBeenCalledOnce();
+  });
+
+  it("shows large labelled playback and opt-in conversion for a saved recording", () => {
+    const convert = vi.fn();
+    render(
+      <AudioCard
+        audio={new BrowserJournalAudioMock()}
+        onConvertToText={convert}
+        recording={{ ...recording, transcriptionStatus: "not-requested" }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Play voice recording" }),
+    ).toHaveTextContent("Play");
+    fireEvent.click(screen.getByRole("button", { name: "Convert to text" }));
+    expect(convert).toHaveBeenCalledOnce();
   });
 });

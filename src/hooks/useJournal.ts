@@ -117,6 +117,7 @@ export function useJournal(repository: JournalRepository) {
     setSnapshot(result.snapshot);
     setHealth(result.health);
   }, [repository]);
+  const flush = useCallback(() => queueRef.current, []);
 
   return {
     snapshot,
@@ -124,6 +125,7 @@ export function useJournal(repository: JournalRepository) {
     message,
     clearMessage: () => setMessage(undefined),
     commit,
+    flush,
     replace,
   };
 }

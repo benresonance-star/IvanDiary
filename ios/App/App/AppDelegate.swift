@@ -14,6 +14,7 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         CAPPluginMethod(name: "hideOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "flushOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearOverlay", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "deleteDrawing", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "undoOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "redoOverlay", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPreview", returnType: CAPPluginReturnPromise)
@@ -95,7 +96,7 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
             call.reject("A documentId is required.")
             return
         }
-        guard let frame = rect(from: call) else {
+        guard let frameInWebView = webViewRect(from: call) else {
             call.reject("A valid overlay frame is required.")
             return
         }
@@ -124,6 +125,7 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
                 call.reject("The native drawing host is unavailable.")
                 return
             }
+            let frame = self.overlayHostRect(from: frameInWebView)
             do {
                 let overlay = self.drawingOverlay()
                 let importedLegacyStrokes = try overlay.present(
@@ -159,7 +161,9 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         let nib = call.getString("nib").flatMap(NativeDrawingNib.init(rawValue:))
         let fingerDrawing = call.getBool("fingerDrawing")
         let tool = call.getString("tool").flatMap(NativeDrawingTool.init(rawValue:))
-        let frame = call.getObject("rect") == nil ? nil : rect(from: call)
+        let frameInWebView = call.getObject("rect") == nil
+            ? nil
+            : webViewRect(from: call)
         let clipToCircle = call.getString("clipShape").map { $0 == "circle" }
         let grid = call.getObject("grid") == nil ? nil : drawingGrid(from: call)
 
@@ -169,6 +173,7 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
                 return
             }
             let overlay = self.drawingOverlay()
+            let frame = frameInWebView.map(self.overlayHostRect(from:))
             overlay.update(
                 color: color,
                 width: width.map { CGFloat($0) },
@@ -270,6 +275,28 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         }
     }
 
+    @objc public func deleteDrawing(_ call: CAPPluginCall) {
+        guard let documentID = call.getString("documentId"),
+              !documentID.isEmpty else {
+            call.reject("A documentId is required.")
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self else {
+                call.reject("The PencilKit plugin is unavailable.")
+                return
+            }
+            do {
+                try self.drawingOverlay().removeDrawing(
+                    documentID: documentID
+                )
+                call.resolve(["deleted": true])
+            } catch {
+                call.reject("The drawing could not be removed.", nil, error)
+            }
+        }
+    }
+
     @objc public func redoOverlay(_ call: CAPPluginCall) {
         Task { @MainActor [weak self] in
             self?.drawingOverlay().redo()
@@ -300,7 +327,7 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         return parent
     }
 
-    private func rect(from call: CAPPluginCall) -> CGRect? {
+    private func webViewRect(from call: CAPPluginCall) -> CGRect? {
         guard let values = call.getObject("rect") else {
             return nil
         }
@@ -313,7 +340,10 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
             return nil
         }
 
-        let rectInWebView = CGRect(x: x, y: y, width: width, height: height)
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+
+    private func overlayHostRect(from rectInWebView: CGRect) -> CGRect {
         guard let webView = bridge?.webView,
               let parent = webView.superview else {
             return rectInWebView
@@ -417,6 +447,7 @@ final class AppViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(AppleTranscriptionPlugin())
         bridge?.registerPluginInstance(JournalFilesPlugin())
         bridge?.registerPluginInstance(CloudBackupPlugin())
+        bridge?.registerPluginInstance(AppLifecyclePlugin())
     }
 }
 

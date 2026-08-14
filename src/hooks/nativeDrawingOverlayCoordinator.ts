@@ -131,6 +131,16 @@ export class NativeDrawingOverlayCoordinator {
     return !this.#state.active && this.#presentedDocumentId === undefined;
   }
 
+  async suspendAndWait(): Promise<boolean> {
+    this.#desired = undefined;
+    this.#version += 1;
+    this.#startReconciliation();
+    while (this.#reconciliation) {
+      await this.#reconciliation;
+    }
+    return !this.#state.active && this.#presentedDocumentId === undefined;
+  }
+
   subscribe(listener: (state: NativeDrawingOverlayState) => void): () => void {
     this.#listeners.add(listener);
     listener(this.#state);

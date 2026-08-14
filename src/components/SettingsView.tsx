@@ -1,17 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
-  BookHeart,
   ChevronDown,
-  CloudOff,
-  Cloud,
-  Contrast,
   Eye,
   Mic,
   Palette,
-  Play,
-  Text,
   Trash2,
-  UserRound,
   Volume2,
 } from "lucide-react";
 
@@ -22,16 +15,32 @@ import type {
   MyWord,
   SettingsTabId,
 } from "../domain/models";
-import type { JournalAudioPlugin, JournalFilesPlugin, RecordingSnapshot } from "../native/contracts";
-import { finalizeStoppedRecording } from "../native/durableAudio";
+import type {
+  AppleTranscriptionPlugin,
+  JournalAudioPlugin,
+  JournalFilesPlugin,
+  RecordingSnapshot,
+} from "../native/contracts";
+import {
+  finalizeStoppedRecording,
+  recordingStorageAvailable,
+} from "../native/durableAudio";
+import {
+  EphemeralTranscriptionError,
+  transcribeEphemeralRecording,
+} from "../native/ephemeralTranscription";
 import { createId } from "../utils/id";
 import type { SketchRepository } from "../sketch/types";
-import { ProfilePortrait } from "./ProfilePortrait";
 import type { WelcomeCopy } from "./WelcomeScreen";
+import { AboutSettingsPanel } from "./AboutSettingsPanel";
+import { AppearanceSettingsPanel } from "./AppearanceSettingsPanel";
+import { BackupSettingsPanel } from "./BackupSettingsPanel";
 import { CanvasSettingsPanel } from "./CanvasSettingsPanel";
-
-const DEFAULT_GREETING = "Welcome back Ivan!";
-const DEFAULT_TAGLINE = "It's a Wonderful World!";
+import {
+  DEFAULT_GREETING,
+  DEFAULT_TAGLINE,
+  WelcomeSettingsPanel,
+} from "./WelcomeSettingsPanel";
 
 const SETTINGS_TABS = [
   { id: "about", label: "About Me" },
@@ -41,31 +50,6 @@ const SETTINGS_TABS = [
   { id: "appearance", label: "Appearance" },
   { id: "backup", label: "Backup" },
 ] as const;
-
-function SettingToggle({
-  checked,
-  description,
-  label,
-  onChange,
-}: {
-  checked: boolean;
-  description: string;
-  label: string;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className="setting-row">
-      <span>
-        <strong>{label}</strong>
-        <small>{description}</small>
-      </span>
-      <span className="setting-switch">
-        <input aria-label={label} checked={checked} onChange={(event) => onChange(event.target.checked)} type="checkbox" />
-        <span aria-hidden="true" className="setting-switch-track"><span /></span>
-      </span>
-    </label>
-  );
-}
 
 export function SettingsView({
   settings,
@@ -79,6 +63,7 @@ export function SettingsView({
   onPreviewWelcome,
   sketchRepository,
   backupStatus,
+  transcription,
 }: {
   settings: JournalSettings;
   commit: (operation: DocumentOperationInput) => void;
@@ -91,6 +76,7 @@ export function SettingsView({
   onPreviewWelcome: (copy: WelcomeCopy) => void;
   sketchRepository: SketchRepository;
   backupStatus: BackupStatus;
+  transcription: AppleTranscriptionPlugin;
 }) {
   const [welcomeGreeting, setWelcomeGreeting] = useState(
     settings.welcomeGreeting,
@@ -102,12 +88,92 @@ export function SettingsView({
     settings.welcomeMessage,
   );
   const [displayName, setDisplayName] = useState(settings.displayName);
+  const displayNameInputRef = useRef<HTMLInputElement>(null);
+  const [nameRecording, setNameRecording] = useState<RecordingSnapshot>();
+  const [nameStatus, setNameStatus] = useState<string>();
   const [newWord, setNewWord] = useState("");
   const [activeTab, setActiveTab] = useState<SettingsTabId>(settings.lastSettingsTab);
   const [sampleRecording, setSampleRecording] = useState<{ wordId: string; snapshot: RecordingSnapshot }>();
+  const [sampleStatus, setSampleStatus] = useState<string>();
 
   const saveMyWords = (myWords: MyWord[]) =>
     commit({ type: "settings-update", settings: { myWords } });
+
+  const saveDisplayName = (name: string) => {
+    const cleaned = name.trim() || "Ivan";
+    setDisplayName(cleaned);
+    if (cleaned !== settings.displayName) {
+      commit({
+        type: "settings-update",
+        settings: { displayName: cleaned },
+      });
+    }
+  };
+
+  const toggleSpokenName = async () => {
+    if (
+      nameRecording?.state === "recording" ||
+      nameRecording?.state === "interrupted" ||
+      nameRecording?.state === "finalising"
+    ) {
+      try {
+        setNameRecording({ ...nameRecording, state: "finalising" });
+        setNameStatus("Turning your voice into your name…");
+        const result = await transcribeEphemeralRecording({
+          audio,
+          contextualStrings: settings.myWords
+            .filter((word) => word.enabled)
+            .map((word) => word.text)
+            .slice(0, 100),
+          files,
+          transcription,
+        });
+        const spokenName = result.rawText.trim();
+        if (!spokenName) {
+          setNameStatus("No name was recognised. Your typed name is unchanged.");
+          return;
+        }
+        saveDisplayName(spokenName);
+        setNameStatus(`Name saved as ${spokenName}.`);
+      } catch (error) {
+        if (
+          error instanceof EphemeralTranscriptionError &&
+          error.failure === "finalization"
+        ) {
+          setNameStatus("Your spoken name could not be saved. Your typed name is unchanged.");
+        } else if (
+          error instanceof EphemeralTranscriptionError &&
+          error.failure === "missing-asset"
+        ) {
+          setNameStatus("No spoken name was recorded. Your typed name is unchanged.");
+        } else if (
+          error instanceof EphemeralTranscriptionError &&
+          error.failure === "permission"
+        ) {
+          setNameStatus("Speech permission is off. Your typed name is unchanged.");
+        } else {
+          setNameStatus("Your spoken name was not understood. Your typed name is unchanged.");
+        }
+      } finally {
+        setNameRecording(undefined);
+      }
+      return;
+    }
+
+    try {
+      if (!await recordingStorageAvailable(files)) {
+        setNameStatus(
+          "Storage is too low to record safely. Type your name instead.",
+        );
+        return;
+      }
+      const started = await audio.start({ maximumDurationMs: 30_000 });
+      setNameRecording(started);
+      setNameStatus("Listening. Say your name, then tap Stop.");
+    } catch {
+      setNameStatus("The microphone could not start. Type your name instead.");
+    }
+  };
 
   const selectTab = (lastSettingsTab: SettingsTabId) => {
     setActiveTab(lastSettingsTab);
@@ -134,16 +200,33 @@ export function SettingsView({
 
   const toggleWordSample = async (word: MyWord) => {
     if (sampleRecording?.wordId === word.id && sampleRecording.snapshot.state === "recording") {
-      const saved = await finalizeStoppedRecording(audio, files);
-      if (!saved.asset) return;
-      if (word.sample) await files.removeToTrash({ assetId: word.sample.id });
-      saveMyWords(settings.myWords.map((candidate) =>
-        candidate.id === word.id ? { ...candidate, sample: saved.asset } : candidate));
-      setSampleRecording(undefined);
+      try {
+        const saved = await finalizeStoppedRecording(audio, files);
+        if (!saved.asset) return;
+        if (word.sample) await files.removeToTrash({ assetId: word.sample.id });
+        saveMyWords(settings.myWords.map((candidate) =>
+          candidate.id === word.id ? { ...candidate, sample: saved.asset } : candidate));
+        setSampleStatus(`Voice sample saved for ${word.text}.`);
+      } catch {
+        setSampleStatus("The voice sample could not be saved.");
+      } finally {
+        setSampleRecording(undefined);
+      }
       return;
     }
-    const snapshot = await audio.start({ maximumDurationMs: 30_000 });
-    setSampleRecording({ wordId: word.id, snapshot });
+    try {
+      if (!await recordingStorageAvailable(files)) {
+        setSampleStatus(
+          "Storage is too low to record a voice sample safely.",
+        );
+        return;
+      }
+      const snapshot = await audio.start({ maximumDurationMs: 30_000 });
+      setSampleRecording({ wordId: word.id, snapshot });
+      setSampleStatus(`Recording a voice sample for ${word.text}.`);
+    } catch {
+      setSampleStatus("The microphone could not start.");
+    }
   };
 
   const saveWelcomeText = (
@@ -205,105 +288,30 @@ export function SettingsView({
 
       <div className="settings-panel">
         {activeTab === "about" ? (
-        <div className="setting-group about-me-setting-group" id="settings-panel-about" role="tabpanel" aria-labelledby="settings-tab-about">
-          <UserRound aria-hidden="true" />
-          <div>
-            <h2>About Me</h2>
-            <p className="setting-description">Choose the name and portrait shown in the diary.</p>
-            <label className="display-name-setting">
-              Display name
-              <input
-                maxLength={60}
-                onBlur={() => {
-                  const cleaned = displayName.trim() || "Ivan";
-                  setDisplayName(cleaned);
-                  if (cleaned !== settings.displayName) {
-                    commit({ type: "settings-update", settings: { displayName: cleaned } });
-                  }
-                }}
-                onChange={(event) => setDisplayName(event.target.value)}
-                value={displayName}
-              />
-            </label>
-            <div className="portrait-setting">
-              <ProfilePortrait sketchRepository={sketchRepository} />
-              <div>
-                <h3>My portrait</h3>
-                <p>Draw a picture of your face. It will appear beside your name.</p>
-                <button onClick={onEditPortrait} type="button">Draw or edit my portrait</button>
-              </div>
-            </div>
-          </div>
-        </div>
+          <AboutSettingsPanel
+            displayName={displayName}
+            displayNameInputRef={displayNameInputRef}
+            nameRecording={nameRecording}
+            nameStatus={nameStatus}
+            onDisplayNameChange={setDisplayName}
+            onEditPortrait={onEditPortrait}
+            onSaveDisplayName={saveDisplayName}
+            onToggleSpokenName={() => void toggleSpokenName()}
+            sketchRepository={sketchRepository}
+          />
         ) : null}
 
         {activeTab === "welcome" ? (
-        <div className="setting-group welcome-setting-group" id="settings-panel-welcome" role="tabpanel" aria-labelledby="settings-tab-welcome">
-          <BookHeart aria-hidden="true" />
-          <div>
-            <h2>Welcome screen</h2>
-            <p className="setting-description">
-              Choose what you want to see on the Welcome screen.
-            </p>
-            <div className="welcome-setting-fields">
-              <label>
-                Greeting
-                <input
-                  maxLength={100}
-                  onBlur={() =>
-                    saveWelcomeText("welcomeGreeting", welcomeGreeting)
-                  }
-                  onChange={(event) =>
-                    setWelcomeGreeting(event.target.value)
-                  }
-                  value={welcomeGreeting}
-                />
-              </label>
-              <label>
-                Second line
-                <input
-                  maxLength={140}
-                  onBlur={() =>
-                    saveWelcomeText("welcomeTagline", welcomeTagline)
-                  }
-                  onChange={(event) =>
-                    setWelcomeTagline(event.target.value)
-                  }
-                  value={welcomeTagline}
-                />
-              </label>
-              <label>
-                Personal message or Bible verse
-                <textarea
-                  maxLength={500}
-                  onBlur={() =>
-                    saveWelcomeText("welcomeMessage", welcomeMessage)
-                  }
-                  onChange={(event) =>
-                    setWelcomeMessage(event.target.value)
-                  }
-                  placeholder="Optional"
-                  rows={3}
-                  value={welcomeMessage}
-                />
-              </label>
-              <button
-                className="preview-welcome-action"
-                onClick={() =>
-                  onPreviewWelcome({
-                    greeting: welcomeGreeting.trim() || DEFAULT_GREETING,
-                    tagline: welcomeTagline.trim() || DEFAULT_TAGLINE,
-                    message: welcomeMessage.trim(),
-                  })
-                }
-                type="button"
-              >
-                <Play aria-hidden="true" />
-                Preview welcome screen
-              </button>
-            </div>
-          </div>
-        </div>
+          <WelcomeSettingsPanel
+            greeting={welcomeGreeting}
+            message={welcomeMessage}
+            onGreetingChange={setWelcomeGreeting}
+            onMessageChange={setWelcomeMessage}
+            onPreviewWelcome={onPreviewWelcome}
+            onSaveText={saveWelcomeText}
+            onTaglineChange={setWelcomeTagline}
+            tagline={welcomeTagline}
+          />
         ) : null}
 
         {activeTab === "canvas" ? (
@@ -346,6 +354,7 @@ export function SettingsView({
             <section className="voice-setting-section voice-words-section" aria-labelledby="voice-words-heading">
               <h3 id="voice-words-heading">My Words</h3>
               <p className="setting-description">Add short names or phrases. A voice sample is optional and stays with the diary on this device.</p>
+              <p aria-live="polite" role="status">{sampleStatus}</p>
               <form className="my-word-form" onSubmit={(event) => { event.preventDefault(); addMyWord(); }}>
                 <label>
                   Word or short phrase
@@ -374,140 +383,18 @@ export function SettingsView({
         ) : null}
 
         {activeTab === "appearance" ? (
-        <div className="setting-group" id="settings-panel-appearance" role="tabpanel" aria-labelledby="settings-tab-appearance">
-          <Contrast aria-hidden="true" />
-          <div>
-            <h2>Appearance</h2>
-            <section className="appearance-setting-section" aria-labelledby="appearance-text-size-heading">
-              <h3 id="appearance-text-size-heading"><Text aria-hidden="true" />Text size</h3>
-              <div className="segmented-setting" aria-label="Text size">
-                {(["standard", "large", "extra-large"] as const).map((scale) => (
-                  <button
-                    aria-pressed={settings.textScale === scale}
-                    key={scale}
-                    onClick={() =>
-                      commit({
-                        type: "settings-update",
-                        settings: { textScale: scale },
-                      })
-                    }
-                    type="button"
-                  >
-                    {scale === "standard"
-                      ? "Standard"
-                      : scale === "large"
-                        ? "Large"
-                        : "Extra large"}
-                  </button>
-                ))}
-              </div>
-            </section>
-            <SettingToggle
-              checked={settings.contrast === "high"}
-              description="Use stronger borders and darker text."
-              label="High contrast"
-              onChange={(highContrast) =>
-                commit({
-                  type: "settings-update",
-                  settings: { contrast: highContrast ? "high" : "warm" },
-                })
-              }
-            />
-            <SettingToggle
-              checked={settings.reducedMotion}
-              description="Stop decorative movement and animation."
-              label="Reduce motion"
-              onChange={(reducedMotion) =>
-                commit({
-                  type: "settings-update",
-                  settings: { reducedMotion },
-                })
-              }
-            />
-          </div>
-        </div>
+          <AppearanceSettingsPanel commit={commit} settings={settings} />
         ) : null}
 
         {activeTab === "backup" ? (
-        <div className="setting-group backup-setting-group" id="settings-panel-backup" role="tabpanel" aria-labelledby="settings-tab-backup">
-          {backupStatus.state === "synced" || backupStatus.state === "available" ? <Cloud aria-hidden="true" /> : <CloudOff aria-hidden="true" />}
-          <div>
-            <h2>iCloud backup</h2>
-            <div className="backup-status-card" data-state={backupStatus.state} role="status">
-              {backupStatus.state === "synced" || backupStatus.state === "available" ? <Cloud aria-hidden="true" /> : <CloudOff aria-hidden="true" />}
-              <div>
-                <strong>{backupStatus.state === "syncing" ? "Backup in progress" : backupStatus.state === "waiting" ? "Backup needs attention" : backupStatus.state === "synced" ? "Backup is up to date" : backupStatus.state === "available" ? "Backup is ready" : "Backup is not connected"}</strong>
-                <p>{backupStatus.message}</p>
-              </div>
-            </div>
-            <p className="setting-description backup-explanation">
-              Your diary is always saved on this iPad. iCloud backup includes diary information, original recordings, photos and drawings.
-            </p>
-            <button className="backup-setup-action" disabled={backupStatus.state === "syncing"} onClick={onCheckBackup} type="button">
-              Check iCloud connection
-            </button>
-            <button className="backup-now-action" disabled={backupStatus.state === "syncing" || backupStatus.state === "error"} onClick={onBackupNow} type="button">
-              {backupStatus.state === "syncing" ? "Backing up…" : "Back up diary information now"}
-            </button>
-            <button className="backup-restore-action" disabled={backupStatus.state === "syncing" || !backupStatus.lastSuccessfulBackupAt} onClick={onRestore} type="button">
-              Restore diary from iCloud
-            </button>
-            <details className="backup-details">
-              <summary>Backup details <ChevronDown aria-hidden="true" /></summary>
-              <div>
-                {backupStatus.lastSuccessfulBackupAt ? (
-                  <p className="backup-availability-note">Last diary information backup: {new Date(backupStatus.lastSuccessfulBackupAt).toLocaleString()}</p>
-                ) : (
-                  <p className="backup-availability-note">No successful iCloud backup has been recorded yet.</p>
-                )}
-                <div className="backup-location-details">
-                  <h3>iCloud storage details</h3>
-                  <dl>
-                    <div><dt>iCloud account</dt><dd>{backupStatus.accountDescription ?? "Account details unavailable"}</dd></div>
-                    <div><dt>Container</dt><dd>{backupStatus.containerIdentifier ?? "Not connected"}</dd></div>
-                    <div><dt>Database</dt><dd>{backupStatus.databaseDescription ?? "Not available"}</dd></div>
-                    <div><dt>Diary record</dt><dd>{backupStatus.recordIdentifier ?? "Not created yet"}</dd></div>
-                    <div><dt>File location</dt><dd>Stored securely inside CloudKit. It does not appear as a folder in iCloud Drive or the Files app.</dd></div>
-                  </dl>
-                </div>
-              </div>
-            </details>
-            {backupStatus.failedItems?.length ? (
-              <div className="backup-failed-items" aria-labelledby="backup-waiting-heading">
-                <h3 id="backup-waiting-heading">Files still waiting</h3>
-                <p>These originals remain on this iPad and will be retried the next time you back up.</p>
-                <ul>
-                  {backupStatus.failedItems.map((item) => (
-                    <li key={`${item.kind}-${item.id}`}>
-                      <strong>{item.kind === "audio" ? "Voice recording" : item.kind === "photo" ? "Photo" : item.kind === "drawing" ? "Drawing" : "File"}</strong>
-                      <code>{item.id}</code>
-                      <span>{item.reason}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            <h3>Backup preferences</h3>
-            <SettingToggle
-              checked={settings.automaticBackup}
-              description="Automatically back up changes after you finish editing. Failed items retry after the next change or app launch."
-              label="Automatic backup"
-              onChange={(automaticBackup) => commit({
-                type: "settings-update",
-                settings: { automaticBackup },
-              })}
-            />
-            <SettingToggle
-              checked={settings.backupOnWifiOnly}
-              description="Wait for Wi-Fi before uploading recordings, drawings and photos."
-              label="Use Wi-Fi for large files"
-              onChange={(backupOnWifiOnly) => commit({
-                type: "settings-update",
-                settings: { backupOnWifiOnly },
-              })}
-            />
-          </div>
-        </div>
+          <BackupSettingsPanel
+            backupStatus={backupStatus}
+            commit={commit}
+            onBackupNow={onBackupNow}
+            onCheckBackup={onCheckBackup}
+            onRestore={onRestore}
+            settings={settings}
+          />
         ) : null}
       </div>
     </section>

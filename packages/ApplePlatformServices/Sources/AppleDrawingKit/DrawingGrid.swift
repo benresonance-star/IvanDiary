@@ -1,4 +1,4 @@
-#if canImport(PencilKit)
+#if canImport(UIKit)
 import CoreGraphics
 import PencilKit
 import UIKit

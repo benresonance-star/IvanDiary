@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { PageWorkspace, type PageTool } from "./components/JournalPage";
 import {
@@ -19,17 +19,17 @@ import {
 import {
   DOCUMENT_SCHEMA_VERSION,
   MAX_PAGES_PER_COLLECTION,
-  type AssetRef,
   type Favourite,
-  type BackupStatus,
   type JournalSnapshot,
   type Page,
   type SaveHealth,
 } from "./domain/models";
+import { useBackupSync } from "./hooks/useBackupSync";
 import { useJournal } from "./hooks/useJournal";
+import { nativeDrawingOverlayCoordinator } from "./hooks/nativeDrawingOverlayCoordinator";
 import { createAppServices } from "./native/composition";
-import type { CloudBackupAsset, CloudBackupResult } from "./native/contracts";
 import {
+  deleteNativeDrawing,
   flushNativeDrawingOverlay,
   getNativeDrawingPreview,
   hasNativePencilKit,
@@ -39,7 +39,6 @@ import {
 import { BrowserJournalRepository } from "./repository/browserJournalRepository";
 import { BrowserSketchRepository } from "./repository/browserSketchRepository";
 import type { SketchRepository } from "./sketch/types";
-import { PROFILE_PORTRAIT_DOCUMENT_ID, WELCOME_DRAWING_DOCUMENT_ID } from "./sketch/specialDocuments";
 import { localDateKey } from "./utils/date";
 import { createId } from "./utils/id";
 
@@ -49,52 +48,6 @@ const INITIAL_DRAWING_HEALTH: SaveHealth = {
   durableRevision: 0,
   pendingOperationCount: 0,
 };
-
-const INITIAL_BACKUP_STATUS: BackupStatus = {
-  state: "not-configured",
-  pendingItemCount: 0,
-  message: "This version of the app is not connected to iCloud.",
-};
-
-function backupResultStatus(result: CloudBackupResult): BackupStatus {
-  return {
-    state:
-      result.state === "synced"
-        ? "synced"
-        : result.state === "available"
-          ? "available"
-          : result.state === "waiting"
-            ? "waiting"
-            : "error",
-    pendingItemCount:
-      result.state === "waiting" ? (result.failedItemCount ?? 1) : 0,
-    message: result.message,
-    ...(result.lastSuccessfulBackupAt
-      ? { lastSuccessfulBackupAt: result.lastSuccessfulBackupAt }
-      : {}),
-    ...(result.accountDescription ? { accountDescription: result.accountDescription } : {}),
-    ...(result.containerIdentifier ? { containerIdentifier: result.containerIdentifier } : {}),
-    ...(result.databaseDescription ? { databaseDescription: result.databaseDescription } : {}),
-    ...(result.recordIdentifier ? { recordIdentifier: result.recordIdentifier } : {}),
-    ...(result.failedItems ? { failedItems: result.failedItems } : {}),
-    ...(result.backedUpRevision === undefined ? {} : { backedUpRevision: result.backedUpRevision }),
-  };
-}
-
-function backupContentToken(snapshot: JournalSnapshot): string {
-  const recordableSettings = Object.fromEntries(
-    Object.entries(snapshot.settings).filter(([key]) => key !== "lastSettingsTab"),
-  );
-  return JSON.stringify({
-    schemaVersion: snapshot.schemaVersion,
-    id: snapshot.id,
-    days: snapshot.days,
-    pages: snapshot.pages,
-    sketchbooks: snapshot.sketchbooks,
-    favourites: snapshot.favourites,
-    settings: recordableSettings,
-  });
-}
 
 async function collectDiaryEntryDates(
   snapshot: JournalSnapshot,
@@ -141,44 +94,6 @@ async function collectDiaryEntryDates(
   return dates;
 }
 
-async function collectCloudBackupAssets(snapshot: JournalSnapshot): Promise<CloudBackupAsset[]> {
-  const assets = new Map<string, CloudBackupAsset>();
-  const addAsset = (asset: AssetRef, kind: "audio" | "photo") => {
-    if (asset.localUri.startsWith("demo://")) return;
-    assets.set(asset.id, { id: asset.id, kind, localUri: asset.localUri, mimeType: asset.mimeType, checksum: asset.checksum });
-  };
-  for (const page of snapshot.pages) {
-    for (const object of page.objects) {
-      if (object.type === "voice") addAsset(object.asset, "audio");
-      if (object.type === "photo") addAsset(object.asset, "photo");
-    }
-  }
-  for (const word of snapshot.settings.myWords) {
-    if (word.sample) addAsset(word.sample, "audio");
-  }
-  const drawingIDs = new Set([
-    ...snapshot.pages.map((page) => page.drawingDocumentId),
-    PROFILE_PORTRAIT_DOCUMENT_ID,
-    WELCOME_DRAWING_DOCUMENT_ID,
-  ]);
-  await Promise.all([...drawingIDs].map(async (documentId) => {
-    try {
-      const preview = await getNativeDrawingPreview(documentId);
-      if (preview.available) {
-        assets.set(`drawing-${documentId}`, {
-          id: `drawing-${documentId}`,
-          kind: "drawing",
-          drawingDocumentId: documentId,
-          mimeType: "application/x-pencilkit-drawing",
-        });
-      }
-    } catch {
-      // A missing native drawing has nothing to upload.
-    }
-  }));
-  return [...assets.values()];
-}
-
 function combinedHealth(
   journal: SaveHealth,
   drawing: SaveHealth,
@@ -212,8 +127,8 @@ export default function App() {
   );
   const sketchRepository = useMemo(() => new BrowserSketchRepository(), []);
   const services = useMemo(() => createAppServices(), []);
-  const { audio, backup, files, transcription } = services;
-  const { clearMessage, commit, health, message, replace, snapshot } =
+  const { audio, backup, files, lifecycle, runtime, transcription } = services;
+  const { clearMessage, commit, flush, health, message, replace, snapshot } =
     useJournal(journalRepository);
   const [activeSection, setActiveSection] =
     useState<AppSection>("diary");
@@ -221,14 +136,18 @@ export default function App() {
   const [drawingHealth, setDrawingHealth] = useState<SaveHealth>(
     INITIAL_DRAWING_HEALTH,
   );
-  const [backupStatus, setBackupStatus] = useState<BackupStatus>(
-    INITIAL_BACKUP_STATUS,
-  );
+  const [storageBlocked, setStorageBlocked] = useState(false);
   const [activeDiaryPageId, setActiveDiaryPageId] = useState<string>();
   const [activePageTool, setActivePageTool] = useState<PageTool>("view");
   const [activeSketchbookId, setActiveSketchbookId] = useState<string>();
   const [activeSketchbookPageId, setActiveSketchbookPageId] =
     useState<string>();
+  const [lastViewedSketchbookId, setLastViewedSketchbookId] =
+    useState<string>();
+  const [lastViewedFavouriteId, setLastViewedFavouriteId] =
+    useState<string>();
+  const [navigationMenuOpen, setNavigationMenuOpen] = useState(false);
+  const [navigationMenuOpening, setNavigationMenuOpening] = useState(false);
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [welcomePreview, setWelcomePreview] = useState<WelcomeCopy>();
   const [portraitEditorOpen, setPortraitEditorOpen] = useState(false);
@@ -237,39 +156,33 @@ export default function App() {
   const [drawingBackupTick, setDrawingBackupTick] = useState(0);
   const flushEntryDatesOnTickRef = useRef(false);
   const todayOpeningRef = useRef<string | undefined>(undefined);
-  const lastBackedRevisionRef = useRef<number | undefined>(undefined);
-  const lastBackedContentTokenRef = useRef<string | undefined>(undefined);
   const drawingBackupTickRef = useRef(0);
-  const lastBackedDrawingTickRef = useRef(0);
-
-  const refreshBackupStatus = async () => {
-    try {
-      const result = await backup.status();
-      setBackupStatus(backupResultStatus(result));
-    } catch {
-      setBackupStatus({
-        state: "error",
-        pendingItemCount: 1,
-        message: "The iCloud connection could not be checked. Your diary remains saved on this iPad.",
-      });
-    }
-  };
+  const {
+    backupStatus,
+    backUpJournalInformation,
+    refreshBackupStatus,
+    restoreFromCloud,
+  } = useBackupSync({
+    backup,
+    drawingBackupTick,
+    drawingBackupTickRef,
+    replace,
+    runtime,
+    snapshot,
+  });
 
   useEffect(() => {
-    let cancelled = false;
-    void backup.status().then((result) => {
-      if (!cancelled) setBackupStatus(backupResultStatus(result));
-    }).catch(() => {
-      if (!cancelled) {
-        setBackupStatus({
-          state: "error",
-          pendingItemCount: 1,
-          message: "The iCloud connection could not be checked. Your diary remains saved on this iPad.",
-        });
-      }
-    });
-    return () => { cancelled = true; };
-  }, [backup]);
+    const handleBlockedDatabase = () => setStorageBlocked(true);
+    globalThis.addEventListener(
+      "journal-database-blocked",
+      handleBlockedDatabase,
+    );
+    return () =>
+      globalThis.removeEventListener(
+        "journal-database-blocked",
+        handleBlockedDatabase,
+      );
+  }, []);
 
   useEffect(() => {
     if (!hasNativePencilKit()) return;
@@ -285,113 +198,27 @@ export default function App() {
     };
   }, []);
 
-  const backUpJournalInformation = useCallback(async () => {
-    if (!snapshot) return;
-    setBackupStatus((current) => ({
-      ...current,
-      state: "syncing",
-      message: "Backing up diary information…",
-    }));
-    try {
-      if (hasNativePencilKit()) {
-        try {
-          await flushNativeDrawingOverlay();
-        } catch {
-          // The overlay may already be closed; stored drawing files remain valid.
-        }
-      }
-      const result = await backup.backupSnapshot({
-        snapshotJson: JSON.stringify(snapshot),
-        revision: snapshot.revision,
-      });
-      const cloudAssets = await collectCloudBackupAssets(snapshot);
-      const assetResult = await backup.backupAssets({ assets: cloudAssets });
-      const failedItemCount = assetResult.failedItemCount ?? cloudAssets.length;
-      const successfulAt = assetResult.lastSuccessfulBackupAt ?? result.lastSuccessfulBackupAt;
-      setBackupStatus({
-        state: failedItemCount === 0 ? "synced" : "waiting",
-        pendingItemCount: failedItemCount,
-        message: assetResult.message,
-        ...(successfulAt
-          ? { lastSuccessfulBackupAt: successfulAt }
-          : {}),
-        ...(assetResult.accountDescription ? { accountDescription: assetResult.accountDescription } : {}),
-        ...(assetResult.containerIdentifier ? { containerIdentifier: assetResult.containerIdentifier } : {}),
-        ...(assetResult.databaseDescription ? { databaseDescription: assetResult.databaseDescription } : {}),
-        ...(assetResult.recordIdentifier ? { recordIdentifier: assetResult.recordIdentifier } : {}),
-        ...(assetResult.failedItems ? { failedItems: assetResult.failedItems } : {}),
-        backedUpRevision: snapshot.revision,
-      });
-      if (failedItemCount === 0) {
-        lastBackedRevisionRef.current = snapshot.revision;
-        lastBackedContentTokenRef.current = backupContentToken(snapshot);
-        lastBackedDrawingTickRef.current = drawingBackupTickRef.current;
-      }
-    } catch {
-      setBackupStatus((current) => ({
-        ...current,
-        state: "error",
-        message: "iCloud backup failed. Your diary remains safely stored on this iPad.",
-      }));
-    }
-  }, [backup, snapshot]);
-
-  const restoreFromCloud = async () => {
-    if (!globalThis.confirm("Restore the iCloud diary on this iPad? The current local diary will be replaced after the cloud copy is downloaded.")) return;
-    setBackupStatus((current) => ({ ...current, state: "syncing", message: "Restoring the iCloud diary…" }));
-    try {
-      const restored = await backup.restore();
-      const parsed = JSON.parse(restored.snapshotJson) as JournalSnapshot;
-      const updateAsset = (asset: AssetRef): AssetRef => {
-        const restoredUri = restored.restoredAssetUris[asset.id];
-        return restoredUri ? { ...asset, localUri: restoredUri } : asset;
-      };
-      const reconciled: JournalSnapshot = {
-        ...parsed,
-        pages: parsed.pages.map((page) => ({
-          ...page,
-          objects: page.objects.map((object) => object.type === "voice" || object.type === "photo"
-            ? { ...object, asset: updateAsset(object.asset) }
-            : object),
-        })),
-        settings: {
-          ...parsed.settings,
-          myWords: parsed.settings.myWords.map((word) => word.sample ? { ...word, sample: updateAsset(word.sample) } : word),
-        },
-      };
-      await replace(reconciled);
-      setBackupStatus((current) => ({ ...current, state: "synced", pendingItemCount: 0, message: "The iCloud diary was restored on this iPad.", ...(restored.backedUpAt ? { lastSuccessfulBackupAt: restored.backedUpAt } : {}) }));
-    } catch {
-      setBackupStatus((current) => ({ ...current, state: "error", message: "The iCloud diary could not be restored. The local diary was left unchanged." }));
-    }
-  };
-
   useEffect(() => {
-    if (
-      !snapshot?.settings.automaticBackup ||
-      backupStatus.state === "not-configured" ||
-      backupStatus.state === "syncing" ||
-      backupStatus.state === "error"
-    ) return;
-    const backedRevision = backupStatus.backedUpRevision ?? -1;
-    const contentToken = backupContentToken(snapshot);
-    if (
-      lastBackedContentTokenRef.current === undefined &&
-      backedRevision >= snapshot.revision
-    ) {
-      lastBackedContentTokenRef.current = contentToken;
-    }
-    const snapshotNeedsBackup =
-      lastBackedContentTokenRef.current === undefined
-        ? snapshot.revision > backedRevision &&
-          lastBackedRevisionRef.current !== snapshot.revision
-        : contentToken !== lastBackedContentTokenRef.current;
-    const drawingNeedsBackup =
-      drawingBackupTick > lastBackedDrawingTickRef.current;
-    if (!snapshotNeedsBackup && !drawingNeedsBackup) return;
-    const timer = setTimeout(() => void backUpJournalInformation(), 5_000);
-    return () => clearTimeout(timer);
-  }, [backUpJournalInformation, backupStatus, drawingBackupTick, snapshot]);
+    const flushForBackground = (event: Event) => {
+      if (
+        event.type === "visibilitychange" &&
+        document.visibilityState !== "hidden"
+      ) {
+        return;
+      }
+      void Promise.allSettled([
+        flush(),
+        lifecycle.flushRequested(),
+        ...(hasNativePencilKit() ? [flushNativeDrawingOverlay()] : []),
+      ]);
+    };
+    document.addEventListener("visibilitychange", flushForBackground);
+    globalThis.addEventListener("pagehide", flushForBackground);
+    return () => {
+      document.removeEventListener("visibilitychange", flushForBackground);
+      globalThis.removeEventListener("pagehide", flushForBackground);
+    };
+  }, [flush, lifecycle]);
 
   useEffect(() => {
     if (!snapshot) {
@@ -658,6 +485,7 @@ export default function App() {
     if (saved) {
       setActiveSketchbookId(sketchbookId);
       setActiveSketchbookPageId(pageId);
+      setLastViewedSketchbookId(sketchbookId);
     }
     return saved;
   };
@@ -699,9 +527,17 @@ export default function App() {
         : [],
     );
     await Promise.allSettled(
-      [...new Set(assetIds)].map((assetId) =>
-        files.removeToTrash({ assetId }),
-      ),
+      [
+        ...[...new Set(assetIds)].map((assetId) =>
+          files.removeToTrash({ assetId }),
+        ),
+        ...(sketchRepository.remove
+          ? [sketchRepository.remove(deletedPage.drawingDocumentId)]
+          : []),
+        ...(hasNativePencilKit()
+          ? [deleteNativeDrawing(deletedPage.drawingDocumentId)]
+          : []),
+      ],
     );
   };
 
@@ -749,6 +585,7 @@ export default function App() {
   };
 
   const openFavourite = (favourite: Favourite) => {
+    setLastViewedFavouriteId(favourite.id);
     switch (favourite.targetType) {
       case "journal-day": {
         const favouriteDay = snapshot.days.find(
@@ -772,6 +609,7 @@ export default function App() {
         } else if (favouritePage?.sketchbookId) {
           setActiveSketchbookId(favouritePage.sketchbookId);
           setActiveSketchbookPageId(favouritePage.id);
+          setLastViewedSketchbookId(favouritePage.sketchbookId);
           setActiveSection("sketchbooks");
         }
         break;
@@ -779,6 +617,7 @@ export default function App() {
       case "sketchbook":
         setActiveSketchbookId(favourite.targetId);
         setActiveSketchbookPageId(undefined);
+        setLastViewedSketchbookId(favourite.targetId);
         setActiveSection("sketchbooks");
         break;
       default: {
@@ -788,6 +627,27 @@ export default function App() {
         );
       }
     }
+  };
+
+  const openSection = (section: AppSection) => {
+    if (section === "sketchbooks") {
+      setActiveSketchbookId(undefined);
+      setActiveSketchbookPageId(undefined);
+    }
+    setActiveSection(section);
+  };
+
+  const openNavigationMenu = async () => {
+    setNavigationMenuOpening(true);
+    const hidden = await nativeDrawingOverlayCoordinator.suspendAndWait();
+    setNavigationMenuOpening(false);
+    if (hidden) {
+      setNavigationMenuOpen(true);
+    }
+  };
+
+  const closeNavigationMenu = () => {
+    setNavigationMenuOpen(false);
   };
 
   let content;
@@ -836,6 +696,7 @@ export default function App() {
             penOpacity={snapshot.settings.penOpacity}
             penWidth={snapshot.settings.penWidth}
             myWords={snapshot.settings.myWords}
+            navigationObscured={navigationMenuOpen || navigationMenuOpening}
             recordingLimitMinutes={snapshot.settings.recordingLimitMinutes}
             sketchRepository={sketchRepository}
             tool={activePageTool}
@@ -892,6 +753,7 @@ export default function App() {
             penOpacity={snapshot.settings.penOpacity}
             penWidth={snapshot.settings.penWidth}
             myWords={snapshot.settings.myWords}
+            navigationObscured={navigationMenuOpen || navigationMenuOpening}
             recordingLimitMinutes={snapshot.settings.recordingLimitMinutes}
             sketchRepository={sketchRepository}
             tool={activePageTool}
@@ -911,11 +773,13 @@ export default function App() {
             audio={audio}
             commit={commit}
             files={files}
+            lastViewedSketchbookId={lastViewedSketchbookId}
             onCreateSketchbook={createSketchbook}
             onDeleteSketchbook={deleteSketchbook}
             onOpenSketchbook={(sketchbookId) => {
               setActiveSketchbookId(sketchbookId);
               setActiveSketchbookPageId(undefined);
+              setLastViewedSketchbookId(sketchbookId);
             }}
             onRenameSketchbook={(sketchbookId, name) =>
               commit({
@@ -940,7 +804,14 @@ export default function App() {
       content = (
         <FavouritesView
           commit={commit}
+          lastViewedFavouriteId={lastViewedFavouriteId}
           onOpenFavourite={openFavourite}
+          onReorderFavourites={(favouriteIds) =>
+            commit({
+              type: "favourites-reorder",
+              favouriteIds,
+            })
+          }
           sketchRepository={sketchRepository}
           snapshot={snapshot}
         />
@@ -961,6 +832,7 @@ export default function App() {
           onRestore={() => void restoreFromCloud()}
           sketchRepository={sketchRepository}
           settings={snapshot.settings}
+          transcription={transcription}
         />
       );
       break;
@@ -979,19 +851,24 @@ export default function App() {
     >
       <Navigation
         activeSection={activeSection}
-        displayName={snapshot.settings.displayName}
-        onProfileSelect={() => setActiveSection("settings")}
-        onBackupWarningSelect={() => {
-          void commit({
-            type: "settings-update",
-            settings: { lastSettingsTab: "backup" },
-          });
-          setActiveSection("settings");
-        }}
         backupStatus={backupStatus}
-        onSectionChange={setActiveSection}
+        displayName={snapshot.settings.displayName}
+        menuOpen={navigationMenuOpen}
+        menuOpening={navigationMenuOpening}
+        onMenuClose={closeNavigationMenu}
+        onMenuOpen={() => void openNavigationMenu()}
+        onSectionChange={openSection}
         sketchRepository={sketchRepository}
       />
+      {storageBlocked ? (
+        <div className="storage-blocked-warning" role="alert">
+          <strong>The diary cannot finish opening its saved storage.</strong>
+          <span>Close other diary windows, then reopen this app.</span>
+          <button onClick={() => globalThis.location.reload()} type="button">
+            Reopen my diary
+          </button>
+        </div>
+      ) : null}
       {content}
       {portraitEditorOpen ? (
         <ProfilePortraitEditor

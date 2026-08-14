@@ -128,6 +128,40 @@ describe("document operations", () => {
     );
   });
 
+  it("reorders every favourite durably", () => {
+    const favourites = [
+      {
+        id: "favourite-one",
+        targetType: "journal-day" as const,
+        targetId: initial.days[0]!.id,
+        createdAt: "2026-08-03T10:00:00.000Z",
+      },
+      {
+        id: "favourite-two",
+        targetType: "sketchbook" as const,
+        targetId: initial.sketchbooks[0]!.id,
+        createdAt: "2026-08-03T10:01:00.000Z",
+      },
+    ];
+    const reordered = applyDocumentOperation(
+      { ...initial, favourites },
+      {
+        id: "reorder-favourites",
+        type: "favourites-reorder",
+        journalId: initial.id,
+        baseRevision: 0,
+        resultingRevision: 1,
+        createdAt: "2026-08-03T10:02:00.000Z",
+        favouriteIds: ["favourite-two", "favourite-one"],
+      },
+    );
+
+    expect(reordered.favourites.map((favourite) => favourite.id)).toEqual([
+      "favourite-two",
+      "favourite-one",
+    ]);
+  });
+
   it("creates and orders a page within its journal day atomically", () => {
     const day = initial.days[0]!;
     const page = emptyPage(day.id);

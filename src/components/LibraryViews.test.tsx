@@ -36,7 +36,9 @@ describe("FavouritesView", () => {
     const { container } = render(
       <FavouritesView
         commit={vi.fn()}
+        lastViewedFavouriteId={favourite.id}
         onOpenFavourite={onOpenFavourite}
+        onReorderFavourites={vi.fn()}
         sketchRepository={new BrowserSketchRepository()}
         snapshot={{ ...snapshot, favourites: [favourite] }}
       />,
@@ -45,6 +47,11 @@ describe("FavouritesView", () => {
     expect(
       container.querySelector(".favourite-page-preview"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: /Open favourite: 3 August 2026/i,
+      }).closest("article"),
+    ).toHaveClass("last-viewed");
     fireEvent.click(
       screen.getByRole("button", {
         name: /Open favourite: 3 August 2026/i,
@@ -69,6 +76,7 @@ describe("FavouritesView", () => {
       <FavouritesView
         commit={commit}
         onOpenFavourite={vi.fn()}
+        onReorderFavourites={vi.fn()}
         sketchRepository={new BrowserSketchRepository()}
         snapshot={{ ...snapshot, favourites: [favourite] }}
       />,
@@ -88,6 +96,52 @@ describe("FavouritesView", () => {
       targetId: day.id,
       favourite: false,
     });
+  });
+
+  it("reorders favourites and labels removal controls in Arrange mode", () => {
+    const snapshot = createInitialJournalSnapshot(
+      new Date("2026-08-03T09:00:00.000Z"),
+    );
+    const dayFavourite: Favourite = {
+      id: "favourite-day",
+      targetType: "journal-day",
+      targetId: snapshot.days[0]!.id,
+      createdAt: "2026-08-03T10:00:00.000Z",
+    };
+    const sketchbookFavourite: Favourite = {
+      id: "favourite-sketchbook",
+      targetType: "sketchbook",
+      targetId: snapshot.sketchbooks[0]!.id,
+      createdAt: "2026-08-03T10:01:00.000Z",
+    };
+    const onReorderFavourites = vi.fn().mockResolvedValue(true);
+    render(
+      <FavouritesView
+        commit={vi.fn()}
+        onOpenFavourite={vi.fn()}
+        onReorderFavourites={onReorderFavourites}
+        sketchRepository={new BrowserSketchRepository()}
+        snapshot={{
+          ...snapshot,
+          favourites: [dayFavourite, sketchbookFavourite],
+        }}
+      />,
+    );
+
+    const arrangeButton = screen.getByRole("button", { name: "Arrange" });
+    fireEvent.click(arrangeButton);
+    expect(arrangeButton).toHaveClass("arrange-action", "selected");
+    expect(
+      screen.getAllByRole("button", { name: /Remove .* from favourites/i }),
+    ).toHaveLength(2);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move Favourite Places earlier" }),
+    );
+    expect(onReorderFavourites).toHaveBeenCalledWith([
+      sketchbookFavourite.id,
+      dayFavourite.id,
+    ]);
   });
 });
 
@@ -139,6 +193,7 @@ describe("SketchbooksView", () => {
         audio={new BrowserJournalAudioMock()}
         commit={vi.fn()}
         files={new BrowserJournalFilesMock()}
+        lastViewedSketchbookId="sketchbook-favourite-places"
         onCreateSketchbook={vi.fn()}
         onDeleteSketchbook={vi.fn()}
         onOpenSketchbook={onOpenSketchbook}
@@ -153,6 +208,9 @@ describe("SketchbooksView", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Open Favourite Places" }),
     );
+    expect(
+      screen.getByRole("button", { name: "Open Favourite Places" }).closest("article"),
+    ).toHaveClass("last-viewed");
     expect(onOpenSketchbook).toHaveBeenCalledWith(
       "sketchbook-favourite-places",
     );
@@ -242,13 +300,9 @@ describe("SketchbooksView", () => {
       ),
     );
 
-    const animalsHandle = screen.getByRole("button", {
-      name: /Drag to reorder Animals/i,
-    });
-    fireEvent.keyDown(animalsHandle, {
-      key: "ArrowLeft",
-      shiftKey: true,
-    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move Animals earlier" }),
+    );
     expect(onReorderSketchbooks).toHaveBeenCalledWith([
       second.id,
       first.id,

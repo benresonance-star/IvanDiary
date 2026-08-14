@@ -4,11 +4,9 @@ import { useRef, useState, type CSSProperties } from "react";
 import {
   clampOpacity,
   colourWithOpacity,
-  hexToHsl,
-  hslToHex,
-  isHexColor,
 } from "../utils/colour";
 import type { DrawingGridSettings } from "../domain/models";
+import { useIndependentHslColour } from "../hooks/useIndependentHslColour";
 import type { PenNib } from "../sketch/types";
 import { DEFAULT_FAVOURITE_PEN_COLOURS, favouriteColourName } from "./penColours";
 
@@ -64,7 +62,7 @@ export function PenSettingsHud({
     undefined,
   );
   const rotationLongPressedRef = useRef(false);
-  const hsl = hexToHsl(isHexColor(settings.color) ? settings.color : "#171410");
+  const [hsl, updateHsl] = useIndependentHslColour(settings.color);
   const opacityPercent = Math.round(clampOpacity(settings.opacity) * 100);
   const sampleStyle = {
     "--sample-colour": colourWithOpacity(settings.color, settings.opacity),
@@ -74,7 +72,7 @@ export function PenSettingsHud({
   const setHsl = (next: { h?: number; s?: number; l?: number }) => {
     changeSettings({
       ...settings,
-      color: hslToHex(next.h ?? hsl.h, next.s ?? hsl.s, next.l ?? hsl.l),
+      color: updateHsl(next),
     });
   };
 

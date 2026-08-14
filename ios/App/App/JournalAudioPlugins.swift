@@ -3,6 +3,7 @@ import AVFoundation
 @preconcurrency import CloudKit
 import CryptoKit
 import AppleAudioServices
+import UniformTypeIdentifiers
 
 private func recordingPayload(_ snapshot: JournalRecordingSnapshot) -> [String: Any] {
     var value: [String: Any] = [
@@ -180,35 +181,74 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
                 let query = CKQuery(recordType: "IvanDiaryAsset", predicate: NSPredicate(value: true))
                 let (matches, _) = try await database.records(matching: query, resultsLimit: CKQueryOperation.maximumResults)
                 var restoredURIs: JSObject = [:]
+                let supportRoot = try FileManager.default.url(
+                    for: .applicationSupportDirectory,
+                    in: .userDomainMask,
+                    appropriateFor: nil,
+                    create: true
+                )
                 for (_, result) in matches {
                     let record = try result.get()
                     guard let cloudAsset = record["asset"] as? CKAsset,
                           let source = cloudAsset.fileURL,
                           let assetID = record["assetID"] as? String,
                           let kind = record["kind"] as? String else { continue }
+                    let safeAssetID = safeFileName(assetID)
+                    guard !safeAssetID.isEmpty else { continue }
                     if kind == "audio" {
-                        let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-                        let directory = root.appendingPathComponent("JournalAssets/OriginalAudio", isDirectory: true)
+                        let directory = supportRoot.appendingPathComponent("JournalAssets/OriginalAudio", isDirectory: true)
                         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                        let destination = directory.appendingPathComponent(assetID).appendingPathExtension("m4a")
-                        if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
-                        try FileManager.default.copyItem(at: source, to: destination)
+                        let destination = directory.appendingPathComponent(safeAssetID).appendingPathExtension("m4a")
+                        try restoreAsset(from: source, to: destination)
+                        restoredURIs[assetID] = destination.absoluteString
+                    } else if kind == "photo" {
+                        let mimeType = record["mimeType"] as? String
+                        let directory = supportRoot.appendingPathComponent("JournalAssets/OriginalFiles", isDirectory: true)
+                        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                        let destination = directory
+                            .appendingPathComponent(safeAssetID)
+                            .appendingPathExtension(fileExtension(for: mimeType, source: source))
+                        try restoreAsset(from: source, to: destination)
                         restoredURIs[assetID] = destination.absoluteString
                     } else if kind == "drawing", assetID.hasPrefix("drawing-") {
                         let documentID = String(assetID.dropFirst("drawing-".count))
-                        let safeID = documentID.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "_" }
-                        let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-                        let directory = root.appendingPathComponent("PencilDrawings", isDirectory: true)
+                        let safeID = safeFileName(documentID)
+                        let directory = supportRoot.appendingPathComponent("PencilDrawings", isDirectory: true)
                         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                        let destination = directory.appendingPathComponent(String(safeID)).appendingPathExtension("pkdrawing")
-                        if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
-                        try FileManager.default.copyItem(at: source, to: destination)
+                        let destination = directory.appendingPathComponent(safeID).appendingPathExtension("pkdrawing")
+                        try restoreAsset(from: source, to: destination)
                     }
                 }
                 var payload: JSObject = ["snapshotJson": snapshotJSON, "restoredAssetUris": restoredURIs]
                 if let backedUpAt = snapshotRecord.modificationDate { payload["backedUpAt"] = backedUpAt.iso8601String }
                 call.resolve(payload)
             } catch { reject(call, error: error) }
+        }
+    }
+
+    private func safeFileName(_ value: String) -> String {
+        String(value.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "_" })
+    }
+
+    private func fileExtension(for mimeType: String?, source: URL) -> String {
+        if let mimeType,
+           let fileExtension = UTType(mimeType: mimeType)?.preferredFilenameExtension,
+           !fileExtension.isEmpty {
+            return fileExtension
+        }
+        return source.pathExtension.isEmpty ? "bin" : source.pathExtension
+    }
+
+    private func restoreAsset(from source: URL, to destination: URL) throws {
+        let staging = destination
+            .deletingLastPathComponent()
+            .appendingPathComponent(".\(destination.lastPathComponent)-\(UUID().uuidString).staging")
+        defer { try? FileManager.default.removeItem(at: staging) }
+        try FileManager.default.copyItem(at: source, to: staging)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            _ = try FileManager.default.replaceItemAt(destination, withItemAt: staging)
+        } else {
+            try FileManager.default.moveItem(at: staging, to: destination)
         }
     }
 
@@ -337,6 +377,20 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
 
 private extension Date {
     var iso8601String: String { ISO8601DateFormatter().string(from: self) }
+}
+
+@objc(AppLifecyclePlugin)
+@MainActor
+public final class AppLifecyclePlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin {
+    public let identifier = "AppLifecyclePlugin"
+    public let jsName = "AppLifecycle"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "flushRequested", returnType: CAPPluginReturnPromise)
+    ]
+
+    @objc public func flushRequested(_ call: CAPPluginCall) {
+        call.resolve(["requestedAt": Date().iso8601String])
+    }
 }
 
 @objc(JournalAudioPlugin)
@@ -550,7 +604,7 @@ public final class JournalFilesPlugin: CAPPlugin, @preconcurrency CAPBridgedPlug
     @objc public func removeToTrash(_ call: CAPPluginCall) {
         guard let assetID = call.getString("assetId"), let store else { call.reject("An asset ID is required."); return }
         do { try store.moveToTrash(assetID: assetID); call.resolve() }
-        catch { call.reject("The recording could not be moved to recoverable trash.", "NATIVE_FAILURE", error) }
+        catch { call.reject("The asset could not be moved to recoverable trash.", "NATIVE_FAILURE", error) }
     }
 
     @objc public func storageHealth(_ call: CAPPluginCall) {

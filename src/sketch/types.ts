@@ -56,6 +56,7 @@ export type SketchCapabilityProfile =
 export interface SketchRepository {
   load(documentId: EntityId): Promise<SketchDocument>;
   save(document: SketchDocument): Promise<SaveHealth>;
+  remove?(documentId: EntityId): Promise<void>;
   subscribe?(
     documentId: EntityId,
     listener: () => void,

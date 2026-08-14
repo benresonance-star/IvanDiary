@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from "react";
 
 import type { DocumentOperationInput, JournalSettings } from "../domain/models";
 import { useNativeDrawingOverlay } from "../hooks/useNativeDrawingOverlay";
+import { useIndependentHslColour } from "../hooks/useIndependentHslColour";
 import { clearNativeDrawingOverlay, hasNativePencilKit } from "../native/pencilKit";
 import { NativeSketchPreview } from "../sketch/NativeSketchPreview";
 import { CANVAS_TEST_DOCUMENT_ID } from "../sketch/specialDocuments";
 import { SKETCH_SCHEMA_VERSION, type PenNib, type SketchRepository, type SketchTool } from "../sketch/types";
-import { clampOpacity, hexToHsl, hslToHex } from "../utils/colour";
+import { clampOpacity } from "../utils/colour";
 import { SketchSurface } from "../sketch/SketchSurface";
 import { favouriteColourName } from "./penColours";
 import { PEN_WIDTH_MAX, PEN_WIDTH_MIN } from "./PenSettingsHud";
@@ -40,7 +41,7 @@ export function CanvasSettingsPanel({
   const inkSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const toolsRef = useRef<HTMLDivElement>(null);
-  const hsl = hexToHsl(colour);
+  const [hsl, updateHsl] = useIndependentHslColour(colour);
 
   const { overlayActive, overlayRequested } = useNativeDrawingOverlay({
     documentId: CANVAS_TEST_DOCUMENT_ID,
@@ -82,7 +83,7 @@ export function CanvasSettingsPanel({
   };
 
   const setHsl = (next: { h?: number; s?: number; l?: number }) => {
-    saveColour(hslToHex(next.h ?? hsl.h, next.s ?? hsl.s, next.l ?? hsl.l));
+    saveColour(updateHsl(next));
   };
 
   const saveInkSettings = (width: number, opacity: number) => {

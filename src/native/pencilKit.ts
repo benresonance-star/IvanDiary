@@ -160,6 +160,11 @@ export async function clearNativeDrawingOverlay(
   return result;
 }
 
+export async function deleteNativeDrawing(documentId: string): Promise<void> {
+  await enqueueOverlayCall(() => pencilKit.deleteDrawing({ documentId }));
+  notifyDrawingUpdated(documentId, false);
+}
+
 export async function undoNativeDrawingOverlay(): Promise<void> {
   await enqueueOverlayCall(() => pencilKit.undoOverlay());
 }

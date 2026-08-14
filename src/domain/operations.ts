@@ -480,6 +480,33 @@ export function applyDocumentOperation(
       };
       break;
     }
+    case "favourites-reorder": {
+      const uniqueFavouriteIds = new Set(operation.favouriteIds);
+      if (
+        operation.favouriteIds.length !== snapshot.favourites.length ||
+        uniqueFavouriteIds.size !== snapshot.favourites.length ||
+        operation.favouriteIds.some(
+          (favouriteId) =>
+            !snapshot.favourites.some(
+              (favourite) => favourite.id === favouriteId,
+            ),
+        )
+      ) {
+        throw new OperationConflictError(
+          "Reordered favourites must contain every favourite exactly once.",
+        );
+      }
+      next = {
+        ...snapshot,
+        favourites: operation.favouriteIds.map(
+          (favouriteId) =>
+            snapshot.favourites.find(
+              (favourite) => favourite.id === favouriteId,
+            )!,
+        ),
+      };
+      break;
+    }
     case "favourite-set":
       next = applyFavourite(snapshot, operation);
       break;

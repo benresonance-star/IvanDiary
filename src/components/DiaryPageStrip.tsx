@@ -13,6 +13,7 @@ import {
 import { MAX_PAGES_PER_COLLECTION, type Page, type PageObject } from "../domain/models";
 import type { SketchRepository } from "../sketch/types";
 import { defaultObjectFrame } from "./arrangeGeometry";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { SketchThumbnail } from "./SketchThumbnail";
 
 function previewStyle(object: PageObject): CSSProperties {
@@ -437,8 +438,9 @@ export function DiaryPageStrip({
                 <span
                   aria-hidden="true"
                   className={`diary-page-preview paper-${page.paperStyle}`}
-                />
-                <span>Page {pageNumber}</span>
+                >
+                  <span className="page-preview-label">Page {pageNumber}</span>
+                </span>
                 {arrange ? (
                   <GripHorizontal
                     aria-hidden="true"
@@ -481,48 +483,26 @@ export function DiaryPageStrip({
             <span aria-hidden="true" className="add-page-preview">
               <Plus />
             </span>
-            <span>Add page</span>
           </button>
         </div>
       </div>
-      {pagePendingDelete
-        ? createPortal(
-            <div
-              className="delete-dialog-backdrop"
-              onClick={() => setPagePendingDelete(undefined)}
-              role="presentation"
-            >
-              <div
-                aria-labelledby="delete-page-title"
-                aria-modal="true"
-                className="delete-dialog"
-                onClick={(event) => event.stopPropagation()}
-                role="alertdialog"
-              >
-                <Trash2 aria-hidden="true" />
-                <h2 id="delete-page-title">Delete this page?</h2>
-                <p>This removes its drawing, text, photos and recordings from this diary.</p>
-                <div className="delete-dialog-actions">
-                  <button autoFocus onClick={() => setPagePendingDelete(undefined)} type="button">
-                    Keep it
-                  </button>
-                  <button
-                    className="confirm-delete"
-                    onClick={() => {
-                      const pageId = pagePendingDelete.id;
-                      setPagePendingDelete(undefined);
-                      void onDeletePage(pageId);
-                    }}
-                    type="button"
-                  >
-                    Delete page
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      {pagePendingDelete ? (
+        <ConfirmDialog
+          cancelLabel="Keep it"
+          confirmClassName="confirm-delete"
+          confirmLabel="Delete page"
+          icon={<Trash2 aria-hidden="true" />}
+          onCancel={() => setPagePendingDelete(undefined)}
+          onConfirm={() => {
+            const pageId = pagePendingDelete.id;
+            setPagePendingDelete(undefined);
+            void onDeletePage(pageId);
+          }}
+          title="Delete this page?"
+        >
+          <p>This removes its drawing, text, photos and recordings from this diary.</p>
+        </ConfirmDialog>
+      ) : null}
       {pageLimitWarningOpen
         ? createPortal(
             <div className="delete-dialog-backdrop" role="presentation">

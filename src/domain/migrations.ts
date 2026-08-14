@@ -124,17 +124,27 @@ function migrateSettings(value: unknown): JournalSettings {
       const candidate = isRecord(value.penNibProfiles)
         ? value.penNibProfiles[nib]
         : undefined;
-      const fallback = DEFAULT_SETTINGS.penNibProfiles[nib];
       if (!isRecord(candidate)) return [nib, {
-        ...fallback,
         color: penColor,
         width: penWidth,
         opacity: penOpacity,
       }];
       return [nib, {
-        color: penColor,
-        width: penWidth,
-        opacity: penOpacity,
+        color:
+          typeof candidate.color === "string" &&
+          /^#[0-9a-f]{6}$/i.test(candidate.color)
+            ? candidate.color
+            : penColor,
+        width:
+          typeof candidate.width === "number" &&
+          Number.isFinite(candidate.width)
+            ? Math.min(28, Math.max(1, candidate.width))
+            : penWidth,
+        opacity:
+          typeof candidate.opacity === "number" &&
+          Number.isFinite(candidate.opacity)
+            ? Math.min(1, Math.max(0, candidate.opacity))
+            : penOpacity,
       }];
     }),
   ) as JournalSettings["penNibProfiles"];

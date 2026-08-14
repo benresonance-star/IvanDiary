@@ -7,12 +7,12 @@ import type { JournalAudioPlugin } from "../native/contracts";
 export function AudioCard({
   disabled = false,
   audio,
-  onRetryTranscription,
+  onConvertToText,
   recording,
 }: {
   disabled?: boolean;
   audio: JournalAudioPlugin;
-  onRetryTranscription?: () => void;
+  onConvertToText?: () => void;
   recording: VoiceRecordingObject;
 }) {
   const [playing, setPlaying] = useState(false);
@@ -47,31 +47,33 @@ export function AudioCard({
         type="button"
       >
         {playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
+        <span>{playing ? "Pause" : "Play"}</span>
       </button>
-      {recording.transcriptionStatus === "pending" ||
-      recording.transcriptionStatus === "transcribing" ? (
-        <div>
-          <p aria-live="polite">
-            {recording.transcriptionStatus === "pending"
-              ? "This recording is ready to turn into text."
-              : "Turning this recording into text…"}
-          </p>
-          {recording.transcriptionStatus === "pending" && onRetryTranscription ? (
-            <button disabled={disabled} onClick={onRetryTranscription} type="button">
-              Generate text
-            </button>
-          ) : null}
-        </div>
+      {recording.transcriptionStatus !== "complete" && onConvertToText ? (
+        <button
+          className="audio-convert-button"
+          disabled={
+            disabled || recording.transcriptionStatus === "transcribing"
+          }
+          onClick={onConvertToText}
+          type="button"
+        >
+          {recording.transcriptionStatus === "transcribing"
+            ? "Converting…"
+            : recording.transcriptionStatus === "failed"
+              ? "Try again"
+              : "Convert to text"}
+        </button>
+      ) : null}
+      {recording.transcriptionStatus === "transcribing" ? (
+        <p aria-live="polite" className="audio-transcription-status">
+          Converting recording to text…
+        </p>
       ) : null}
       {recording.transcriptionStatus === "failed" ? (
-        <div>
-          <p aria-live="polite">Text could not be generated.</p>
-          {onRetryTranscription ? (
-            <button disabled={disabled} onClick={onRetryTranscription} type="button">
-              Try text again
-            </button>
-          ) : null}
-        </div>
+        <p aria-live="polite" className="audio-transcription-status error">
+          Text could not be generated. Your recording is still saved.
+        </p>
       ) : null}
     </article>
   );

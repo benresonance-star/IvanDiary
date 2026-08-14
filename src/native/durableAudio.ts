@@ -1,5 +1,12 @@
 import type { JournalAudioPlugin, JournalFilesPlugin, RecordingSnapshot } from "./contracts";
 
+export async function recordingStorageAvailable(
+  files: JournalFilesPlugin,
+): Promise<boolean> {
+  const health = await files.storageHealth();
+  return !health.lowStorage;
+}
+
 export async function finalizeStoppedRecording(
   audio: JournalAudioPlugin,
   files: JournalFilesPlugin,

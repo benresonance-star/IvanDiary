@@ -27,6 +27,7 @@ import {
   type AlignmentGuides,
   type PageLayout,
 } from "./arrangeGeometry";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 export type LayoutChange = {
   kind: "move" | "resize";
@@ -362,49 +363,22 @@ export function ArrangeablePageObject({
                 portalTarget,
               )
             : null}
-          {deleteDialogOpen
-            ? createPortal(
-                <div
-                  className="delete-dialog-backdrop"
-                  onClick={() => setDeleteDialogOpen(false)}
-                  role="presentation"
-                >
-                  <div
-                    aria-labelledby={`delete-title-${objectId}`}
-                    aria-modal="true"
-                    className="delete-dialog"
-                    onClick={(event) => event.stopPropagation()}
-                    role="alertdialog"
-                  >
-                    <Trash2 aria-hidden="true" />
-                    <h2 id={`delete-title-${objectId}`}>
-                      Delete {objectLabel}?
-                    </h2>
-                    <p>Do you want to delete “{deleteDescription}”?</p>
-                    <div className="delete-dialog-actions">
-                      <button
-                        autoFocus
-                        onClick={() => setDeleteDialogOpen(false)}
-                        type="button"
-                      >
-                        Keep it
-                      </button>
-                      <button
-                        className="confirm-delete"
-                        onClick={() => {
-                          setDeleteDialogOpen(false);
-                          onDelete();
-                        }}
-                        type="button"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>,
-                document.body,
-              )
-            : null}
+          {deleteDialogOpen ? (
+            <ConfirmDialog
+              cancelLabel="Keep it"
+              confirmClassName="confirm-delete"
+              confirmLabel="Delete"
+              icon={<Trash2 aria-hidden="true" />}
+              onCancel={() => setDeleteDialogOpen(false)}
+              onConfirm={() => {
+                setDeleteDialogOpen(false);
+                onDelete();
+              }}
+              title={`Delete ${objectLabel}?`}
+            >
+              <p>Do you want to delete “{deleteDescription}”?</p>
+            </ConfirmDialog>
+          ) : null}
         </>
       ) : null}
     </div>

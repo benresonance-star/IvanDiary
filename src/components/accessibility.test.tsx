@@ -1,9 +1,15 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 
 import { Navigation } from "./Navigation";
 import { SettingsView } from "./SettingsView";
-import { BrowserJournalAudioMock, BrowserJournalFilesMock } from "../native/browserMocks";
+import {
+  BrowserAppleTranscriptionMock,
+  BrowserJournalAudioMock,
+  BrowserJournalFilesMock,
+} from "../native/browserMocks";
+import { hslToHex } from "../utils/colour";
 
 const sketchRepository = {
   load: vi.fn(async (id: string) => ({
@@ -28,30 +34,43 @@ afterEach(() => vi.unstubAllGlobals());
 describe("accessible navigation and settings", () => {
   it("exposes the active section and large named navigation actions", () => {
     const onSectionChange = vi.fn();
-    const onProfileSelect = vi.fn();
-    const onBackupWarningSelect = vi.fn();
+    function NavigationHarness() {
+      const [menuOpen, setMenuOpen] = useState(false);
+      return (
+        <Navigation
+          activeSection="diary"
+          backupStatus={{ state: "error", pendingItemCount: 1, message: "Not connected" }}
+          displayName="Ivan"
+          menuOpen={menuOpen}
+          menuOpening={false}
+          onMenuClose={() => setMenuOpen(false)}
+          onMenuOpen={() => setMenuOpen(true)}
+          onSectionChange={onSectionChange}
+          sketchRepository={sketchRepository}
+        />
+      );
+    }
     render(
-      <Navigation
-        activeSection="diary"
-        backupStatus={{ state: "error", pendingItemCount: 1, message: "Not connected" }}
-        displayName="Ivan"
-        onProfileSelect={onProfileSelect}
-        onBackupWarningSelect={onBackupWarningSelect}
-        onSectionChange={onSectionChange}
-        sketchRepository={sketchRepository}
-      />,
+      <NavigationHarness />,
     );
 
+    const trigger = screen.getByRole("button", { name: "Ivan navigation" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: "My Journal" })).toHaveAttribute(
       "aria-current",
       "page",
     );
     fireEvent.click(screen.getByRole("button", { name: "My Favourites" }));
     expect(onSectionChange).toHaveBeenCalledWith("favourites");
-    fireEvent.click(screen.getByRole("button", { name: "Ivan profile and settings" }));
-    expect(onProfileSelect).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: /Backup issue/ }));
-    expect(onBackupWarningSelect).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole("button", { name: /My Settings.*Backup issue/i })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
   it("uses choice and switch semantics for accessibility preferences", () => {
@@ -102,6 +121,7 @@ describe("accessible navigation and settings", () => {
           backupOnWifiOnly: true,
           myWords: [],
         }}
+        transcription={new BrowserAppleTranscriptionMock()}
       />,
     );
 
@@ -130,6 +150,30 @@ describe("accessible navigation and settings", () => {
         penColor: expect.stringMatching(/^#[0-9a-f]{6}$/i),
       }),
     }));
+    const canvasHue = screen.getByRole("slider", {
+      name: "Canvas colour hue",
+    });
+    const canvasStrength = screen.getByRole("slider", {
+      name: "Canvas colour strength",
+    });
+    const canvasLightness = screen.getByRole("slider", {
+      name: "Canvas colour lightness",
+    });
+    fireEvent.change(canvasStrength, { target: { value: "75" } });
+    fireEvent.change(canvasLightness, { target: { value: "0" } });
+    fireEvent.change(canvasHue, { target: { value: "250" } });
+    expect(canvasHue).toHaveValue("250");
+    expect(canvasStrength).toHaveValue("75");
+    expect(canvasLightness).toHaveValue("0");
+    fireEvent.change(canvasLightness, { target: { value: "50" } });
+    expect(commit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "settings-update",
+        settings: expect.objectContaining({
+          penColor: hslToHex(250, 75, 50),
+        }),
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Brush" }));
     expect(screen.getByRole("button", { name: "Brush" })).toHaveAttribute("aria-pressed", "true");
 
@@ -168,15 +212,39 @@ describe("accessible navigation and settings", () => {
         activeSection="diary"
         backupStatus={{ state: "synced", pendingItemCount: 0, message: "Backup is up to date" }}
         displayName="Ivan"
-        onBackupWarningSelect={vi.fn()}
-        onProfileSelect={vi.fn()}
+        menuOpen={false}
+        menuOpening={false}
+        onMenuClose={vi.fn()}
+        onMenuOpen={vi.fn()}
         onSectionChange={vi.fn()}
         sketchRepository={sketchRepository}
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Ivan profile and settings" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Not backed up/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ivan navigation" })).toBeInTheDocument();
+    expect(screen.queryByText(/Backup issue|Backup incomplete/)).not.toBeInTheDocument();
+  });
+
+  it("keeps a long full name available inside the profile menu", () => {
+    const longName = "Alexander Benjamin Christopher Davidson";
+    render(
+      <Navigation
+        activeSection="diary"
+        backupStatus={{ state: "synced", pendingItemCount: 0, message: "Backup is up to date" }}
+        displayName={longName}
+        menuOpen
+        menuOpening={false}
+        onMenuClose={vi.fn()}
+        onMenuOpen={vi.fn()}
+        onSectionChange={vi.fn()}
+        sketchRepository={sketchRepository}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: `${longName} navigation` }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toHaveTextContent(longName);
   });
 
   it.each(["not-configured", "available", "syncing", "synced"] as const)(
@@ -187,8 +255,10 @@ describe("accessible navigation and settings", () => {
           activeSection="diary"
           backupStatus={{ state, pendingItemCount: 0, message: "No action needed" }}
           displayName="Ivan"
-          onBackupWarningSelect={vi.fn()}
-          onProfileSelect={vi.fn()}
+          menuOpen
+          menuOpening={false}
+          onMenuClose={vi.fn()}
+          onMenuOpen={vi.fn()}
           onSectionChange={vi.fn()}
           sketchRepository={sketchRepository}
         />,

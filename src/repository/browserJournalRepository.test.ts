@@ -69,6 +69,52 @@ describe("BrowserJournalRepository", () => {
     expect(recovered.snapshot.pages[0]?.objects).toContainEqual(object);
   });
 
+  it("checkpoints long operation histories into a fresh recovery baseline", async () => {
+    const journalId = "repository-checkpoint-test-journal";
+    const repository = new BrowserJournalRepository(journalId, () => ({
+      ...createInitialJournalSnapshot(
+        new Date("2026-08-03T09:00:00.000Z"),
+      ),
+      id: journalId,
+    }));
+    await repository.load();
+
+    for (let revision = 0; revision < 100; revision += 1) {
+      const committed = await repository.commit({
+        id: `checkpoint-operation-${revision}`,
+        type: "settings-update",
+        journalId,
+        baseRevision: revision,
+        resultingRevision: revision + 1,
+        createdAt: new Date(
+          Date.UTC(2026, 7, 3, 10, 0, revision),
+        ).toISOString(),
+        settings: { welcomeMessage: `Revision ${revision + 1}` },
+      });
+      if (revision === 99) {
+        expect(committed.health.pendingOperationCount).toBe(0);
+      }
+    }
+
+    const instance = await developmentDatabase();
+    expect(
+      await instance.countFromIndex(
+        "journalOperations",
+        "by-journal",
+        journalId,
+      ),
+    ).toBe(0);
+    await instance.put("journalSnapshots", {
+      id: journalId,
+      schemaVersion: 99,
+    } as unknown as JournalSnapshot);
+
+    const recovered = await repository.load();
+    expect(recovered.recoveredFromOperationLog).toBe(true);
+    expect(recovered.snapshot.revision).toBe(100);
+    expect(recovered.snapshot.settings.welcomeMessage).toBe("Revision 100");
+  });
+
   it("persists a new page and its journal-day order together", async () => {
     const journalId = "repository-page-test-journal";
     const repository = new BrowserJournalRepository(journalId, () => ({

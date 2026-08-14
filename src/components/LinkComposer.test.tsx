@@ -31,4 +31,21 @@ describe("LinkComposer", () => {
       "Holiday photos",
     );
   });
+
+  it("renders as a modal above the canvas and blocks canvas interaction", () => {
+    const onClose = vi.fn();
+    render(
+      <LinkComposer
+        onClose={onClose}
+        onSave={vi.fn()}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Add a web link" });
+    expect(dialog.parentElement).toHaveClass("link-composer-backdrop");
+    fireEvent.click(dialog);
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(dialog.parentElement!);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });

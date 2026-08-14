@@ -126,6 +126,19 @@ describe("useNativeDrawingOverlay helpers", () => {
     await waitFor(() => expect(coordinator.state).toEqual({ active: false }));
   });
 
+  it("waits for the active overlay to hide before app UI opens above it", async () => {
+    const native = operations();
+    const coordinator = new NativeDrawingOverlayCoordinator(native);
+    const { request } = fixture();
+
+    coordinator.request(request);
+    await waitFor(() => expect(coordinator.state.active).toBe(true));
+
+    await expect(coordinator.suspendAndWait()).resolves.toBe(true);
+    expect(native.hide).toHaveBeenCalledWith("drawing-one");
+    expect(coordinator.state).toEqual({ active: false });
+  });
+
   it("hides the previous document before presenting a replacement", async () => {
     const native = operations();
     const coordinator = new NativeDrawingOverlayCoordinator(native);
