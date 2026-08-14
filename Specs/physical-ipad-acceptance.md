@@ -5,16 +5,19 @@ iPadOS release before a production build.
 
 ## Accessibility and input
 
-- [ ] VoiceOver announces every toolbar control, dialog, status change, page
-      preview, voice recording control, and destructive confirmation.
-- [ ] Switch Control can reach and activate navigation, drawing tools, page
-      controls, playback, Convert to text, and Settings without a precision
-      gesture.
+- [ ] VoiceOver announces every toolbar control, Share picture/PDF choices,
+      Favourite after the today/earlier label, dialog, status change, page preview, voice
+      recording control, and destructive confirmation.
+- [ ] Switch Control can reach and activate navigation, drawing tools, Share,
+      header Favourite, page controls, playback, Convert to text, and Settings
+      without a precision gesture.
 - [ ] Standard, Large, and Extra Large text do not clip primary actions.
 - [ ] High Contrast preserves readable text, focus rings, and selected states.
 - [ ] Keyboard mode opens the alphabetic iPad keyboard after switching from
       Voice mode; caret and selection are preserved.
 - [ ] Floating or split keyboard preferences do not obscure Add to canvas.
+- [ ] In View mode, tapping a pasted web link on the page opens it in Safari.
+- [ ] A shared PDF opens pasted web links from the page cards or the Web links page.
 
 ## Drawing durability
 

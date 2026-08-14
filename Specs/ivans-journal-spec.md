@@ -400,8 +400,8 @@ Minimal navigation:
 
 The paper page should dominate the screen.
 
-Follow **Interface V2** with a floating toolbar containing six large labelled
-controls:
+Follow **Interface V2** with a floating toolbar of large labelled
+controls, including:
 
 -   Draw
 -   Erase
@@ -409,6 +409,15 @@ controls:
 -   Text
 -   Voice, visually prominent
 -   Undo
+-   Share, at the right end of the toolbar
+
+Share captures the journal drawing on the paper as a picture or PDF and opens
+the iOS share sheet for Messages or Mail. The picture is built from the saved
+drawing, not a screenshot, so alerts and other chrome cannot appear. Voice recordings on the page are sent as separate
+playable files. The PDF also includes a large-print **What was said** page from
+any transcripts, and pasted web links stay tappable on the page plus a
+large-print **Web links** page. Favourite stays after the today/earlier entry label, or beside
+the sketchbook name, not in the toolbar.
 
 The toolbar may wrap or change arrangement on smaller iPads, but it must keep
 the same conceptual order. Advanced drawing tools, selection, redo and helper
@@ -815,8 +824,10 @@ nudge and size shortcut buttons stay hidden.
 
 ### Media
 
--   add photographs
--   paste and open web links
+-   add photographs that can cover the 16:9 page
+-   keep photograph proportions in Arrange unless turned off
+-   paste and open web links from View mode
+-   tappable web links in a shared PDF
 
 ### Appearance
 

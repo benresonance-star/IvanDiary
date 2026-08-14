@@ -204,6 +204,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
             preview = try saveDrawing()
         }
         isUserInteractionEnabled = false
+        dismissToolPicker()
         isHidden = true
         isPresented = false
         return preview
@@ -265,6 +266,14 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         layer.cornerRadius = circle ? min(bounds.width, bounds.height) / 2 : 0
     }
 
+    private func dismissToolPicker() {
+        canvasView.resignFirstResponder()
+        PKToolPicker().setVisible(false, forFirstResponder: canvasView)
+        if let window = window, let picker = PKToolPicker.shared(for: window) {
+            picker.setVisible(false, forFirstResponder: canvasView)
+        }
+    }
+
     public func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
         pendingSave?.cancel()
         pendingSave = Task { @MainActor [weak self] in
@@ -301,7 +310,8 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
             spacing: grid.spacing,
             rotationDegrees: grid.rotationDegrees,
             origin: grid.origin,
-            pageSize: grid.pageSize
+            pageSize: grid.pageSize,
+            documentSize: grid.documentSize
         )
         gridInputView.inkColor = PencilInkColor.forLightPaper(color)
         gridInputView.inkWidth = width

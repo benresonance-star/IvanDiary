@@ -75,6 +75,10 @@ export function useNativeDrawingOverlay({
   >(undefined);
   const [gridOrigin, setGridOrigin] = useState({ x: 0, y: 0 });
   const [gridPageSize, setGridPageSize] = useState({ width: 1200, height: 820 });
+  const [gridDocumentSize, setGridDocumentSize] = useState({
+    width: 1200,
+    height: 820,
+  });
   const nativeAvailable = hasNativePencilKit();
   const drawing =
     nativeAvailable && enabled && (tool === "pen" || tool === "eraser");
@@ -82,6 +86,18 @@ export function useNativeDrawingOverlay({
   useEffect(() => {
     onErrorRef.current = onError;
   }, [onError]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void sketchRepository.load(documentId).then((document) => {
+      if (!cancelled) {
+        setGridDocumentSize(document.size);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [documentId, sketchRepository]);
 
   useEffect(() => {
     const owner = ownerRef.current;
@@ -195,6 +211,8 @@ export function useNativeDrawingOverlay({
       gridOriginY: gridOrigin.y,
       gridPageWidth: gridPageSize.width,
       gridPageHeight: gridPageSize.height,
+      gridDocumentWidth: gridDocumentSize.width,
+      gridDocumentHeight: gridDocumentSize.height,
       sketchRepository,
       onError: (message) => onErrorRef.current?.(message),
     });
@@ -209,6 +227,8 @@ export function useNativeDrawingOverlay({
     gridOrigin.y,
     gridPageSize.height,
     gridPageSize.width,
+    gridDocumentSize.height,
+    gridDocumentSize.width,
     opacity,
     fingerDrawing,
     overlayRect,

@@ -200,9 +200,13 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         return DrawingGridSettings(
             enabled: enabled,
             spacing: CGFloat(max(36, min(spacing, 96))),
-            rotationDegrees: CGFloat(max(-45, min(rotation, 45))),
+            rotationDegrees: DrawingGridSettings.clampedRotation(rotation),
             origin: CGPoint(x: originX, y: originY),
-            pageSize: CGSize(width: pageWidth, height: pageHeight)
+            pageSize: CGSize(width: pageWidth, height: pageHeight),
+            documentSize: CGSize(
+                width: call.getDouble("gridDocumentWidth") ?? 1200,
+                height: call.getDouble("gridDocumentHeight") ?? 820
+            )
         )
     }
 
@@ -448,6 +452,7 @@ final class AppViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(JournalFilesPlugin())
         bridge?.registerPluginInstance(CloudBackupPlugin())
         bridge?.registerPluginInstance(AppLifecyclePlugin())
+        bridge?.registerPluginInstance(NativeSharePlugin())
     }
 }
 

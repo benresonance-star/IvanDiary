@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { GRID_ROTATION_MAX } from "../domain/models";
 import {
+  clampGridRotation,
   gridAxisForSample,
   gridLineOffsets,
   snapSampleToGrid,
@@ -43,7 +45,7 @@ describe("drawing grid geometry", () => {
     },
   );
 
-  it.each([-45, 0, 45] as const)(
+  it.each([-75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75] as const)(
     "snapped strokes land on the visible lattice at %s degrees",
     (rotationDegrees) => {
       const spacing = 60;
@@ -61,4 +63,13 @@ describe("drawing grid geometry", () => {
       );
     },
   );
+
+  it("keeps every 15 degree drawing step the HUD can select", () => {
+    expect(GRID_ROTATION_MAX).toBe(75);
+    expect([0, 15, 30, 45, 60, 75].map(clampGridRotation)).toEqual([
+      0, 15, 30, 45, 60, 75,
+    ]);
+    expect(clampGridRotation(90)).toBe(75);
+    expect(clampGridRotation(-90)).toBe(-75);
+  });
 });

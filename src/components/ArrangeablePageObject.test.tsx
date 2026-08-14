@@ -149,6 +149,45 @@ describe("ArrangeablePageObject", () => {
     expect(onToggleLayer).toHaveBeenCalledOnce();
   });
 
+  it("keeps photo proportions from the top-left control by default", () => {
+    const pageRef = createRef<HTMLDivElement>();
+    const onToggleAspectLock = vi.fn();
+    render(
+      <div ref={pageRef}>
+        <ArrangeablePageObject
+          arrange
+          aspectLock
+          aspectRatio={1}
+          className="page-object photo-object"
+          deleteDescription="holiday.jpg"
+          frame={{ width: 0.4, height: 0.4 }}
+          layer="above-sketch"
+          maximumFrame={{ width: 0.94, height: 0.76 }}
+          objectLabel="image"
+          objectId="image-one"
+          onCommit={vi.fn()}
+          onDelete={vi.fn()}
+          onSelect={vi.fn()}
+          onToggleAspectLock={onToggleAspectLock}
+          onToggleLayer={vi.fn()}
+          pageRef={pageRef}
+          position={{ x: 0.2, y: 0.3 }}
+          selected
+          showShortcuts={false}
+        >
+          <span>Image</span>
+        </ArrangeablePageObject>
+      </div>,
+    );
+
+    const lock = screen.getByRole("button", {
+      name: "Keep photo proportions. On",
+    });
+    expect(lock).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(lock);
+    expect(onToggleAspectLock).toHaveBeenCalledOnce();
+  });
+
   it("confirms deletion using the object's content", () => {
     const pageRef = createRef<HTMLDivElement>();
     const onDelete = vi.fn();

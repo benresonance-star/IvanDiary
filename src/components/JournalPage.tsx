@@ -11,6 +11,7 @@ import {
   Eye,
   ImagePlus,
   Link as LinkIcon,
+  Mail,
   Mic,
   Move,
   PenLine,
@@ -27,6 +28,7 @@ import type {
   MyWord,
   Page,
   PageObject,
+  PhotoObject,
   SaveHealth,
   Sketchbook,
   TextObject,
@@ -37,6 +39,7 @@ import type {
   AppleTranscriptionPlugin,
   JournalAudioPlugin,
   JournalFilesPlugin,
+  NativeSharePlugin,
   RecordingSnapshot,
 } from "../native/contracts";
 import {
@@ -58,15 +61,23 @@ import {
 } from "../sketch/SketchSurface";
 import { NativeSketchPreview } from "../sketch/NativeSketchPreview";
 import type { SketchTool } from "../sketch/types";
-import { browserFileToAsset } from "../utils/assets";
+import { browserFileToAsset, readImageSize } from "../utils/assets";
 import { localDateKey } from "../utils/date";
 import { createId } from "../utils/id";
+import { openExternalUrl } from "../utils/openExternalUrl";
 import { AudioCard } from "./AudioCard";
 import {
   ArrangeablePageObject,
   type LayoutChange,
 } from "./ArrangeablePageObject";
-import { defaultObjectFrame } from "./arrangeGeometry";
+import {
+  containFrameInAspect,
+  defaultObjectFrame,
+  defaultPhotoFrame,
+  defaultPhotoPosition,
+  MAXIMUM_PHOTO_FRAME,
+  pageAspectFromImage,
+} from "./arrangeGeometry";
 import { DiaryCalendar } from "./DiaryCalendar";
 import { DiaryPageStrip } from "./DiaryPageStrip";
 import { insertSpokenText, type TextSelection } from "./textInsertion";
@@ -77,6 +88,17 @@ import {
   PenSettingsHud,
   type PenSettings,
 } from "./PenSettingsHud";
+import {
+  controlShareRect,
+  pageShareLinks,
+  pageShareRecordings,
+  pageShareTitle,
+  paperShareRect,
+  shareFileStem,
+  waitForShareCapture,
+  withShareTimeout,
+} from "./pageShare";
+import { ShareChooser } from "./ShareChooser";
 import { TextCard } from "./TextCard";
 import {
   TextComposer,
@@ -102,6 +124,7 @@ export type PageWorkspaceContext =
       date: string;
       favourite: boolean;
       journalDayId: string;
+      isFirstPage: boolean;
     }
   | {
       kind: "sketchbook";
@@ -178,6 +201,7 @@ export function PageWorkspace({
   myWords,
   navigationObscured = false,
   recordingLimitMinutes,
+  share,
   sketchRepository,
   tool,
   transcription,
@@ -209,6 +233,7 @@ export function PageWorkspace({
   myWords: MyWord[];
   navigationObscured?: boolean;
   recordingLimitMinutes: 2 | 5 | 10 | 30 | null;
+  share: NativeSharePlugin;
   sketchRepository: BrowserSketchRepository;
   tool: PageTool;
   transcription: AppleTranscriptionPlugin;
@@ -217,6 +242,7 @@ export function PageWorkspace({
   const paperRef = useRef<HTMLDivElement>(null);
   const pageHeaderRef = useRef<HTMLElement>(null);
   const toolPaletteRef = useRef<HTMLDivElement>(null);
+  const shareToolRef = useRef<HTMLButtonElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const actionTimelineRef = useRef<PageAction[]>([]);
   const twoFingerTapRecognizerRef = useRef(new TwoFingerTapRecognizer());
@@ -247,6 +273,10 @@ export function PageWorkspace({
   const [textStatus, setTextStatus] = useState<string>();
   const [placingTextId, setPlacingTextId] = useState<string>();
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [shareChooserOpen, setShareChooserOpen] = useState(false);
+  const [shareChooserRequested, setShareChooserRequested] = useState(false);
+  const [shareInProgress, setShareInProgress] = useState(false);
+  const [shareCapturing, setShareCapturing] = useState(false);
   const [linkBeingEdited, setLinkBeingEdited] = useState<LinkObject>();
   const [recording, setRecording] = useState<RecordingSnapshot>();
   const autoStopStartedRef = useRef(false);
@@ -277,7 +307,7 @@ export function PageWorkspace({
 
   const { overlayActive, overlayRequested, suspendOverlay } = useNativeDrawingOverlay({
     documentId: page.drawingDocumentId,
-    enabled: hasNativePencilKit() && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested,
+    enabled: hasNativePencilKit() && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested && !shareChooserOpen && !shareChooserRequested && !shareInProgress,
     tool,
     color: penSettings.color,
     nib: penSettings.nib,
@@ -317,6 +347,91 @@ export function PageWorkspace({
       setTextComposerOpen(true);
     } else {
       setNotice("The drawing is still saving. Try Text again in a moment.");
+    }
+  };
+
+  const openShareChooser = async () => {
+    if (
+      recording?.state === "recording" ||
+      recording?.state === "interrupted" ||
+      recording?.state === "finalising"
+    ) {
+      setNotice("Stop recording first, then share.");
+      return;
+    }
+    setTool("view");
+    setPenHudOpen(false);
+    setCalendarOpen(false);
+    setSelectedObjectId(undefined);
+    setShareChooserRequested(true);
+    const hidden = await suspendOverlay();
+    setShareChooserRequested(false);
+    if (hidden) {
+      setShareChooserOpen(true);
+    } else {
+      setNotice("The drawing is still saving. Try Share again in a moment.");
+    }
+  };
+
+  const sharePage = async (format: "jpg" | "pdf") => {
+    setShareChooserOpen(false);
+    setShareInProgress(true);
+    setShareCapturing(true);
+    setNotice(undefined);
+    const hidden = await suspendOverlay();
+    if (!hidden) {
+      setShareCapturing(false);
+      setShareInProgress(false);
+      setNotice("The drawing is still saving. Try Share again in a moment.");
+      return;
+    }
+    await waitForShareCapture(paperRef.current);
+    const paperRect = paperShareRect(paperRef.current) ?? {
+      x: 0,
+      y: 0,
+      width: Math.max(window.innerWidth, 8),
+      height: Math.max(window.innerHeight, 8),
+    };
+    const title = pageShareTitle({ displayName, context });
+    const recordings = pageShareRecordings(page);
+    const links = format === "pdf" ? pageShareLinks(page) : [];
+    try {
+      const exported = await withShareTimeout(
+        share.exportPage({
+          format,
+          title,
+          fileStem: shareFileStem(title),
+          paperRect,
+          documentId: page.drawingDocumentId,
+          previewInsetTop: sketchPreviewInsetTop,
+          ...(recordings.transcripts.length > 0
+            ? { transcripts: recordings.transcripts }
+            : {}),
+          ...(links.length > 0 ? { links } : {}),
+        }),
+      );
+      setShareCapturing(false);
+      const result = await withShareTimeout(
+        share.share({
+          title,
+          text: title,
+          fileUris: [exported.fileUri, ...recordings.audioUris],
+          sourceRect: controlShareRect(shareToolRef.current),
+        }),
+        120_000,
+      );
+      if (result.completed && result.activityType) {
+        setNotice("Ready to send");
+      } else if (!result.completed) {
+        setNotice("Share cancelled.");
+      } else {
+        setNotice(undefined);
+      }
+    } catch {
+      setNotice("This page could not be shared. Try again.");
+    } finally {
+      setShareCapturing(false);
+      setShareInProgress(false);
     }
   };
   const [sketchPreviewInsetTop, setSketchPreviewInsetTop] = useState(0);
@@ -442,6 +557,24 @@ export function PageWorkspace({
     });
   };
 
+  const togglePhotoAspectLock = (object: PhotoObject) => {
+    const lockAspectRatio = object.lockAspectRatio === false;
+    const aspectRatio = pageAspectFromImage(object.size);
+    const currentFrame = defaultObjectFrame(object);
+    void commit({
+      type: "page-object-update",
+      pageId: page.id,
+      object: {
+        ...object,
+        lockAspectRatio,
+        frame: lockAspectRatio
+          ? containFrameInAspect(currentFrame, aspectRatio)
+          : currentFrame,
+        revision: object.revision + 1,
+      },
+    });
+  };
+
   const deletePageObject = (
     object: Exclude<PageObject, TranscriptObject>,
   ) => {
@@ -526,7 +659,11 @@ export function PageWorkspace({
 
     setNotice("Preparing the photo…");
     try {
-      const asset = await browserFileToAsset(file);
+      const [asset, size] = await Promise.all([
+        browserFileToAsset(file),
+        readImageSize(file),
+      ]);
+      const frame = defaultPhotoFrame(size);
       const photoId = createId();
       const saved = await commit({
         type: "page-object-add",
@@ -535,12 +672,13 @@ export function PageWorkspace({
           id: photoId,
           type: "photo",
           pageId: page.id,
-          position: nextPosition(page),
-          frame: { width: 0.22, height: 0.3 },
+          position: defaultPhotoPosition(frame),
+          frame,
           createdAt: new Date().toISOString(),
           revision: 0,
           asset,
-          size: { width: 1200, height: 900 },
+          size,
+          lockAspectRatio: true,
           altText: file.name,
         },
       });
@@ -860,13 +998,16 @@ export function PageWorkspace({
 
   return (
     <section
-      className="journal-workspace"
+      className={`journal-workspace${shareCapturing ? " share-capturing" : ""}`}
       aria-label={
         context.kind === "diary"
           ? "Today’s diary page"
           : `${context.sketchbook.name} sketchbook page`
       }
     >
+      <p aria-atomic="true" aria-live="assertive" className="visually-hidden">
+        {shareCapturing ? "Preparing to send" : ""}
+      </p>
       <div
         className="tool-palette"
         aria-label="Page tools"
@@ -1008,44 +1149,17 @@ export function PageWorkspace({
             <span>Redo</span>
           </button>
         </div>
-        <div aria-label="Favourite tool" className="tool-hud" role="group">
+        <div aria-label="Share tool" className="tool-hud" role="group">
           <button
-            aria-label={
-              context.favourite
-                ? context.kind === "diary"
-                  ? "Remove today from favourites"
-                  : "Remove this page from favourites"
-                : context.kind === "diary"
-                  ? "Add today to favourites"
-                  : "Add this page to favourites"
-            }
-            aria-pressed={context.favourite}
-            className="tool favourite-tool"
-            onClick={() => void (async () => {
-              const adding = !context.favourite;
-              const saved = await commit({
-                type: "favourite-set",
-                targetType:
-                  context.kind === "diary" ? "journal-day" : "page",
-                targetId:
-                  context.kind === "diary"
-                    ? context.journalDayId
-                    : page.id,
-                favourite: adding,
-              });
-              if (saved) {
-                await suspendOverlay();
-                setFavouriteConfirmation(
-                  adding
-                    ? "Added to Your Favourites"
-                    : "Removed from Your Favourites",
-                );
-              }
-            })()}
+            aria-label="Share this page"
+            className="tool"
+            disabled={shareInProgress}
+            onClick={() => void openShareChooser()}
+            ref={shareToolRef}
             type="button"
           >
-            <ThumbsUp aria-hidden="true" />
-            <span>Favourite</span>
+            <Mail aria-hidden="true" />
+            <span>Share</span>
           </button>
         </div>
       </div>
@@ -1113,12 +1227,56 @@ export function PageWorkspace({
         context.date !== localDateKey(new Date()) ? (
           <span className="earlier-diary-entry">EARLIER DIARY ENTRY</span>
         ) : null}
+        <button
+          aria-label={
+            context.favourite
+              ? "Remove this page from favourites"
+              : "Add this page to favourites"
+          }
+          aria-pressed={context.favourite}
+          className="page-favourite"
+          onClick={() => void (async () => {
+            const adding = !context.favourite;
+            const saved = await commit({
+              type: "favourite-set",
+              targetType: "page",
+              targetId: page.id,
+              favourite: adding,
+            });
+            if (
+              saved &&
+              !adding &&
+              context.kind === "diary" &&
+              context.isFirstPage
+            ) {
+              await commit({
+                type: "favourite-set",
+                targetType: "journal-day",
+                targetId: context.journalDayId,
+                favourite: false,
+              });
+            }
+            if (saved) {
+              await suspendOverlay();
+              setFavouriteConfirmation(
+                adding
+                  ? "Added to Your Favourites"
+                  : "Removed from Your Favourites",
+              );
+            }
+          })()}
+          type="button"
+        >
+          <ThumbsUp aria-hidden="true" />
+        </button>
       </header>
 
       <div
         className={`paper-page paper-${page.paperStyle}${
           tool === "pen" || tool === "eraser" ? " drawing-active" : ""
-        }${tool === "arrange" ? " arranging" : ""}`}
+        }${tool === "arrange" ? " arranging" : ""}${
+          tool === "view" ? " viewing" : ""
+        }`}
         onClick={(event) => {
           if (!placingTextId || !(event.target instanceof Element)) return;
           const clickedObject = event.target.closest<HTMLElement>("[data-object-id]");
@@ -1230,15 +1388,19 @@ export function PageWorkspace({
                 </ArrangeablePageObject>
               );
             }
-            case "photo":
+            case "photo": {
+              const lockAspectRatio = object.lockAspectRatio !== false;
               return (
                 <ArrangeablePageObject
                   arrange={tool === "arrange"}
-                  className="page-object photo-object"
+                  aspectLock={lockAspectRatio}
+                  aspectRatio={pageAspectFromImage(object.size)}
+                  className={`page-object photo-object${lockAspectRatio ? " keep-proportions" : ""}`}
                   deleteDescription={deletionDescription(object)}
                   frame={defaultObjectFrame(object)}
                   key={object.id}
                   layer={object.layer ?? "above-sketch"}
+                  maximumFrame={MAXIMUM_PHOTO_FRAME}
                   objectLabel="image"
                   objectId={object.id}
                   onCommit={(change) =>
@@ -1246,6 +1408,7 @@ export function PageWorkspace({
                   }
                   onDelete={() => deletePageObject(object)}
                   onSelect={() => setSelectedObjectId(object.id)}
+                  onToggleAspectLock={() => togglePhotoAspectLock(object)}
                   onToggleLayer={() => toggleObjectLayer(object)}
                   pageRef={paperRef}
                   position={object.position}
@@ -1262,6 +1425,7 @@ export function PageWorkspace({
                   )}
                 </ArrangeablePageObject>
               );
+            }
             case "text":
               return (
                 <ArrangeablePageObject
@@ -1300,7 +1464,7 @@ export function PageWorkspace({
                   frame={defaultObjectFrame(object)}
                   key={object.id}
                   layer={object.layer ?? "above-sketch"}
-                  objectLabel="text block"
+                  objectLabel="web link"
                   objectId={object.id}
                   onCommit={(change) =>
                     commitLayoutChange(object.id, change)
@@ -1333,18 +1497,18 @@ export function PageWorkspace({
                       </span>
                     </div>
                   ) : (
-                    <a
+                    <button
+                      aria-label={`Open ${object.title}`}
                       className="link-object"
-                      href={object.url}
-                      rel="noreferrer"
-                      target="_blank"
+                      onClick={() => openExternalUrl(object.url)}
+                      type="button"
                     >
                       <LinkIcon aria-hidden="true" />
                       <span>
                         <strong>{object.title}</strong>
                         <small>{new URL(object.url).hostname}</small>
                       </span>
-                    </a>
+                    </button>
                   )}
                 </ArrangeablePageObject>
               );
@@ -1370,6 +1534,15 @@ export function PageWorkspace({
 
         {textComposerOpen ? (
           <TextComposer draft={textDraft} recording={textRecording?.state === "recording"} selectionRef={textSelectionRef} status={textStatus} onCancel={() => { setTextComposerOpen(false); setTextDraft(EMPTY_TEXT_DRAFT); textSelectionRef.current = { start: 0, end: 0 }; setTextStatus(undefined); }} onChange={setTextDraft} onSubmit={() => void addText()} onToggleVoice={() => void toggleTextVoice()} />
+        ) : null}
+
+        {shareChooserOpen ? (
+          <ShareChooser
+            hasRecordings={pageShareRecordings(page).hasRecordings}
+            onCancel={() => setShareChooserOpen(false)}
+            onSharePdf={() => void sharePage("pdf")}
+            onSharePicture={() => void sharePage("jpg")}
+          />
         ) : null}
 
         <FavouriteConfirmation message={favouriteConfirmation} onDone={() => setFavouriteConfirmation(undefined)} />

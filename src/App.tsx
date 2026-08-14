@@ -127,7 +127,7 @@ export default function App() {
   );
   const sketchRepository = useMemo(() => new BrowserSketchRepository(), []);
   const services = useMemo(() => createAppServices(), []);
-  const { audio, backup, files, lifecycle, runtime, transcription } = services;
+  const { audio, backup, files, lifecycle, runtime, share, transcription } = services;
   const { clearMessage, commit, flush, health, message, replace, snapshot } =
     useJournal(journalRepository);
   const [activeSection, setActiveSection] =
@@ -662,8 +662,15 @@ export default function App() {
             context={{
               kind: "diary",
               date: day.date,
-              favourite: day.favourite,
+              favourite:
+                snapshot.favourites.some(
+                  (favourite) =>
+                    favourite.targetType === "page" &&
+                    favourite.targetId === page.id,
+                ) ||
+                (day.pageIds[0] === page.id && day.favourite),
               journalDayId: day.id,
+              isFirstPage: day.pageIds[0] === page.id,
             }}
             displayName={snapshot.settings.displayName}
             entryDates={entryDates}
@@ -698,6 +705,7 @@ export default function App() {
             myWords={snapshot.settings.myWords}
             navigationObscured={navigationMenuOpen || navigationMenuOpening}
             recordingLimitMinutes={snapshot.settings.recordingLimitMinutes}
+            share={share}
             sketchRepository={sketchRepository}
             tool={activePageTool}
             transcription={transcription}
@@ -755,6 +763,7 @@ export default function App() {
             myWords={snapshot.settings.myWords}
             navigationObscured={navigationMenuOpen || navigationMenuOpening}
             recordingLimitMinutes={snapshot.settings.recordingLimitMinutes}
+            share={share}
             sketchRepository={sketchRepository}
             tool={activePageTool}
             transcription={transcription}

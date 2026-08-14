@@ -5,6 +5,7 @@ import type {
   CloudBackupPlugin,
   JournalFilesPlugin,
   JournalAudioPlugin,
+  NativeSharePlugin,
   RecordingSnapshot,
   TranscriptionResult,
 } from "./contracts";
@@ -110,6 +111,11 @@ export class BrowserAppLifecycleMock implements AppLifecyclePlugin {
   async flushRequested(): Promise<{ requestedAt: string }> {
     return { requestedAt: new Date().toISOString() };
   }
+
+  async openUrl({ url }: { url: string }): Promise<{ opened: boolean }> {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return { opened: true };
+  }
 }
 
 export class BrowserCloudBackupMock implements CloudBackupPlugin {
@@ -132,6 +138,24 @@ export class BrowserCloudBackupMock implements CloudBackupPlugin {
 
   async restore(): Promise<never> {
     throw new Error("iCloud restore is only available in the iPad app.");
+  }
+}
+
+export class BrowserNativeShareMock implements NativeSharePlugin {
+  readonly isSimulation = true;
+
+  async exportPage({
+    format,
+    fileStem,
+  }: Parameters<NativeSharePlugin["exportPage"]>[0]) {
+    return {
+      fileUri: `demo://share/${fileStem}.${format === "pdf" ? "pdf" : "jpg"}`,
+      fileName: `${fileStem}.${format === "pdf" ? "pdf" : "jpg"}`,
+    };
+  }
+
+  async share(): Promise<{ completed: boolean; activityType?: string }> {
+    return { completed: true, activityType: "browser" };
   }
 }
 

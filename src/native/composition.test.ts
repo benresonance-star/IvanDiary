@@ -6,6 +6,7 @@ import {
   BrowserCloudBackupMock,
   BrowserJournalAudioMock,
   BrowserJournalFilesMock,
+  BrowserNativeShareMock,
 } from "./browserMocks";
 import {
   CapacitorAppleTranscriptionAdapter,
@@ -13,6 +14,7 @@ import {
   CapacitorCloudBackupAdapter,
   CapacitorJournalAudioAdapter,
   CapacitorJournalFilesAdapter,
+  CapacitorNativeShareAdapter,
   type CapacitorPluginContracts,
 } from "./capacitorAdapters";
 import { createAppServices } from "./composition";
@@ -21,6 +23,7 @@ import type {
   AppleTranscriptionPlugin,
   JournalAudioPlugin,
   JournalFilesPlugin,
+  NativeSharePlugin,
   RecordingSnapshot,
 } from "./contracts";
 import { JournalServiceError } from "./errors";
@@ -77,6 +80,7 @@ function pluginDoubles(): CapacitorPluginContracts {
       flushRequested: vi.fn(async () => ({
         requestedAt: "2026-08-08T00:00:00.000Z",
       })),
+      openUrl: vi.fn(async () => ({ opened: true })),
     },
     backup: {
       status: vi.fn(async () => ({
@@ -99,6 +103,13 @@ function pluginDoubles(): CapacitorPluginContracts {
         restoredAssetUris: {},
       })),
     },
+    share: {
+      exportPage: vi.fn(async ({ fileStem, format }) => ({
+        fileUri: `file:///${fileStem}.${format}`,
+        fileName: `${fileStem}.${format}`,
+      })),
+      share: vi.fn(async () => ({ completed: true, activityType: "mail" })),
+    },
   };
 }
 
@@ -118,6 +129,7 @@ describe("service composition", () => {
     expect(services.files).toBeInstanceOf(BrowserJournalFilesMock);
     expect(services.lifecycle).toBeInstanceOf(BrowserAppLifecycleMock);
     expect(services.backup).toBeInstanceOf(BrowserCloudBackupMock);
+    expect(services.share).toBeInstanceOf(BrowserNativeShareMock);
     expect(nativePlugins).not.toHaveBeenCalled();
   });
 
@@ -135,6 +147,7 @@ describe("service composition", () => {
     expect(services.files).toBeInstanceOf(CapacitorJournalFilesAdapter);
     expect(services.lifecycle).toBeInstanceOf(CapacitorAppLifecycleAdapter);
     expect(services.backup).toBeInstanceOf(CapacitorCloudBackupAdapter);
+    expect(services.share).toBeInstanceOf(CapacitorNativeShareAdapter);
   });
 });
 
@@ -201,6 +214,9 @@ describe("Capacitor service adapters", () => {
     await expect(lifecycle.flushRequested()).resolves.toEqual({
       requestedAt: "2026-08-08T00:00:00.000Z",
     });
+    await expect(
+      lifecycle.openUrl({ url: "https://example.com/garden" }),
+    ).resolves.toEqual({ opened: true });
 
     expect(plugins.transcription.transcribe).toHaveBeenCalledWith(
       transcriptionOptions,
@@ -212,6 +228,9 @@ describe("Capacitor service adapters", () => {
       assetId: "asset-1",
     });
     expect(plugins.lifecycle.flushRequested).toHaveBeenCalledWith();
+    expect(plugins.lifecycle.openUrl).toHaveBeenCalledWith({
+      url: "https://example.com/garden",
+    });
   });
 
   it.each([
@@ -256,7 +275,52 @@ describe("Capacitor service adapters", () => {
     const lifecycle: AppLifecyclePlugin = new CapacitorAppLifecycleAdapter(
       plugins.lifecycle,
     );
+    const share: NativeSharePlugin = new CapacitorNativeShareAdapter(
+      plugins.share,
+    );
 
-    expect({ audio, transcription, files, lifecycle }).toBeDefined();
+    expect({ audio, transcription, files, lifecycle, share }).toBeDefined();
+  });
+
+  it("forwards page export and share-sheet results", async () => {
+    const plugin = pluginDoubles().share;
+    const adapter = new CapacitorNativeShareAdapter(plugin);
+    const paperRect = { x: 10, y: 20, width: 300, height: 200 };
+    const sourceRect = { x: 8, y: 8, width: 56, height: 56 };
+
+    await expect(
+      adapter.exportPage({
+        format: "jpg",
+        title: "Ivan 14 August 2026",
+        fileStem: "Ivan 14 August 2026",
+        paperRect,
+        transcripts: ["Hello"],
+      }),
+    ).resolves.toEqual({
+      fileUri: "file:///Ivan 14 August 2026.jpg",
+      fileName: "Ivan 14 August 2026.jpg",
+    });
+    await expect(
+      adapter.share({
+        title: "Ivan 14 August 2026",
+        text: "Ivan 14 August 2026",
+        fileUris: ["file:///page.jpg", "file:///recording.m4a"],
+        sourceRect,
+      }),
+    ).resolves.toEqual({ completed: true, activityType: "mail" });
+
+    expect(plugin.exportPage).toHaveBeenCalledWith({
+      format: "jpg",
+      title: "Ivan 14 August 2026",
+      fileStem: "Ivan 14 August 2026",
+      paperRect,
+      transcripts: ["Hello"],
+    });
+    expect(plugin.share).toHaveBeenCalledWith({
+      title: "Ivan 14 August 2026",
+      text: "Ivan 14 August 2026",
+      fileUris: ["file:///page.jpg", "file:///recording.m4a"],
+      sourceRect,
+    });
   });
 });

@@ -5,7 +5,10 @@ import {
   clampOpacity,
   colourWithOpacity,
 } from "../utils/colour";
-import type { DrawingGridSettings } from "../domain/models";
+import {
+  GRID_ROTATION_MAX,
+  type DrawingGridSettings,
+} from "../domain/models";
 import { useIndependentHslColour } from "../hooks/useIndependentHslColour";
 import type { PenNib } from "../sketch/types";
 import { DEFAULT_FAVOURITE_PEN_COLOURS, favouriteColourName } from "./penColours";
@@ -101,7 +104,7 @@ export function PenSettingsHud({
       rotationLongPressedRef.current = false;
       return;
     }
-    const nextRotation = grid.rotationDegrees >= 75
+    const nextRotation = grid.rotationDegrees >= GRID_ROTATION_MAX
       ? 0
       : grid.rotationDegrees + 15;
     onGridChange({ ...grid, rotationDegrees: nextRotation });

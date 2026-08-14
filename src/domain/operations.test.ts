@@ -128,6 +128,40 @@ describe("document operations", () => {
     );
   });
 
+  it("favourites a later diary page without marking the whole day", () => {
+    const day = initial.days[0]!;
+    const page = emptyPage(day.id);
+    const withPage = applyDocumentOperation(initial, {
+      id: "create-second-page-for-favourite",
+      type: "page-create",
+      journalId: initial.id,
+      baseRevision: 0,
+      resultingRevision: 1,
+      createdAt: page.createdAt,
+      journalDayId: day.id,
+      page,
+    });
+    const next = applyDocumentOperation(withPage, {
+      id: "favourite-page-two",
+      type: "favourite-set",
+      journalId: initial.id,
+      baseRevision: 1,
+      resultingRevision: 2,
+      createdAt: "2026-08-03T10:01:00.000Z",
+      targetType: "page",
+      targetId: page.id,
+      favourite: true,
+    });
+
+    expect(next.days[0]?.favourite).toBe(false);
+    expect(next.favourites).toContainEqual(
+      expect.objectContaining({
+        targetType: "page",
+        targetId: page.id,
+      }),
+    );
+  });
+
   it("reorders every favourite durably", () => {
     const favourites = [
       {
@@ -588,6 +622,21 @@ describe("document operations", () => {
       spacing: 96,
       rotationDegrees: 45,
     });
+  });
+
+  it("accepts every 15 degree grid rotation the drawing tools offer", () => {
+    const page = initial.pages[0]!;
+    const updated = applyDocumentOperation(initial, {
+      id: "rotate-page-grid",
+      type: "page-drawing-grid-update",
+      journalId: initial.id,
+      baseRevision: 0,
+      resultingRevision: 1,
+      createdAt: "2026-08-03T10:00:00.000Z",
+      pageId: page.id,
+      grid: { enabled: true, spacing: 60, rotationDegrees: 75 },
+    });
+    expect(updated.pages[0]?.drawingGrid?.rotationDegrees).toBe(75);
   });
 
   it("moves a page object with one durable operation", () => {

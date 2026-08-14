@@ -45,6 +45,9 @@ export type DrawingGridSettings = {
   rotationDegrees: number;
 };
 
+export const GRID_ROTATION_STEP = 15;
+export const GRID_ROTATION_MAX = 75;
+
 type PageObjectBase = {
   id: EntityId;
   pageId: EntityId;
@@ -90,6 +93,8 @@ export type PhotoObject = PageObjectBase & {
   asset: AssetRef;
   size: Size;
   altText?: string;
+  /** When unset, Arrange keeps the photograph’s original proportions. */
+  lockAspectRatio?: boolean;
 };
 
 export type TextObject = PageObjectBase & {

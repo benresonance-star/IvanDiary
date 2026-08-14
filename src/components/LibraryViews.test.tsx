@@ -7,7 +7,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import { createInitialJournalSnapshot } from "../domain/initialState";
-import type { Favourite } from "../domain/models";
+import type { Favourite, Page } from "../domain/models";
 import {
   BrowserAppleTranscriptionMock,
   BrowserJournalAudioMock,
@@ -55,6 +55,52 @@ describe("FavouritesView", () => {
     fireEvent.click(
       screen.getByRole("button", {
         name: /Open favourite: 3 August 2026/i,
+      }),
+    );
+    expect(onOpenFavourite).toHaveBeenCalledWith(favourite);
+  });
+
+  it("shows a later diary page favourite as its own card", () => {
+    const snapshot = createInitialJournalSnapshot(
+      new Date("2026-08-03T09:00:00.000Z"),
+    );
+    const day = snapshot.days[0]!;
+    const firstPage = snapshot.pages[0]!;
+    const secondPage: Page = {
+      ...firstPage,
+      id: "page-2026-08-03-2",
+      drawingDocumentId: "drawing-page-2026-08-03-2",
+    };
+    const favourite: Favourite = {
+      id: "favourite-page-two",
+      targetType: "page",
+      targetId: secondPage.id,
+      createdAt: "2026-08-03T10:00:00.000Z",
+    };
+    const onOpenFavourite = vi.fn();
+    const { container } = render(
+      <FavouritesView
+        commit={vi.fn()}
+        lastViewedFavouriteId={favourite.id}
+        onOpenFavourite={onOpenFavourite}
+        onReorderFavourites={vi.fn()}
+        sketchRepository={new BrowserSketchRepository()}
+        snapshot={{
+          ...snapshot,
+          days: [{ ...day, pageIds: [...day.pageIds, secondPage.id] }],
+          pages: [...snapshot.pages, secondPage],
+          favourites: [favourite],
+        }}
+      />,
+    );
+
+    expect(
+      container.querySelector(".favourite-page-preview"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Diary page")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Open favourite: 3 August 2026, page 2/i,
       }),
     );
     expect(onOpenFavourite).toHaveBeenCalledWith(favourite);

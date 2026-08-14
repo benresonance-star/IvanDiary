@@ -5,6 +5,7 @@ import type {
   CloudBackupResult,
   JournalAudioPlugin,
   JournalFilesPlugin,
+  NativeSharePlugin,
   RecordingSnapshot,
   TranscriptionResult,
 } from "./contracts";
@@ -16,10 +17,11 @@ export type CapacitorPluginContracts = {
   files: JournalFilesPlugin;
   lifecycle: AppLifecyclePlugin;
   backup: CloudBackupPlugin;
+  share: NativeSharePlugin;
 };
 
 async function nativeCall<T>(
-  service: "audio" | "transcription" | "files" | "lifecycle" | "backup",
+  service: "audio" | "transcription" | "files" | "lifecycle" | "backup" | "share",
   operation: () => Promise<T>,
 ): Promise<T> {
   try {
@@ -200,5 +202,32 @@ export class CapacitorAppLifecycleAdapter implements AppLifecyclePlugin {
       this.plugin.flushRequested(),
     );
     return { requestedAt: result.requestedAt };
+  }
+
+  async openUrl(options: { url: string }) {
+    const result = await nativeCall("lifecycle", () =>
+      this.plugin.openUrl(options),
+    );
+    return { opened: result.opened === true };
+  }
+}
+
+export class CapacitorNativeShareAdapter implements NativeSharePlugin {
+  constructor(private readonly plugin: NativeSharePlugin) {}
+
+  async exportPage(options: Parameters<NativeSharePlugin["exportPage"]>[0]) {
+    const result = await nativeCall("share", () => this.plugin.exportPage(options));
+    return {
+      fileUri: result.fileUri,
+      fileName: result.fileName,
+    };
+  }
+
+  async share(options: Parameters<NativeSharePlugin["share"]>[0]) {
+    const result = await nativeCall("share", () => this.plugin.share(options));
+    return {
+      completed: result.completed === true,
+      ...(result.activityType ? { activityType: result.activityType } : {}),
+    };
   }
 }

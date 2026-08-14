@@ -81,6 +81,8 @@ export async function showNativeDrawingOverlay(options: {
   gridOriginY?: number;
   gridPageWidth?: number;
   gridPageHeight?: number;
+  gridDocumentWidth?: number;
+  gridDocumentHeight?: number;
 }): Promise<{ importedLegacyStrokes: boolean }> {
   lastUpdateKey = rectKey(options.rect);
   const result = await enqueueOverlayCall(() =>
@@ -105,6 +107,8 @@ export async function updateNativeDrawingOverlay(options: {
   gridOriginY?: number;
   gridPageWidth?: number;
   gridPageHeight?: number;
+  gridDocumentWidth?: number;
+  gridDocumentHeight?: number;
 }): Promise<void> {
   const key = [
     options.color ?? "",
@@ -121,6 +125,8 @@ export async function updateNativeDrawingOverlay(options: {
     options.gridOriginY ?? "",
     options.gridPageWidth ?? "",
     options.gridPageHeight ?? "",
+    options.gridDocumentWidth ?? "",
+    options.gridDocumentHeight ?? "",
     rectKey(options.rect),
   ].join("|");
   if (key === lastUpdateKey) {

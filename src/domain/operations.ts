@@ -4,7 +4,10 @@ import type {
   JournalSnapshot,
   Page,
 } from "./models";
-import { MAX_PAGES_PER_COLLECTION } from "./models";
+import {
+  GRID_ROTATION_MAX,
+  MAX_PAGES_PER_COLLECTION,
+} from "./models";
 
 export class OperationConflictError extends Error {
   constructor(message: string) {
@@ -524,7 +527,7 @@ export function applyDocumentOperation(
       if (
         ![36, 60, 96].includes(operation.grid.spacing) ||
         !Number.isInteger(operation.grid.rotationDegrees / 15) ||
-        Math.abs(operation.grid.rotationDegrees) >= 90
+        Math.abs(operation.grid.rotationDegrees) > GRID_ROTATION_MAX
       ) {
         throw new OperationConflictError("The drawing grid settings are invalid.");
       }

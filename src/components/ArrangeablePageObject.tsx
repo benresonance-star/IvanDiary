@@ -16,6 +16,7 @@ import {
   GripHorizontal,
   Layers2,
   Maximize2,
+  Ratio,
   Trash2,
 } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -59,16 +60,20 @@ function layoutsEqual(first: PageLayout, second: PageLayout): boolean {
 
 export function ArrangeablePageObject({
   arrange,
+  aspectLock = false,
+  aspectRatio,
   children,
   className,
   deleteDescription,
   frame,
   layer,
+  maximumFrame,
   objectLabel,
   objectId,
   onCommit,
   onDelete,
   onSelect,
+  onToggleAspectLock,
   onToggleLayer,
   pageRef,
   position,
@@ -76,16 +81,20 @@ export function ArrangeablePageObject({
   showShortcuts,
 }: {
   arrange: boolean;
+  aspectLock?: boolean;
+  aspectRatio?: number;
   children: ReactNode;
   className: string;
   deleteDescription: string;
   frame: Size;
   layer: "above-sketch" | "behind-sketch";
+  maximumFrame?: Size;
   objectLabel: string;
   objectId: string;
   onCommit: (change: LayoutChange) => void;
   onDelete: () => void;
   onSelect: () => void;
+  onToggleAspectLock?: () => void;
   onToggleLayer: () => void;
   pageRef: RefObject<HTMLDivElement | null>;
   position: Position;
@@ -156,10 +165,17 @@ export function ArrangeablePageObject({
     }
 
     updateLayout(
-      resizeLayout(active.start, {
-        width: deltaX,
-        height: deltaY,
-      }),
+      resizeLayout(
+        active.start,
+        {
+          width: deltaX,
+          height: deltaY,
+        },
+        {
+          aspectRatio: aspectLock ? aspectRatio : undefined,
+          maximum: maximumFrame,
+        },
+      ),
     );
   };
 
@@ -194,7 +210,10 @@ export function ArrangeablePageObject({
   };
 
   const applyResize = (delta: Size) => {
-    const next = resizeLayout(layout, delta);
+    const next = resizeLayout(layout, delta, {
+      aspectRatio: aspectLock ? aspectRatio : undefined,
+      maximum: maximumFrame,
+    });
     updateLayout(next);
     onCommit({ kind: "resize", before: layout, after: next });
   };
@@ -269,6 +288,24 @@ export function ArrangeablePageObject({
       {children}
       {arrange && selected ? (
         <>
+          {onToggleAspectLock ? (
+            <button
+              aria-label={
+                aspectLock
+                  ? "Keep photo proportions. On"
+                  : "Keep photo proportions. Off"
+              }
+              aria-pressed={aspectLock}
+              className={`arrange-aspect-lock${aspectLock ? " selected" : ""}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleAspectLock();
+              }}
+              type="button"
+            >
+              <Ratio aria-hidden="true" />
+            </button>
+          ) : null}
           <button
             aria-label={`Drag to move ${objectLabel}`}
             className="arrange-handle move-handle"

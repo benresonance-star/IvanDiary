@@ -3,7 +3,11 @@ import AVFoundation
 @preconcurrency import CloudKit
 import CryptoKit
 import AppleAudioServices
+import AppleDrawingKit
+import PencilKit
 import UniformTypeIdentifiers
+import UIKit
+import WebKit
 
 private func recordingPayload(_ snapshot: JournalRecordingSnapshot) -> [String: Any] {
     var value: [String: Any] = [
@@ -385,11 +389,31 @@ public final class AppLifecyclePlugin: CAPPlugin, @preconcurrency CAPBridgedPlug
     public let identifier = "AppLifecyclePlugin"
     public let jsName = "AppLifecycle"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "flushRequested", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "flushRequested", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openUrl", returnType: CAPPluginReturnPromise)
     ]
 
     @objc public func flushRequested(_ call: CAPPluginCall) {
         call.resolve(["requestedAt": Date().iso8601String])
+    }
+
+    @objc public func openUrl(_ call: CAPPluginCall) {
+        guard let text = call.getString("url"),
+              let url = URL(string: text),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
+            call.reject("A web address is required.", "NATIVE_FAILURE")
+            return
+        }
+        Task { @MainActor in
+            UIApplication.shared.open(url, options: [:]) { opened in
+                if opened {
+                    call.resolve(["opened": true])
+                } else {
+                    call.reject("This link could not be opened.", "NATIVE_FAILURE")
+                }
+            }
+        }
     }
 }
 
@@ -612,5 +636,563 @@ public final class JournalFilesPlugin: CAPPlugin, @preconcurrency CAPBridgedPlug
         var result: [String: Any] = ["lowStorage": health.lowStorage]
         if let bytes = health.availableBytes { result["availableBytes"] = bytes }
         call.resolve(result)
+    }
+}
+
+@objc(NativeSharePlugin)
+@MainActor
+public final class NativeSharePlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin {
+    public let identifier = "NativeSharePlugin"
+    public let jsName = "NativeShare"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "exportPage", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "share", returnType: CAPPluginReturnPromise)
+    ]
+    private let shareTitleBandHeight: CGFloat = 88
+    private var shareFolder: URL?
+
+    private struct ShareLink {
+        let url: URL
+        let title: String
+        let x: CGFloat
+        let y: CGFloat
+        let width: CGFloat
+        let height: CGFloat
+    }
+
+    @objc public func exportPage(_ call: CAPPluginCall) {
+        let format = call.getString("format")
+        let title = call.getString("title")
+        let fileStem = call.getString("fileStem")
+        let paperRect = rect(from: call.getObject("paperRect"))
+        let transcripts = stringList(call, "transcripts")
+        let links = shareLinks(from: call)
+        let documentId = call.getString("documentId")
+        let previewInsetTop = call.getDouble("previewInsetTop")
+            ?? call.getInt("previewInsetTop").map(Double.init)
+            ?? 0
+        Task { @MainActor [weak self] in
+            guard let self else {
+                call.reject("This page could not be shared. Try again.", "NATIVE_FAILURE")
+                return
+            }
+            guard let format, format == "jpg" || format == "pdf",
+                  let title,
+                  let fileStem,
+                  let image = self.renderJournalPage(
+                      paperRect: paperRect,
+                      documentId: documentId,
+                      previewInsetTop: previewInsetTop
+                  ) else {
+                call.reject("This page could not be shared. Try again.", "NATIVE_FAILURE")
+                return
+            }
+            do {
+                let titled = self.titledImage(image, title: title)
+                let folder = try self.prepareShareFolder()
+                let safeStem = self.safeFileStem(fileStem)
+                if format == "pdf" {
+                    let url = folder.appendingPathComponent("\(safeStem).pdf")
+                    try self.writePDF(
+                        image: titled,
+                        transcripts: transcripts,
+                        links: links,
+                        to: url
+                    )
+                    call.resolve(["fileUri": url.absoluteString, "fileName": url.lastPathComponent])
+                } else {
+                    let url = folder.appendingPathComponent("\(safeStem).jpg")
+                    guard let data = titled.jpegData(compressionQuality: 0.86) else {
+                        call.reject("This page could not be shared. Try again.", "NATIVE_FAILURE")
+                        return
+                    }
+                    try data.write(to: url, options: .atomic)
+                    call.resolve(["fileUri": url.absoluteString, "fileName": url.lastPathComponent])
+                }
+            } catch {
+                call.reject("This page could not be shared. Try again.", "NATIVE_FAILURE", error)
+            }
+        }
+    }
+
+    @objc public func share(_ call: CAPPluginCall) {
+        call.keepAlive = true
+        let title = call.getString("title")
+        let fileURIs = stringList(call, "fileUris")
+        let sourceRect = rect(from: call.getObject("sourceRect"))
+        Task { @MainActor [weak self] in
+            guard let self else {
+                call.keepAlive = false
+                call.reject("This page could not be shared. Try again.", "NATIVE_FAILURE")
+                return
+            }
+            guard title != nil,
+                  !fileURIs.isEmpty,
+                  let host = self.topViewController() else {
+                call.keepAlive = false
+                call.reject("This page could not be shared. Try again.", "NATIVE_FAILURE")
+                return
+            }
+            do {
+                let items = try self.preparedShareItems(fileURIs: fileURIs)
+                let activity = UIActivityViewController(activityItems: items, applicationActivities: nil)
+                activity.excludedActivityTypes = [
+                    .addToReadingList,
+                    .assignToContact,
+                    .markupAsPDF,
+                    .postToFacebook,
+                    .postToFlickr,
+                    .postToTencentWeibo,
+                    .postToTwitter,
+                    .postToVimeo,
+                    .postToWeibo,
+                    .print
+                ]
+                activity.completionWithItemsHandler = { [weak self] activityType, completed, _, _ in
+                    Task { @MainActor in
+                        self?.clearShareFolder()
+                        call.keepAlive = false
+                        var payload: [String: Any] = ["completed": completed]
+                        if let activityType {
+                            payload["activityType"] = activityType.rawValue
+                        }
+                        call.resolve(payload)
+                    }
+                }
+                if let popover = activity.popoverPresentationController {
+                    let view = self.bridge?.webView ?? host.view
+                    popover.sourceView = view
+                    popover.sourceRect = sourceRect ?? CGRect(
+                        x: view?.bounds.midX ?? 40,
+                        y: 24,
+                        width: 56,
+                        height: 56
+                    )
+                    popover.permittedArrowDirections = [.up, .down]
+                }
+                host.present(activity, animated: true)
+            } catch {
+                call.keepAlive = false
+                let code = (error as NSError).domain == NSCocoaErrorDomain ? "ASSET_MISSING" : "NATIVE_FAILURE"
+                call.reject("This page could not be shared. Try again.", code, error)
+            }
+        }
+    }
+
+    private func renderJournalPage(
+        paperRect: CGRect?,
+        documentId: String?,
+        previewInsetTop: Double
+    ) -> UIImage? {
+        let size: CGSize
+        if let paperRect, paperRect.width > 8, paperRect.height > 8 {
+            size = paperRect.size
+        } else if let bounds = bridge?.webView?.bounds, bounds.width > 8, bounds.height > 8 {
+            size = bounds.size
+        } else {
+            size = CGSize(width: 1024, height: 680)
+        }
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = true
+        format.scale = max(UIScreen.main.scale, 1)
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { _ in
+            let bounds = CGRect(origin: .zero, size: size)
+            UIColor(red: 246 / 255, green: 240 / 255, blue: 227 / 255, alpha: 1).setFill()
+            UIBezierPath(roundedRect: bounds, cornerRadius: 20).fill()
+            let inset = max(0, min(CGFloat(previewInsetTop), size.height - 8))
+            let drawingRect = CGRect(
+                x: 0,
+                y: inset,
+                width: size.width,
+                height: max(size.height - inset, 1)
+            )
+            self.drawingImage(documentId: documentId, size: drawingRect.size)?
+                .draw(in: drawingRect)
+        }
+    }
+
+    private func drawingImage(documentId: String?, size: CGSize) -> UIImage? {
+        guard let documentId, !documentId.isEmpty else { return nil }
+        let store = ApplicationSupportPencilDrawingStore()
+        if let preview = try? store.loadPreview(documentID: documentId),
+           let image = UIImage(contentsOfFile: preview.fileURL.path) {
+            return image
+        }
+        guard let data = try? store.load(documentID: documentId),
+              let drawing = try? PKDrawing(data: data),
+              !drawing.strokes.isEmpty else {
+            return nil
+        }
+        return PencilInkColor.renderPreview(
+            drawing: drawing,
+            bounds: CGRect(origin: .zero, size: size)
+        )
+    }
+
+    private func topViewController() -> UIViewController? {
+        var host = bridge?.viewController
+        while let presented = host?.presentedViewController {
+            host = presented
+        }
+        return host
+    }
+
+    private func stringList(_ call: CAPPluginCall, _ key: String) -> [String] {
+        if let typed = call.getArray(key, String.self), !typed.isEmpty {
+            return typed
+        }
+        return stringArray(call.getArray(key)) ?? []
+    }
+
+    private func stringArray(_ value: JSArray?) -> [String]? {
+        value?.compactMap { item in
+            if let text = item as? String { return text }
+            return nil
+        }
+    }
+
+    private func rect(from value: JSObject?) -> CGRect? {
+        guard let value,
+              let x = doubleValue(value["x"]),
+              let y = doubleValue(value["y"]),
+              let width = doubleValue(value["width"]),
+              let height = doubleValue(value["height"]),
+              width > 1,
+              height > 1 else { return nil }
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+
+    private func doubleValue(_ value: Any?) -> Double? {
+        if let number = value as? NSNumber { return number.doubleValue }
+        if let number = value as? Double { return number }
+        if let number = value as? Float { return Double(number) }
+        if let number = value as? Int { return Double(number) }
+        if let text = value as? String { return Double(text) }
+        return nil
+    }
+
+    private func safeFileStem(_ value: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        let mapped = String(value.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" })
+        let cleaned = mapped
+            .replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-."))
+        return cleaned.isEmpty ? "Journal-page" : String(cleaned.prefix(80))
+    }
+
+    private func fileURL(from uri: String) -> URL? {
+        if let url = URL(string: uri), url.isFileURL {
+            return url
+        }
+        guard uri.hasPrefix("file:") else { return nil }
+        var path = uri
+        if path.hasPrefix("file://") {
+            path = String(path.dropFirst("file://".count))
+        } else {
+            path = String(path.dropFirst("file:".count))
+        }
+        if let decoded = path.removingPercentEncoding {
+            path = decoded
+        }
+        return URL(fileURLWithPath: path)
+    }
+
+    private func titledImage(_ snapshot: UIImage, title: String) -> UIImage {
+        let bandHeight = shareTitleBandHeight
+        let size = CGSize(width: max(snapshot.size.width, 1), height: snapshot.size.height + bandHeight)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = snapshot.scale
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { _ in
+            UIColor(red: 0.973, green: 0.941, blue: 0.886, alpha: 1).setFill()
+            UIRectFill(CGRect(origin: .zero, size: size))
+            let titleRect = CGRect(x: 24, y: 22, width: size.width - 48, height: bandHeight - 28)
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 28, weight: .semibold),
+                .foregroundColor: UIColor(red: 0.129, green: 0.106, blue: 0.078, alpha: 1)
+            ]
+            (title as NSString).draw(
+                with: titleRect,
+                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                attributes: attributes,
+                context: nil
+            )
+            snapshot.draw(in: CGRect(x: 0, y: bandHeight, width: snapshot.size.width, height: snapshot.size.height))
+        }
+    }
+
+    private func writePDF(
+        image: UIImage,
+        transcripts: [String],
+        links: [ShareLink],
+        to url: URL
+    ) throws {
+        let pageSize = CGSize(width: max(image.size.width, 1), height: max(image.size.height, 1))
+        let bounds = CGRect(origin: .zero, size: pageSize)
+        let renderer = UIGraphicsPDFRenderer(bounds: bounds)
+        try renderer.writePDF(to: url) { context in
+            context.beginPage()
+            image.draw(in: bounds)
+            self.drawShareLinkCards(
+                links,
+                paperSize: CGSize(
+                    width: pageSize.width,
+                    height: max(pageSize.height - self.shareTitleBandHeight, 1)
+                ),
+                originY: self.shareTitleBandHeight,
+                in: context
+            )
+            if !transcripts.isEmpty {
+                self.writeTranscriptPages(transcripts, pageSize: pageSize, in: context)
+            }
+            if !links.isEmpty {
+                self.writeLinkIndexPages(links, pageSize: pageSize, in: context)
+            }
+        }
+    }
+
+    private func shareLinks(from call: CAPPluginCall) -> [ShareLink] {
+        call.getArray("links", JSObject.self)?.compactMap { object in
+            guard let text = object["url"] as? String,
+                  let url = URL(string: text),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https",
+                  let x = self.unitValue(object["x"]),
+                  let y = self.unitValue(object["y"]),
+                  let width = self.unitValue(object["width"]),
+                  let height = self.unitValue(object["height"]),
+                  width > 0,
+                  height > 0 else {
+                return nil
+            }
+            let rawTitle = (object["title"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return ShareLink(
+                url: url,
+                title: rawTitle.isEmpty ? (url.host ?? url.absoluteString) : rawTitle,
+                x: x,
+                y: y,
+                width: width,
+                height: height
+            )
+        } ?? []
+    }
+
+    private func unitValue(_ value: Any?) -> CGFloat? {
+        guard let number = doubleValue(value), number >= 0, number <= 1 else {
+            return nil
+        }
+        return CGFloat(number)
+    }
+
+    private func drawShareLinkCards(
+        _ links: [ShareLink],
+        paperSize: CGSize,
+        originY: CGFloat,
+        in context: UIGraphicsPDFRendererContext
+    ) {
+        let ink = UIColor(red: 0.129, green: 0.106, blue: 0.078, alpha: 1)
+        let muted = UIColor(red: 0.384, green: 0.345, blue: 0.294, alpha: 1)
+        let fill = UIColor(red: 1, green: 0.992, blue: 0.969, alpha: 0.92)
+        let stroke = UIColor(red: 83 / 255, green: 68 / 255, blue: 45 / 255, alpha: 0.2)
+        for link in links {
+            let rect = CGRect(
+                x: link.x * paperSize.width,
+                y: originY + link.y * paperSize.height,
+                width: max(link.width * paperSize.width, 56),
+                height: max(link.height * paperSize.height, 56)
+            ).integral
+            let card = UIBezierPath(roundedRect: rect, cornerRadius: 14)
+            fill.setFill()
+            stroke.setStroke()
+            card.lineWidth = 1
+            card.fill()
+            card.stroke()
+
+            let iconRect = CGRect(x: rect.minX + 16, y: rect.midY - 13.5, width: 27, height: 27)
+            if let icon = UIImage(systemName: "link")?.withTintColor(ink, renderingMode: .alwaysOriginal) {
+                icon.draw(in: iconRect)
+            }
+            let textRect = CGRect(
+                x: iconRect.maxX + 12,
+                y: rect.minY + 12,
+                width: max(rect.maxX - iconRect.maxX - 28, 40),
+                height: max(rect.height - 24, 20)
+            )
+            let title = link.title as NSString
+            title.draw(
+                with: CGRect(x: textRect.minX, y: textRect.minY, width: textRect.width, height: 24),
+                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 20, weight: .semibold),
+                    .foregroundColor: ink
+                ],
+                context: nil
+            )
+            ((link.url.host ?? link.url.absoluteString) as NSString).draw(
+                with: CGRect(x: textRect.minX, y: textRect.minY + 26, width: textRect.width, height: 22),
+                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 16, weight: .regular),
+                    .foregroundColor: muted
+                ],
+                context: nil
+            )
+            context.setURL(link.url, for: rect)
+        }
+    }
+
+    private func writeTranscriptPages(
+        _ transcripts: [String],
+        pageSize: CGSize,
+        in context: UIGraphicsPDFRendererContext
+    ) {
+        context.beginPage()
+        let heading = "What was said" as NSString
+        let headingRect = CGRect(x: 36, y: 36, width: pageSize.width - 72, height: 48)
+        heading.draw(
+            with: headingRect,
+            options: [.usesLineFragmentOrigin],
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 32, weight: .bold),
+                .foregroundColor: UIColor(red: 0.129, green: 0.106, blue: 0.078, alpha: 1)
+            ],
+            context: nil
+        )
+        var cursorY: CGFloat = 100
+        for (index, transcript) in transcripts.enumerated() {
+            let label = "Recording \(index + 1)" as NSString
+            let labelRect = CGRect(x: 36, y: cursorY, width: pageSize.width - 72, height: 28)
+            label.draw(
+                with: labelRect,
+                options: [.usesLineFragmentOrigin],
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 20, weight: .semibold),
+                    .foregroundColor: UIColor(red: 0.286, green: 0.255, blue: 0.212, alpha: 1)
+                ],
+                context: nil
+            )
+            cursorY += 34
+            let body = transcript as NSString
+            let bodyRect = CGRect(x: 36, y: cursorY, width: pageSize.width - 72, height: pageSize.height - cursorY - 36)
+            let bodyAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 22, weight: .regular),
+                .foregroundColor: UIColor(red: 0.129, green: 0.106, blue: 0.078, alpha: 1)
+            ]
+            body.draw(with: bodyRect, options: [.usesLineFragmentOrigin], attributes: bodyAttributes, context: nil)
+            let drawn = body.boundingRect(
+                with: bodyRect.size,
+                options: [.usesLineFragmentOrigin],
+                attributes: bodyAttributes,
+                context: nil
+            )
+            cursorY += ceil(drawn.height) + 28
+        }
+    }
+
+    private func writeLinkIndexPages(
+        _ links: [ShareLink],
+        pageSize: CGSize,
+        in context: UIGraphicsPDFRendererContext
+    ) {
+        let ink = UIColor(red: 0.129, green: 0.106, blue: 0.078, alpha: 1)
+        let muted = UIColor(red: 0.384, green: 0.345, blue: 0.294, alpha: 1)
+        context.beginPage()
+        ("Web links" as NSString).draw(
+            with: CGRect(x: 36, y: 36, width: pageSize.width - 72, height: 48),
+            options: [.usesLineFragmentOrigin],
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 32, weight: .bold),
+                .foregroundColor: ink
+            ],
+            context: nil
+        )
+        var cursorY: CGFloat = 100
+        let rowHeight: CGFloat = 88
+        for link in links {
+            if cursorY + rowHeight > pageSize.height - 36 {
+                context.beginPage()
+                cursorY = 36
+            }
+            let row = CGRect(x: 36, y: cursorY, width: pageSize.width - 72, height: rowHeight)
+            let card = UIBezierPath(roundedRect: row, cornerRadius: 14)
+            UIColor(red: 1, green: 0.992, blue: 0.969, alpha: 1).setFill()
+            UIColor(red: 83 / 255, green: 68 / 255, blue: 45 / 255, alpha: 0.2).setStroke()
+            card.lineWidth = 1
+            card.fill()
+            card.stroke()
+            (link.title as NSString).draw(
+                with: CGRect(x: row.minX + 20, y: row.minY + 16, width: row.width - 40, height: 28),
+                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 24, weight: .semibold),
+                    .foregroundColor: ink
+                ],
+                context: nil
+            )
+            (link.url.absoluteString as NSString).draw(
+                with: CGRect(x: row.minX + 20, y: row.minY + 48, width: row.width - 40, height: 24),
+                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 18, weight: .regular),
+                    .foregroundColor: muted
+                ],
+                context: nil
+            )
+            context.setURL(link.url, for: row)
+            cursorY += rowHeight + 16
+        }
+    }
+
+    private func prepareShareFolder() throws -> URL {
+        clearShareFolder()
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("journal-share-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        shareFolder = folder
+        return folder
+    }
+
+    private func preparedShareItems(fileURIs: [String]) throws -> [URL] {
+        let previous = shareFolder
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("journal-share-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var items: [URL] = []
+        do {
+            for (index, uri) in fileURIs.enumerated() {
+                guard let source = fileURL(from: uri),
+                      FileManager.default.fileExists(atPath: source.path) else {
+                    continue
+                }
+                let destination = folder.appendingPathComponent(source.lastPathComponent.isEmpty
+                    ? "item-\(index + 1)"
+                    : source.lastPathComponent)
+                if FileManager.default.fileExists(atPath: destination.path) {
+                    try FileManager.default.removeItem(at: destination)
+                }
+                try FileManager.default.copyItem(at: source, to: destination)
+                items.append(destination)
+            }
+            guard !items.isEmpty else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+        }
+        if let previous {
+            try? FileManager.default.removeItem(at: previous)
+        }
+        shareFolder = folder
+        return items
+    }
+
+    private func clearShareFolder() {
+        if let shareFolder {
+            try? FileManager.default.removeItem(at: shareFolder)
+        }
+        shareFolder = nil
     }
 }

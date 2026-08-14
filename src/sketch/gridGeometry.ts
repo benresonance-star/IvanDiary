@@ -1,4 +1,8 @@
-import type { DrawingGridSettings } from "../domain/models";
+import {
+  GRID_ROTATION_MAX,
+  GRID_ROTATION_STEP,
+  type DrawingGridSettings,
+} from "../domain/models";
 import type { PencilSample } from "./types";
 
 export const DEFAULT_DRAWING_GRID: DrawingGridSettings = {
@@ -6,6 +10,11 @@ export const DEFAULT_DRAWING_GRID: DrawingGridSettings = {
   spacing: 60,
   rotationDegrees: 0,
 };
+
+export function clampGridRotation(degrees: number): number {
+  const snapped = Math.round(degrees / GRID_ROTATION_STEP) * GRID_ROTATION_STEP;
+  return Math.min(GRID_ROTATION_MAX, Math.max(-GRID_ROTATION_MAX, snapped));
+}
 
 export function snapSampleToGrid(
   sample: PencilSample,

@@ -1,4 +1,5 @@
 :root {
+  /* Keep in sync with CANVAS_ASPECT_RATIO in arrangeGeometry.ts. */
   --active-canvas-aspect: 16 / 9;
   font-family:
     Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -454,6 +455,16 @@ textarea,
   padding: 108px var(--workspace-horizontal-padding) 18px;
   gap: 12px;
   overflow: hidden;
+}
+
+.journal-workspace.share-capturing .notice,
+.journal-workspace.share-capturing .save-status,
+.journal-workspace.share-capturing .favourite-confirmation,
+.journal-workspace.share-capturing .delete-dialog-backdrop,
+.journal-workspace.share-capturing .tool-palette,
+.journal-workspace.share-capturing .page-date,
+.journal-workspace.share-capturing .diary-page-strip {
+  visibility: hidden !important;
 }
 
 .diary-page-strip {
@@ -1330,21 +1341,6 @@ textarea,
   transform: rotate(-3deg);
 }
 
-.tool.voice-tool {
-  min-width: 94px;
-  min-height: 68px;
-  margin: 0;
-  border-radius: 14px;
-  background: #f1e4cf;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.tool.voice-tool svg {
-  width: 32px;
-  height: 32px;
-}
-
 .paper-page {
   position: relative;
   width: 100%;
@@ -1388,7 +1384,8 @@ textarea,
   z-index: 10;
 }
 
-.paper-page.arranging .sketch-surface {
+.paper-page.arranging .sketch-surface,
+.paper-page.viewing .sketch-surface {
   pointer-events: none;
 }
 
@@ -1397,6 +1394,10 @@ textarea,
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+}
+
+.paper-page.viewing .link-object {
+  pointer-events: auto;
 }
 
 .sketch-layer {
@@ -1474,20 +1475,68 @@ textarea,
   white-space: nowrap;
 }
 
-.favourite-tool svg {
+.page-favourite {
+  display: grid;
+  flex: 0 0 48px;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-left: 2px;
+  padding: 0;
+  border: 1px solid rgba(92, 72, 43, 0.18);
+  border-radius: 14px;
+  background: rgba(252, 249, 242, 0.96);
+  box-shadow: 0 3px 10px rgba(65, 49, 27, 0.1);
+  color: #494136;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.page-favourite svg {
+  width: 24px;
+  height: 24px;
   fill: transparent;
 }
 
-.favourite-tool[aria-pressed="true"] {
-  border-radius: 14px;
+.page-favourite[aria-pressed="true"] {
   background: #e2eee4;
   color: #317446;
-  font-weight: 700;
 }
 
-.favourite-tool[aria-pressed="true"] svg {
+.page-favourite[aria-pressed="true"] svg {
   fill: none;
   stroke: currentColor;
+}
+
+.share-chooser {
+  width: min(460px, 100%);
+}
+
+.share-chooser > svg {
+  width: 38px;
+  height: 38px;
+  color: #5c4a2f;
+}
+
+.share-chooser-actions {
+  display: grid;
+  width: 100%;
+  gap: 12px;
+}
+
+.share-chooser-actions button {
+  min-height: 56px;
+  border: 1px solid #8f7758;
+  border-radius: 13px;
+  background: #f2e7d3;
+  font-size: 18px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.share-chooser-actions button:first-child {
+  border-color: #5c4a2f;
+  background: #eadcc3;
 }
 
 .back-to-library {
@@ -1548,6 +1597,11 @@ textarea,
   border-radius: 14px;
   box-shadow: 0 4px 12px rgba(53, 39, 21, 0.16);
   object-fit: cover;
+}
+
+.photo-object.keep-proportions > img {
+  object-fit: contain;
+  background: rgba(255, 253, 247, 0.55);
 }
 
 .photo-object > .flower-photo {
@@ -1657,9 +1711,13 @@ textarea,
   border-radius: 14px;
   background: rgba(255, 253, 247, 0.88);
   color: inherit;
+  font: inherit;
   font-size: clamp(16px, 1.55vw, 24px);
   line-height: 1.38;
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .link-object > svg {
@@ -1899,6 +1957,36 @@ textarea,
   top: -25px;
   left: 50%;
   transform: translateX(-50%);
+}
+
+.arrange-aspect-lock {
+  position: absolute;
+  top: -25px;
+  left: -25px;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid #7b674c;
+  border-radius: 50%;
+  background: #fffaf0;
+  color: #33291d;
+  box-shadow: 0 3px 10px rgba(53, 39, 21, 0.16);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.arrange-aspect-lock.selected {
+  border-color: #365f79;
+  background: #eef7fb;
+  color: #294f68;
+}
+
+.arrange-aspect-lock svg {
+  width: 23px;
+  height: 23px;
 }
 
 .resize-handle {
@@ -3804,12 +3892,6 @@ textarea,
     font-size: 12px;
   }
 
-  .tool.voice-tool {
-    flex-basis: 72px;
-    min-width: 64px;
-    min-height: 58px;
-  }
-
   .pen-settings-hud {
     top: 88px;
     width: min(100% - 20px, 540px);
@@ -4022,23 +4104,6 @@ textarea,
 
   .tool.selected {
     border-radius: 10px;
-  }
-
-  .tool.voice-tool {
-    flex: 1.2 1 0;
-    min-width: 0;
-    min-height: 56px;
-    font-size: 11px;
-  }
-
-  .tool.voice-tool > span {
-    white-space: normal;
-    text-overflow: unset;
-  }
-
-  .tool.voice-tool svg {
-    width: 22px;
-    height: 22px;
   }
 
   .draw-colour-indicator {

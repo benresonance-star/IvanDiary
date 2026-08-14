@@ -71,6 +71,7 @@ export interface JournalFilesPlugin {
 
 export interface AppLifecyclePlugin {
   flushRequested(): Promise<{ requestedAt: string }>;
+  openUrl(options: { url: string }): Promise<{ opened: boolean }>;
 }
 
 export type CloudBackupResult = {
@@ -128,15 +129,47 @@ export type JournalServiceErrorDetails = {
   message: string;
   action: string;
   retryable: boolean;
-  service: "audio" | "transcription" | "files" | "lifecycle" | "backup";
+  service: "audio" | "transcription" | "files" | "lifecycle" | "backup" | "share";
+};
+
+export type PageShareFormat = "jpg" | "pdf";
+
+export type PageShareLink = {
+  url: string;
+  title: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type PageExportResult = {
+  fileUri: string;
+  fileName: string;
+};
+
+export type NativeShareResult = {
+  completed: boolean;
+  activityType?: string;
 };
 
 export interface NativeSharePlugin {
+  exportPage(options: {
+    format: PageShareFormat;
+    title: string;
+    fileStem: string;
+    paperRect: PencilKitOverlayRect;
+    documentId?: string;
+    previewInsetTop?: number;
+    transcripts?: string[];
+    links?: PageShareLink[];
+  }): Promise<PageExportResult>;
   share(options: {
     title: string;
     text?: string;
-    assetUris?: string[];
-  }): Promise<void>;
+    fileUris: string[];
+    sourceRect: PencilKitOverlayRect;
+  }): Promise<NativeShareResult>;
 }
 
 export type PencilKitOverlayRect = {
@@ -195,6 +228,8 @@ export interface PencilKitPlugin {
     gridOriginY?: number;
     gridPageWidth?: number;
     gridPageHeight?: number;
+    gridDocumentWidth?: number;
+    gridDocumentHeight?: number;
   }): Promise<{ visible: boolean; importedLegacyStrokes?: boolean }>;
   updateOverlay(options: {
     color?: string;
@@ -210,6 +245,8 @@ export interface PencilKitPlugin {
     gridOriginY?: number;
     gridPageWidth?: number;
     gridPageHeight?: number;
+    gridDocumentWidth?: number;
+    gridDocumentHeight?: number;
   }): Promise<{ visible: boolean }>;
   hideOverlay(options?: { save?: boolean }): Promise<PencilKitPreview>;
   flushOverlay(): Promise<PencilKitPreview>;

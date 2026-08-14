@@ -26,6 +26,8 @@ export type NativeDrawingOverlayRequest = {
   gridOriginY?: number;
   gridPageWidth?: number;
   gridPageHeight?: number;
+  gridDocumentWidth?: number;
+  gridDocumentHeight?: number;
   sketchRepository: SketchRepository;
   onError?: (message: string) => void;
 };
@@ -64,6 +66,8 @@ const defaultOperations: NativeDrawingOverlayOperations = {
       gridOriginY: request.gridOriginY,
       gridPageWidth: request.gridPageWidth,
       gridPageHeight: request.gridPageHeight,
+      gridDocumentWidth: request.gridDocumentWidth,
+      gridDocumentHeight: request.gridDocumentHeight,
     }),
   update: (request) =>
     updateNativeDrawingOverlay({
@@ -80,6 +84,8 @@ const defaultOperations: NativeDrawingOverlayOperations = {
       gridOriginY: request.gridOriginY,
       gridPageWidth: request.gridPageWidth,
       gridPageHeight: request.gridPageHeight,
+      gridDocumentWidth: request.gridDocumentWidth,
+      gridDocumentHeight: request.gridDocumentHeight,
     }),
 };
 

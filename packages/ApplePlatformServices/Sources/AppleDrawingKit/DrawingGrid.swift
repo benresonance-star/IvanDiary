@@ -9,19 +9,22 @@ public struct DrawingGridSettings: Sendable, Equatable {
     public let rotationDegrees: CGFloat
     public let origin: CGPoint
     public let pageSize: CGSize
+    public let documentSize: CGSize
 
     public init(
         enabled: Bool,
         spacing: CGFloat,
         rotationDegrees: CGFloat,
         origin: CGPoint = .zero,
-        pageSize: CGSize = CGSize(width: 1200, height: 820)
+        pageSize: CGSize = CGSize(width: 1200, height: 820),
+        documentSize: CGSize = CGSize(width: 1200, height: 820)
     ) {
         self.enabled = enabled
         self.spacing = spacing
         self.rotationDegrees = rotationDegrees
         self.origin = origin
         self.pageSize = pageSize
+        self.documentSize = documentSize
     }
 
     public static let off = DrawingGridSettings(
@@ -29,8 +32,16 @@ public struct DrawingGridSettings: Sendable, Equatable {
         spacing: 60,
         rotationDegrees: 0,
         origin: .zero,
-        pageSize: CGSize(width: 1200, height: 820)
+        pageSize: CGSize(width: 1200, height: 820),
+        documentSize: CGSize(width: 1200, height: 820)
     )
+
+    public static func clampedRotation(_ degrees: Double) -> CGFloat {
+        let step = 15.0
+        let maximum = 75.0
+        let snapped = (degrees / step).rounded() * step
+        return CGFloat(min(maximum, max(-maximum, snapped)))
+    }
 }
 
 enum DrawingGridSnap {
@@ -196,16 +207,22 @@ final class GridStrokeInputView: UIView {
     private func documentPoint(_ point: CGPoint) -> CGPoint {
         let pageWidth = max(grid.pageSize.width, 1)
         let pageHeight = max(grid.pageSize.height, 1)
+        let documentWidth = max(grid.documentSize.width, 1)
+        let documentHeight = max(grid.documentSize.height, 1)
         return CGPoint(
-            x: (point.x + grid.origin.x) * 1200 / pageWidth,
-            y: (point.y + grid.origin.y) * 820 / pageHeight
+            x: (point.x + grid.origin.x) * documentWidth / pageWidth,
+            y: (point.y + grid.origin.y) * documentHeight / pageHeight
         )
     }
 
     private func viewPoint(_ point: CGPoint) -> CGPoint {
-        CGPoint(
-            x: point.x * max(grid.pageSize.width, 1) / 1200 - grid.origin.x,
-            y: point.y * max(grid.pageSize.height, 1) / 820 - grid.origin.y
+        let pageWidth = max(grid.pageSize.width, 1)
+        let pageHeight = max(grid.pageSize.height, 1)
+        let documentWidth = max(grid.documentSize.width, 1)
+        let documentHeight = max(grid.documentSize.height, 1)
+        return CGPoint(
+            x: point.x * pageWidth / documentWidth - grid.origin.x,
+            y: point.y * pageHeight / documentHeight - grid.origin.y
         )
     }
 

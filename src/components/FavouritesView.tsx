@@ -70,7 +70,7 @@ export function FavouritesView({
         <div className="empty-library">
           <ThumbsUp aria-hidden="true" />
           <h2>No favourites yet</h2>
-          <p>Use the thumbs-up on a diary day or sketchbook to keep it here.</p>
+          <p>Use the thumbs-up on a diary page or sketchbook to keep it here.</p>
         </div>
       ) : (
         <div className="book-grid favourites-grid">

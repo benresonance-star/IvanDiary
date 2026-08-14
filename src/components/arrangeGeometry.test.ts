@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   clampPosition,
+  defaultPhotoFrame,
+  MAXIMUM_FRAME,
+  MAXIMUM_PHOTO_FRAME,
   moveLayout,
+  pageAspectFromImage,
   resizeLayout,
   type PageLayout,
 } from "./arrangeGeometry";
@@ -32,5 +36,33 @@ describe("arrange geometry", () => {
     expect(
       resizeLayout(START, { width: 2, height: 2 }).frame,
     ).toEqual({ width: 0.6, height: 0.55 });
+  });
+
+  it("lets a 16:9 photograph cover the drawable canvas without cropping", () => {
+    const frame = defaultPhotoFrame({ width: 1920, height: 1080 });
+    expect(frame.width).toBeCloseTo(MAXIMUM_PHOTO_FRAME.height);
+    expect(frame.height).toBeCloseTo(MAXIMUM_PHOTO_FRAME.height);
+    expect(frame.width).toBeGreaterThan(MAXIMUM_FRAME.width);
+    expect(frame.width / frame.height).toBeCloseTo(
+      pageAspectFromImage({ width: 16, height: 9 }),
+    );
+  });
+
+  it("keeps source proportions while scaling up to the photo limit", () => {
+    const start: PageLayout = {
+      position: { x: 0.1, y: 0.2 },
+      frame: { width: 0.3, height: 0.3 },
+    };
+    const resized = resizeLayout(
+      start,
+      { width: 1, height: 0 },
+      {
+        aspectRatio: 1,
+        maximum: MAXIMUM_PHOTO_FRAME,
+      },
+    );
+    expect(resized.frame.width).toBeCloseTo(resized.frame.height);
+    expect(resized.frame.width).toBeGreaterThan(MAXIMUM_FRAME.width);
+    expect(resized.frame.width).toBeLessThanOrEqual(MAXIMUM_PHOTO_FRAME.width);
   });
 });
