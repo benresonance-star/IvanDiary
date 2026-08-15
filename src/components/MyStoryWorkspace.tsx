@@ -9,6 +9,7 @@ import {
   Move,
   PenLine,
   Redo2,
+  Trash2,
   Type,
   Undo2,
 } from "lucide-react";
@@ -68,6 +69,7 @@ import {
   type LayoutChange,
 } from "./ArrangeablePageObject";
 import { AudioCard } from "./AudioCard";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { DiaryPageStrip } from "./DiaryPageStrip";
 import { LinkComposer } from "./LinkComposer";
 import {
@@ -252,6 +254,8 @@ export function MyStoryWorkspace({
   >(undefined);
   const suppressTextClickRef = useRef(false);
   const [selection, setSelection] = useState<MyStorySelection>();
+  const [textPendingDeletion, setTextPendingDeletion] =
+    useState<MyStoryTextBlock>();
   const [selectedRecordingId, setSelectedRecordingId] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [penHudOpen, setPenHudOpen] = useState(false);
@@ -274,6 +278,7 @@ export function MyStoryWorkspace({
   const [textEditing, setTextEditing] = useState<MyStoryTextBlock | null>();
   const [splitRatio, setSplitRatio] = useState(page.splitRatio);
   const splitRatioRef = useRef(page.splitRatio);
+  const dividerDragOffsetRef = useRef(0);
   const transcriptionInFlightRef = useRef(new Set<string>());
   const [recording, setRecording] = useState<RecordingSnapshot>();
   const autoStopStartedRef = useRef(false);
@@ -364,7 +369,7 @@ export function MyStoryWorkspace({
     linkEditing === undefined &&
     !textEditorRequested &&
     textEditing === undefined;
-  const { overlayActive, overlayRequested, suspendOverlay } =
+  const { overlayActive, overlayReady, suspendOverlay } =
     useNativeDrawingOverlay({
       documentId: page.drawingDocumentId,
       enabled: overlayEnabled,
@@ -535,7 +540,7 @@ export function MyStoryWorkspace({
     );
     if (saved) {
       setLinkEditing(undefined);
-      setNotice("Link saved in My Story.");
+      setNotice(undefined);
     } else {
       setNotice("The link could not be saved. Check the address and try again.");
     }
@@ -598,7 +603,7 @@ export function MyStoryWorkspace({
         throw new Error("Story text could not be saved.");
       }
       await markStatus("complete", transcribingRevision + 1);
-      setNotice("Recording and story text saved on this device.");
+      setNotice(undefined);
     } catch {
       await markStatus("failed", voice.revision + 2).catch(() => false);
       setNotice(
@@ -653,7 +658,7 @@ export function MyStoryWorkspace({
       });
       setNotice(
         saved
-          ? "Voice recording saved in My Story."
+          ? undefined
           : "The finalized recording could not be added to My Story.",
       );
       return;
@@ -892,6 +897,12 @@ export function MyStoryWorkspace({
 
   const beginDividerDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (tool !== "arrange") return;
+    event.preventDefault();
+    const dividerBounds =
+      event.currentTarget.parentElement?.getBoundingClientRect();
+    dividerDragOffsetRef.current = dividerBounds
+      ? event.clientX - (dividerBounds.left + dividerBounds.width / 2)
+      : 0;
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -904,9 +915,10 @@ export function MyStoryWorkspace({
     }
     const bounds = paperRef.current?.getBoundingClientRect();
     if (!bounds) return;
+    const dividerX = event.clientX - dividerDragOffsetRef.current;
     const dividerRatio = Math.min(
       0.7,
-      Math.max(0.3, (event.clientX - bounds.left) / bounds.width),
+      Math.max(0.3, (dividerX - bounds.left) / bounds.width),
     );
     const next =
       page.textSide === "left" ? dividerRatio : 1 - dividerRatio;
@@ -917,6 +929,7 @@ export function MyStoryWorkspace({
   const finishDivider = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
     event.currentTarget.releasePointerCapture(event.pointerId);
+    dividerDragOffsetRef.current = 0;
     const next = splitRatioRef.current;
     if (Math.abs(next - page.splitRatio) < 0.001) return;
     void commitWithUndo(
@@ -952,6 +965,23 @@ export function MyStoryWorkspace({
       { type: "my-story-text-update", pageId: page.id, block: previous },
     );
     setSelection({ ...selection, block: next });
+  };
+
+  const deleteStoryText = (block: MyStoryTextBlock) => {
+    void commitWithUndo(
+      {
+        type: "my-story-text-delete",
+        pageId: page.id,
+        blockId: block.id,
+      },
+      {
+        type: "my-story-text-add",
+        pageId: page.id,
+        block,
+      },
+    );
+    setTextPendingDeletion(undefined);
+    setSelection(undefined);
   };
 
   const updatePageTextColor = (requestedColor: string) => {
@@ -1348,7 +1378,7 @@ export function MyStoryWorkspace({
       >
         <SketchSurface
           capabilities={
-            overlayRequested || tool === "arrange" || tool === "view"
+            overlayReady || tool === "arrange" || tool === "view"
               ? {
                   kind: "readonly",
                   tools: [],
@@ -1507,6 +1537,7 @@ export function MyStoryWorkspace({
               aria-label="Resize text and image sides"
               className="story-divider-resize"
               onLostPointerCapture={finishDivider}
+              onPointerCancel={finishDivider}
               onPointerDown={beginDividerDrag}
               onPointerMove={updateDivider}
               onPointerUp={finishDivider}
@@ -1619,18 +1650,8 @@ export function MyStoryWorkspace({
             onClose={() => setSelection(undefined)}
             onDelete={() => {
               if (selection.kind === "text") {
-                void commitWithUndo(
-                  {
-                    type: "my-story-text-delete",
-                    pageId: page.id,
-                    blockId: selection.block.id,
-                  },
-                  {
-                    type: "my-story-text-add",
-                    pageId: page.id,
-                    block: selection.block,
-                  },
-                );
+                setTextPendingDeletion(selection.block);
+                return;
               } else if (selection.kind === "photo") {
                 void commitWithUndo(
                   {
@@ -1713,8 +1734,25 @@ export function MyStoryWorkspace({
             ? "Saving My Story…"
             : health.localDurability === "error"
               ? health.message ?? "My Story could not be saved."
-              : "My Story is saved")}
+              : "My Story is saved ... and so am I")}
       </p>
+
+      {textPendingDeletion ? (
+        <ConfirmDialog
+          cancelLabel="Keep it"
+          confirmClassName="confirm-delete"
+          confirmLabel="Delete"
+          icon={<Trash2 aria-hidden="true" />}
+          onCancel={() => setTextPendingDeletion(undefined)}
+          onConfirm={() => deleteStoryText(textPendingDeletion)}
+          title="Delete text block?"
+        >
+          <p>
+            Do you want to delete “
+            {textPendingDeletion.text.trim() || "Empty text block"}”?
+          </p>
+        </ConfirmDialog>
+      ) : null}
 
       {textEditing !== undefined ? (
         <StoryTextDialog

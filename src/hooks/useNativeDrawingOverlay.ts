@@ -28,6 +28,14 @@ function rectsEqual(
   );
 }
 
+export function shouldReserveNativeDrawingInput(
+  requested: boolean,
+  layoutAvailable: boolean,
+  failed: boolean,
+): boolean {
+  return requested && layoutAvailable && !failed;
+}
+
 export function useNativeDrawingOverlay({
   documentId,
   enabled,
@@ -64,6 +72,7 @@ export function useNativeDrawingOverlay({
   const ownerRef = useRef(Symbol("native-drawing-overlay-owner"));
   const onErrorRef = useRef(onError);
   const [overlayActive, setOverlayActive] = useState(false);
+  const [overlayFailed, setOverlayFailed] = useState(false);
   const [overlayRect, setOverlayRect] = useState<
     | {
         x: number;
@@ -104,6 +113,7 @@ export function useNativeDrawingOverlay({
     return nativeDrawingOverlayCoordinator.subscribe(
       (state: NativeDrawingOverlayState) => {
         setOverlayActive(state.active && state.owner === owner);
+        setOverlayFailed(state.failed === true && state.owner === owner);
       },
     );
   }, []);
@@ -241,6 +251,11 @@ export function useNativeDrawingOverlay({
     nativeAvailable,
     overlayActive,
     overlayRequested: drawing,
+    overlayReady: shouldReserveNativeDrawingInput(
+      drawing,
+      overlayRect !== undefined,
+      overlayFailed,
+    ),
     suspendOverlay: () =>
       nativeDrawingOverlayCoordinator.releaseAndWait(ownerRef.current),
   };

@@ -20,6 +20,10 @@ let package = Package(
         .testTarget(
             name: "AppleAudioServicesTests",
             dependencies: ["AppleAudioServices"]
+        ),
+        .testTarget(
+            name: "AppleDrawingKitTests",
+            dependencies: ["AppleDrawingKit"]
         )
     ]
 )

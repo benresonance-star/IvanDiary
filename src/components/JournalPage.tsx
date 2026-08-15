@@ -317,7 +317,7 @@ export function PageWorkspace({
     return () => window.clearInterval(timer);
   }, [audio, recording?.state]);
 
-  const { overlayActive, overlayRequested, suspendOverlay } = useNativeDrawingOverlay({
+  const { overlayActive, overlayReady, suspendOverlay } = useNativeDrawingOverlay({
     documentId: page.drawingDocumentId,
     enabled: hasNativePencilKit() && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested && !shareChooserOpen && !shareChooserRequested && !shareInProgress,
     tool,
@@ -878,7 +878,7 @@ export function PageWorkspace({
       object,
     });
     setLinkComposerOpen(false);
-    setNotice(saved ? "Link saved on this device." : "The link could not be saved.");
+    setNotice(saved ? undefined : "The link could not be saved.");
   };
 
   const saveLink = async (url: string, title: string) => {
@@ -900,9 +900,7 @@ export function PageWorkspace({
     setLinkComposerOpen(false);
     setLinkBeingEdited(undefined);
     setNotice(
-      saved
-        ? "Link changes saved on this device."
-        : "The link changes could not be saved.",
+      saved ? undefined : "The link changes could not be saved.",
     );
   };
 
@@ -970,7 +968,7 @@ export function PageWorkspace({
         throw new Error("Transcript could not be saved.");
       }
       await markStatus("complete", transcribingRevision + 1);
-      setNotice("Recording and editable text saved on this device.");
+      setNotice(undefined);
     } catch {
       await markStatus("failed", voice.revision + 2).catch(() => false);
       setNotice("Text could not be generated. Your original recording is still saved.");
@@ -1015,7 +1013,7 @@ export function PageWorkspace({
         return;
       }
 
-      setNotice("Voice recording saved.");
+      setNotice(undefined);
       return;
     }
 
@@ -1401,7 +1399,7 @@ export function PageWorkspace({
       >
         <SketchSurface
           capabilities={
-            overlayRequested || tool === "arrange" || tool === "view"
+            overlayReady || tool === "arrange" || tool === "view"
               ? {
                   kind: "readonly",
                   tools: [],

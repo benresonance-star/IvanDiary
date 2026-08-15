@@ -44,7 +44,7 @@ export function CanvasSettingsPanel({
   const toolsRef = useRef<HTMLDivElement>(null);
   const [hsl, updateHsl] = useIndependentHslColour(colour);
 
-  const { overlayActive, overlayRequested } = useNativeDrawingOverlay({
+  const { overlayActive, overlayReady } = useNativeDrawingOverlay({
     documentId: CANVAS_TEST_DOCUMENT_ID,
     enabled: hasNativePencilKit(),
     tool,
@@ -245,7 +245,7 @@ export function CanvasSettingsPanel({
         </div>
         <div className="canvas-test-surface" ref={canvasRef}>
           <SketchSurface
-            capabilities={overlayRequested
+            capabilities={overlayReady
               ? { kind: "readonly", tools: [], fingerDrawing: false, pressure: false }
               : { kind: "ipad", tools: ["pen", "eraser"], fingerDrawing: settings.fingerDrawingEnabled, pressure: true }}
             documentId={CANVAS_TEST_DOCUMENT_ID}

@@ -83,7 +83,7 @@ export function WelcomeScreen({
     dismissRef.current = onDismiss;
   }, [onDismiss]);
 
-  const { overlayActive, overlayRequested } = useNativeDrawingOverlay({
+  const { overlayActive, overlayReady } = useNativeDrawingOverlay({
     documentId: WELCOME_DRAWING_DOCUMENT_ID,
     enabled:
       editing && !interactionObscured && !penHudOpen && hasNativePencilKit(),
@@ -161,7 +161,7 @@ export function WelcomeScreen({
     >
       <SketchSurface
         capabilities={
-          editing && !overlayRequested
+          editing && !overlayReady
             ? { kind: "ipad", tools: ["pen", "eraser"], fingerDrawing: penSettings.fingerDrawing !== false, pressure: true }
             : { kind: "readonly", tools: [], fingerDrawing: false, pressure: false }
         }

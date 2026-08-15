@@ -220,10 +220,10 @@ describe("accessible navigation and settings", () => {
     expect(screen.getByRole("button", { name: "Check iCloud connection" })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("tab", { name: "About Me" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Display name" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "My Name" }), {
       target: { value: "Super Ivan" },
     });
-    fireEvent.blur(screen.getByRole("textbox", { name: "Display name" }));
+    fireEvent.blur(screen.getByRole("textbox", { name: "My Name" }));
     expect(commit).toHaveBeenCalledWith({
       type: "settings-update",
       settings: { displayName: "Super Ivan" },

@@ -37,11 +37,11 @@ export function AboutSettingsPanel({
       <div>
         <h2>About Me</h2>
         <p className="setting-description">
-          Choose the name and portrait shown in the diary.
+          Please write your name and draw your portrait.
         </p>
         <div className="display-name-controls">
           <label className="display-name-setting">
-            Display name
+            My Name
             <input
               autoCapitalize="words"
               enterKeyHint="done"

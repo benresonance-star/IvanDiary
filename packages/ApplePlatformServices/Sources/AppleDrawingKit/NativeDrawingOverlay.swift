@@ -10,6 +10,14 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
     public var onCanvasTapped: ((CGPoint) -> Void)?
     public var onCanvasLongPressed: ((CGPoint) -> Void)?
 
+    private static let contentInteractionTouchTypes: [NSNumber] = [
+        (UITouch.TouchType.direct, NativeDrawingTouchKind.direct),
+        (UITouch.TouchType.pencil, NativeDrawingTouchKind.pencil)
+    ].compactMap { touchType, touchKind in
+        NativeDrawingGesturePolicy.permitsContentInteraction(for: touchKind)
+            ? NSNumber(value: touchType.rawValue)
+            : nil
+    }
     private let canvasView = PKCanvasView()
     private let gridGuideView = DrawingGridGuideView()
     private let gridInputView = GridStrokeInputView()
@@ -21,10 +29,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         )
         recognizer.numberOfTouchesRequired = 2
         recognizer.cancelsTouchesInView = true
-        recognizer.allowedTouchTypes = [
-            NSNumber(value: UITouch.TouchType.direct.rawValue),
-            NSNumber(value: UITouch.TouchType.pencil.rawValue)
-        ]
+        recognizer.allowedTouchTypes = Self.contentInteractionTouchTypes
         return recognizer
     }()
     private lazy var oneFingerSelectionRecognizer: UITapGestureRecognizer = {
@@ -33,11 +38,8 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
             action: #selector(handleOneFingerSelection(_:))
         )
         recognizer.numberOfTouchesRequired = 1
-        recognizer.cancelsTouchesInView = true
-        recognizer.allowedTouchTypes = [
-            NSNumber(value: UITouch.TouchType.direct.rawValue),
-            NSNumber(value: UITouch.TouchType.pencil.rawValue)
-        ]
+        recognizer.cancelsTouchesInView = false
+        recognizer.allowedTouchTypes = Self.contentInteractionTouchTypes
         recognizer.delegate = self
         return recognizer
     }()
@@ -47,10 +49,8 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
             action: #selector(handleOneFingerLongPress(_:))
         )
         recognizer.minimumPressDuration = 0.65
-        recognizer.cancelsTouchesInView = true
-        recognizer.allowedTouchTypes = [
-            NSNumber(value: UITouch.TouchType.direct.rawValue)
-        ]
+        recognizer.cancelsTouchesInView = false
+        recognizer.allowedTouchTypes = Self.contentInteractionTouchTypes
         recognizer.delegate = self
         return recognizer
     }()
@@ -95,12 +95,14 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         canvasView.drawingGestureRecognizer.require(
             toFail: twoFingerUndoRecognizer
         )
-        canvasView.drawingGestureRecognizer.require(
-            toFail: oneFingerSelectionRecognizer
-        )
-        canvasView.drawingGestureRecognizer.require(
-            toFail: oneFingerLongPressRecognizer
-        )
+        if NativeDrawingGesturePolicy.drawingWaitsForContentInteraction {
+            canvasView.drawingGestureRecognizer.require(
+                toFail: oneFingerSelectionRecognizer
+            )
+            canvasView.drawingGestureRecognizer.require(
+                toFail: oneFingerLongPressRecognizer
+            )
+        }
         gridGuideView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(gridGuideView)
         addSubview(canvasView)

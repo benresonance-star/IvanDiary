@@ -48,7 +48,7 @@ describe("SettingsView name entry", () => {
   it("requests the standard text keyboard for typed names", () => {
     renderSettings();
 
-    const input = screen.getByRole("textbox", { name: "Display name" });
+    const input = screen.getByRole("textbox", { name: "My Name" });
     expect(input).toHaveAttribute("type", "text");
     expect(input).toHaveAttribute("inputmode", "text");
     expect(input).toHaveAttribute("autocapitalize", "words");
@@ -98,7 +98,7 @@ describe("SettingsView name entry", () => {
         "Speech permission is off. Your typed name is unchanged.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Display name" })).toHaveValue(
+    expect(screen.getByRole("textbox", { name: "My Name" })).toHaveValue(
       settings.displayName,
     );
     expect(commit).not.toHaveBeenCalled();

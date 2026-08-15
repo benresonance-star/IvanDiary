@@ -8,6 +8,7 @@ import {
   type NativeDrawingOverlayOperations,
   type NativeDrawingOverlayRequest,
 } from "./nativeDrawingOverlayCoordinator";
+import { shouldReserveNativeDrawingInput } from "./useNativeDrawingOverlay";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -65,6 +66,13 @@ describe("useNativeDrawingOverlay helpers", () => {
     expect(hasNativePencilKit()).toBe(false);
   });
 
+  it("reserves input during native presentation but falls back after failure", () => {
+    expect(shouldReserveNativeDrawingInput(true, true, false)).toBe(true);
+    expect(shouldReserveNativeDrawingInput(true, true, true)).toBe(false);
+    expect(shouldReserveNativeDrawingInput(true, false, false)).toBe(false);
+    expect(shouldReserveNativeDrawingInput(false, true, false)).toBe(false);
+  });
+
   it("updates pen and eraser in place without hiding the overlay", async () => {
     const native = operations();
     const coordinator = new NativeDrawingOverlayCoordinator(native);
@@ -109,6 +117,25 @@ describe("useNativeDrawingOverlay helpers", () => {
       }),
     );
     expect(native.hide).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed presentation to release the web drawing fallback", async () => {
+    const native = operations(
+      vi.fn().mockRejectedValue(new Error("presentation failed")),
+    );
+    const coordinator = new NativeDrawingOverlayCoordinator(native);
+    const { owner, request } = fixture();
+
+    coordinator.request(request);
+
+    await waitFor(() =>
+      expect(coordinator.state).toEqual({
+        active: false,
+        documentId: "drawing-one",
+        failed: true,
+        owner,
+      }),
+    );
   });
 
   it("hides a presentation that completes after its owner releases it", async () => {

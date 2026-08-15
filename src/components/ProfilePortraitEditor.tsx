@@ -36,7 +36,7 @@ export function ProfilePortraitEditor({
   const [tool, setTool] = useState<SketchTool>("pen");
   const [penHudOpen, setPenHudOpen] = useState(false);
   const [penSettings, setPenSettings] = useState(initialPenSettings);
-  const { overlayActive, overlayRequested } = useNativeDrawingOverlay({
+  const { overlayActive, overlayReady } = useNativeDrawingOverlay({
     documentId: PROFILE_PORTRAIT_DOCUMENT_ID,
     enabled: !interactionObscured && !penHudOpen && hasNativePencilKit(),
     tool,
@@ -94,9 +94,21 @@ export function ProfilePortraitEditor({
       </div>
       <div className="portrait-editor-canvas" ref={canvasRef}>
         <SketchSurface
-          capabilities={overlayRequested
-            ? { kind: "readonly", tools: [], fingerDrawing: false, pressure: false }
-            : { kind: "ipad", tools: ["pen", "eraser"], fingerDrawing: penSettings.fingerDrawing !== false, pressure: true }}
+          capabilities={
+            overlayReady
+              ? {
+                  kind: "readonly",
+                  tools: [],
+                  fingerDrawing: false,
+                  pressure: false,
+                }
+              : {
+                  kind: "ipad",
+                  tools: ["pen", "eraser"],
+                  fingerDrawing: penSettings.fingerDrawing !== false,
+                  pressure: true,
+                }
+          }
           documentId={PROFILE_PORTRAIT_DOCUMENT_ID}
           penColor={penSettings.color}
           penNib={penSettings.nib}

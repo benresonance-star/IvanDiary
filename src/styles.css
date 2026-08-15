@@ -100,6 +100,7 @@ textarea:focus-visible {
 .welcome-content .welcome-personal-message {
   max-width: 760px;
   margin-top: 0.35em;
+  color: #a96800;
   font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(21px, 2.5vw, 34px);
   font-style: italic;
@@ -1656,12 +1657,15 @@ textarea,
 .story-divider-resize {
   position: absolute;
   z-index: 1;
-  inset: 0;
-  width: 100%;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 48px;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: col-resize;
+  transform: translateX(-50%);
   touch-action: none;
 }
 

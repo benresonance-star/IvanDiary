@@ -34,6 +34,7 @@ export type NativeDrawingOverlayRequest = {
 export type NativeDrawingOverlayState = {
   active: boolean;
   documentId?: string;
+  failed?: boolean;
   owner?: symbol;
 };
 
@@ -115,6 +116,9 @@ export class NativeDrawingOverlayCoordinator {
   request(request: NativeDrawingOverlayRequest): void {
     this.#desired = request;
     this.#lastErrorHandler = request.onError;
+    if (this.#state.failed && this.#state.owner === request.owner) {
+      this.#publish({ active: false, owner: request.owner });
+    }
     this.#version += 1;
     this.#startReconciliation();
   }
@@ -267,7 +271,12 @@ export class NativeDrawingOverlayCoordinator {
           } catch (error) {
             this.#presentedDocumentId = undefined;
             this.#presentedOwner = undefined;
-            this.#publish({ active: false });
+            this.#publish({
+              active: false,
+              documentId: desired.documentId,
+              failed: true,
+              owner: desired.owner,
+            });
             this.#report(error, "The drawing overlay could not be opened.");
             return;
           }

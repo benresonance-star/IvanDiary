@@ -28,6 +28,7 @@ vi.mock("../hooks/useNativeDrawingOverlay", () => ({
     nativeAvailable: false,
     overlayActive: false,
     overlayRequested: false,
+    overlayReady: false,
     suspendOverlay: vi.fn(async () => true),
   }),
 }));
@@ -340,6 +341,38 @@ describe("MyStoryWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "View" }));
     fireEvent.click(screen.getByText("Growing up"));
     expect(screen.queryByLabelText("My Story options")).not.toBeInTheDocument();
+  });
+
+  it("confirms before deleting Story text in Edit mode", () => {
+    const { commit } = renderStory();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Growing up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(
+      screen.getByRole("alertdialog", { name: "Delete text block?" }),
+    ).toHaveTextContent("Do you want to delete “Growing up”?");
+    expect(commit).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Keep it" }));
+    expect(
+      screen.queryByRole("alertdialog", { name: "Delete text block?" }),
+    ).not.toBeInTheDocument();
+    expect(commit).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(
+      within(
+        screen.getByRole("alertdialog", { name: "Delete text block?" }),
+      ).getByRole("button", { name: "Delete" }),
+    );
+
+    expect(commit).toHaveBeenCalledWith({
+      type: "my-story-text-delete",
+      pageId: "story-page",
+      blockId: "story-heading",
+    });
   });
 
   it("uses the last selected text colour for new story text", async () => {
