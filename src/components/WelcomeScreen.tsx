@@ -31,7 +31,10 @@ export function WelcomeScreen({
   onReturnToSettings,
   penColor,
   fingerDrawingEnabled = true,
+  favouriteColourLongPressEnabled = true,
+  favouriteColourLongPressSeconds = 2,
   favouritePenColours,
+  interactionObscured = false,
   penNib = "pen",
   penNibProfiles,
   penOpacity,
@@ -46,7 +49,10 @@ export function WelcomeScreen({
   onReturnToSettings?: () => void;
   penColor: string;
   fingerDrawingEnabled?: boolean;
+  favouriteColourLongPressEnabled?: boolean;
+  favouriteColourLongPressSeconds?: number;
   favouritePenColours?: string[];
+  interactionObscured?: boolean;
   penNib?: "pen" | "marker" | "pencil" | "brush";
   penNibProfiles?: PenSettings["profiles"];
   penOpacity: number;
@@ -79,7 +85,8 @@ export function WelcomeScreen({
 
   const { overlayActive, overlayRequested } = useNativeDrawingOverlay({
     documentId: WELCOME_DRAWING_DOCUMENT_ID,
-    enabled: editing && !penHudOpen && hasNativePencilKit(),
+    enabled:
+      editing && !interactionObscured && !penHudOpen && hasNativePencilKit(),
     tool,
     color: penSettings.color,
     nib: penSettings.nib,
@@ -184,6 +191,7 @@ export function WelcomeScreen({
       {editing ? (
           <button
             className="welcome-return"
+            data-help-topic="return-settings"
             onClick={onReturnToSettings}
             type="button"
           >
@@ -194,6 +202,7 @@ export function WelcomeScreen({
         <button
           aria-label={`${accessibleText}. Open diary`}
           className="welcome-continue"
+          data-help-topic="welcome-continue"
           onClick={dismiss}
           type="button"
         />
@@ -209,6 +218,7 @@ export function WelcomeScreen({
               aria-expanded={penHudOpen}
               aria-haspopup="dialog"
               aria-pressed={tool === "pen"}
+              data-help-topic="draw"
               onClick={() => {
                 if (tool === "pen") {
                   setPenHudOpen(true);
@@ -223,17 +233,18 @@ export function WelcomeScreen({
             </button>
             <button
               aria-pressed={tool === "eraser"}
+              data-help-topic="erase"
               onClick={() => setTool("eraser")}
               type="button"
             >
               <Eraser aria-hidden="true" />
               Erase
             </button>
-            <button onClick={undo} type="button">
+            <button data-help-topic="undo" onClick={undo} type="button">
               <Undo2 aria-hidden="true" />
               Undo
             </button>
-            <button onClick={redo} type="button">
+            <button data-help-topic="redo" onClick={redo} type="button">
               <Redo2 aria-hidden="true" />
               Redo
             </button>
@@ -250,6 +261,12 @@ export function WelcomeScreen({
             type="button"
           />
           <PenSettingsHud
+            favouriteColourLongPressEnabled={
+              favouriteColourLongPressEnabled
+            }
+            favouriteColourLongPressMs={
+              favouriteColourLongPressSeconds * 1000
+            }
             onChange={setPenSettings}
             onDone={() => {
               setPenHudOpen(false);

@@ -1,5 +1,8 @@
 import {
+  DEFAULT_GRID_COLOR,
   DOCUMENT_SCHEMA_VERSION,
+  GRID_ROTATION_MAX,
+  type DrawingGridSettings,
   type JournalSnapshot,
   type JournalSettings,
   type MyWord,
@@ -21,6 +24,8 @@ const DEFAULT_SETTINGS: JournalSettings = {
     "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
     "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
   ],
+  favouriteColourLongPressEnabled: true,
+  favouriteColourLongPressSeconds: 2,
   penNib: "pen",
   penNibProfiles: {
     pen: { color: "#171410", width: 4.2, opacity: 1 },
@@ -113,6 +118,13 @@ function migrateSettings(value: unknown): JournalSettings {
           : DEFAULT_SETTINGS.favouritePenColours[index]!,
       )
     : [...DEFAULT_SETTINGS.favouritePenColours];
+  const favouriteColourLongPressSeconds =
+    typeof value.favouriteColourLongPressSeconds === "number" &&
+    Number.isFinite(value.favouriteColourLongPressSeconds)
+      ? Math.min(5, Math.max(0.5, value.favouriteColourLongPressSeconds))
+      : DEFAULT_SETTINGS.favouriteColourLongPressSeconds;
+  const favouriteColourLongPressEnabled =
+    value.favouriteColourLongPressEnabled !== false;
   const penNib =
     value.penNib === "marker" ||
     value.penNib === "pencil" ||
@@ -207,6 +219,8 @@ function migrateSettings(value: unknown): JournalSettings {
     penOpacity,
     fingerDrawingEnabled,
     favouritePenColours,
+    favouriteColourLongPressEnabled,
+    favouriteColourLongPressSeconds,
     penNib,
     penNibProfiles,
     welcomeGreeting,
@@ -241,13 +255,40 @@ function defaultFrame(object: PageObject): Size | undefined {
 function migratePageFrames(
   pages: JournalSnapshot["pages"],
 ): JournalSnapshot["pages"] {
-  return pages.map((page) => ({
-    ...page,
-    objects: page.objects.map((object) => {
-      const frame = object.frame ?? defaultFrame(object);
-      return frame ? { ...object, frame } : object;
-    }),
-  }));
+  return pages.map((page) => {
+    const grid = page.drawingGrid as Partial<DrawingGridSettings> | undefined;
+    const spacing =
+      grid && [36, 60, 96].includes(grid.spacing ?? 0)
+        ? grid.spacing as DrawingGridSettings["spacing"]
+        : 60;
+    const rotationDegrees =
+      typeof grid?.rotationDegrees === "number" &&
+      Number.isInteger(grid.rotationDegrees / 15) &&
+      Math.abs(grid.rotationDegrees) <= GRID_ROTATION_MAX
+        ? grid.rotationDegrees
+        : 0;
+    const drawingGrid = grid
+      ? {
+          enabled: grid.enabled === true,
+          spacing,
+          rotationDegrees,
+          type: grid.type === "dots" ? "dots" as const : "lines" as const,
+          color:
+            typeof grid.color === "string" &&
+            /^#[0-9a-f]{6}$/i.test(grid.color)
+              ? grid.color
+              : DEFAULT_GRID_COLOR,
+        }
+      : undefined;
+    return {
+      ...page,
+      ...(drawingGrid ? { drawingGrid } : {}),
+      objects: page.objects.map((object) => {
+        const frame = object.frame ?? defaultFrame(object);
+        return frame ? { ...object, frame } : object;
+      }),
+    };
+  });
 }
 
 export function migrateJournalSnapshot(value: unknown): JournalSnapshot {

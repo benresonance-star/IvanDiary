@@ -179,6 +179,7 @@ export function SketchbooksView({
           <button
             aria-pressed={editMode}
             className={editMode ? "large-action arrange-action selected" : "large-action arrange-action"}
+            data-help-topic="library-arrange"
             onClick={() => setEditMode((current) => !current)}
             type="button"
           >
@@ -187,6 +188,7 @@ export function SketchbooksView({
           </button>
           <button
             className="large-action"
+            data-help-topic="new-sketchbook"
             onClick={() => {
               setRenamingSketchbookId(undefined);
               setName("");
@@ -218,6 +220,7 @@ export function SketchbooksView({
                   : `Open ${sketchbook.name}`
               }
               className="sketchbook-card-link"
+              data-help-topic="open-sketchbook"
               onClick={() => {
                 if (!editMode) {
                   onOpenSketchbook(sketchbook.id);
@@ -297,6 +300,7 @@ export function SketchbooksView({
                 }
                 aria-pressed={sketchbook.favourite}
                 className="favourite-button"
+                data-help-topic="favourite"
                 onClick={() => void (async () => {
                   const adding = !sketchbook.favourite;
                   const saved = await commit({
@@ -385,6 +389,9 @@ export function SketchbooksView({
               </button>
               <button
                 className="primary-dialog-action"
+                data-help-topic={
+                  renamingSketchbookId ? undefined : "new-sketchbook"
+                }
                 disabled={!name.trim() || creating}
                 type="submit"
               >

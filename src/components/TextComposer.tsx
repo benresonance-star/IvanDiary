@@ -2,8 +2,10 @@ import {
   useEffect,
   useRef,
   useState,
+  type ChangeEvent,
   type MutableRefObject,
 } from "react";
+import { flushSync } from "react-dom";
 import { Keyboard, Mic } from "lucide-react";
 
 import type { TextSelection } from "./textInsertion";
@@ -34,7 +36,8 @@ export function TextComposer({
   selectionRef: MutableRefObject<TextSelection>;
 }) {
   const [input, setInput] = useState<"voice" | "keyboard">("voice");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const voiceEditorRef = useRef<HTMLTextAreaElement>(null);
+  const keyboardEditorRef = useRef<HTMLTextAreaElement>(null);
   const [visibleViewport, setVisibleViewport] = useState<{
     height: number;
     offsetTop: number;
@@ -62,15 +65,27 @@ export function TextComposer({
     selectionRef.current = next;
   };
 
+  const updateText = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    onChange({ ...draft, text: event.target.value });
+    rememberSelection({
+      start: event.currentTarget.selectionStart,
+      end: event.currentTarget.selectionEnd,
+    });
+  };
+
+  const selectVoice = () => {
+    keyboardEditorRef.current?.blur();
+    setInput("voice");
+  };
+
   const selectKeyboard = () => {
-    setInput("keyboard");
-    const editor = textareaRef.current;
+    // Commit the editor swap during the completed tap so WKWebView focuses a
+    // visible inputmode="text" element while the user gesture is still active.
+    // Keeping a separate element avoids reusing the input session previously
+    // created for the voice editor's inputmode="none".
+    flushSync(() => setInput("keyboard"));
+    const editor = keyboardEditorRef.current;
     if (!editor) return;
-    // WKWebView caches the input view when an element becomes first responder.
-    // Re-enter focus after changing inputmode so a voice-mode focus cannot leave
-    // the compact input assistant attached instead of the text keyboard.
-    editor.blur();
-    editor.setAttribute("inputmode", "text");
     editor.focus({ preventScroll: true });
     editor.setSelectionRange(
       selectionRef.current.start,
@@ -97,25 +112,26 @@ export function TextComposer({
           <button className="secondary-action" disabled={recording} onClick={onCancel} type="button">Cancel</button>
         </header>
         <div className="text-input-row">
-          <fieldset aria-label="Text input method" className={`text-input-toggle ${input === "keyboard" ? "keyboard-selected" : "voice-selected"}`}>
-            <legend className="visually-hidden">Text input method</legend>
-            <label className={input === "voice" ? "selected" : ""}>
-              <input checked={input === "voice"} name="text-input-method" onChange={() => { setInput("voice"); textareaRef.current?.blur(); }} type="radio" value="voice" />
-              <Mic aria-hidden="true" />Voice
-            </label>
-            <label
-              className={input === "keyboard" ? "selected" : ""}
-              onPointerDown={(event) => {
-                // Keep keyboard activation inside the original trusted tap and
-                // prevent the hidden radio from taking focus back from the editor.
-                event.preventDefault();
-                selectKeyboard();
-              }}
+          <div aria-label="Text input method" className={`text-input-toggle ${input === "keyboard" ? "keyboard-selected" : "voice-selected"}`} role="radiogroup">
+            <button
+              aria-checked={input === "voice"}
+              className={input === "voice" ? "selected" : ""}
+              onClick={selectVoice}
+              role="radio"
+              type="button"
             >
-              <input checked={input === "keyboard"} name="text-input-method" onChange={selectKeyboard} type="radio" value="keyboard" />
+              <Mic aria-hidden="true" />Voice
+            </button>
+            <button
+              aria-checked={input === "keyboard"}
+              className={input === "keyboard" ? "selected" : ""}
+              onClick={selectKeyboard}
+              role="radio"
+              type="button"
+            >
               <Keyboard aria-hidden="true" />Keyboard
-            </label>
-          </fieldset>
+            </button>
+          </div>
           {input === "voice" ? (
             <button
               aria-pressed={recording}
@@ -135,23 +151,37 @@ export function TextComposer({
           <button className="large-action text-add-action" disabled={!draft.text.trim() || recording} onClick={onSubmit} type="button">Add to canvas</button>
         </div>
         <p aria-live="polite" className="text-composer-status" role="status">{status ?? (input === "voice" ? "Ready to listen" : "Keyboard ready")}</p>
-        <textarea
-          aria-label="Text for the page"
-          className="text-composer-editor"
-          inputMode={input === "voice" ? "none" : "text"}
-          onClick={(event) => {
-            event.currentTarget.focus({ preventScroll: true });
-          }}
-          onChange={(event) => {
-            onChange({ ...draft, text: event.target.value });
-            rememberSelection({ start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd });
-          }}
-          onSelect={(event) => rememberSelection({ start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })}
-          placeholder="Your words will appear here…"
-          ref={textareaRef}
-          style={{ fontSize: `${draft.textScale}em`, textAlign: draft.textAlign }}
-          value={draft.text}
-        />
+        <div className="text-composer-editors">
+          <textarea
+            aria-hidden={input !== "voice"}
+            aria-label={input === "voice" ? "Text for the page" : undefined}
+            className="text-composer-editor"
+            hidden={input !== "voice"}
+            inputMode="none"
+            onClick={(event) => {
+              event.currentTarget.focus({ preventScroll: true });
+            }}
+            onChange={updateText}
+            onSelect={(event) => rememberSelection({ start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })}
+            placeholder="Your words will appear here…"
+            ref={voiceEditorRef}
+            style={{ fontSize: `${draft.textScale}em`, textAlign: draft.textAlign }}
+            value={draft.text}
+          />
+          <textarea
+            aria-hidden={input !== "keyboard"}
+            aria-label={input === "keyboard" ? "Text for the page" : undefined}
+            className="text-composer-editor"
+            hidden={input !== "keyboard"}
+            inputMode="text"
+            onChange={updateText}
+            onSelect={(event) => rememberSelection({ start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })}
+            placeholder="Your words will appear here…"
+            ref={keyboardEditorRef}
+            style={{ fontSize: `${draft.textScale}em`, textAlign: draft.textAlign }}
+            value={draft.text}
+          />
+        </div>
       </section>
     </div>
   );

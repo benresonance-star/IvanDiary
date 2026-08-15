@@ -12,6 +12,7 @@ import {
 } from "./components/Navigation";
 import { SettingsView } from "./components/SettingsView";
 import { ProfilePortraitEditor } from "./components/ProfilePortraitEditor";
+import { HelpMode } from "./components/HelpMode";
 import {
   WelcomeScreen,
   type WelcomeCopy,
@@ -148,6 +149,7 @@ export default function App() {
     useState<string>();
   const [navigationMenuOpen, setNavigationMenuOpen] = useState(false);
   const [navigationMenuOpening, setNavigationMenuOpening] = useState(false);
+  const [helpModeActive, setHelpModeActive] = useState(false);
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [welcomePreview, setWelcomePreview] = useState<WelcomeCopy>();
   const [portraitEditorOpen, setPortraitEditorOpen] = useState(false);
@@ -697,13 +699,21 @@ export default function App() {
             pages={dayPages}
             penColor={snapshot.settings.penColor}
             fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
+            favouriteColourLongPressEnabled={
+              snapshot.settings.favouriteColourLongPressEnabled
+            }
+            favouriteColourLongPressSeconds={
+              snapshot.settings.favouriteColourLongPressSeconds
+            }
             favouritePenColours={snapshot.settings.favouritePenColours}
             penNib={snapshot.settings.penNib}
             penNibProfiles={snapshot.settings.penNibProfiles}
             penOpacity={snapshot.settings.penOpacity}
             penWidth={snapshot.settings.penWidth}
             myWords={snapshot.settings.myWords}
-            navigationObscured={navigationMenuOpen || navigationMenuOpening}
+            navigationObscured={
+              navigationMenuOpen || navigationMenuOpening || helpModeActive
+            }
             recordingLimitMinutes={snapshot.settings.recordingLimitMinutes}
             share={share}
             sketchRepository={sketchRepository}
@@ -755,13 +765,21 @@ export default function App() {
             pages={sketchbookPages}
             penColor={snapshot.settings.penColor}
             fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
+            favouriteColourLongPressEnabled={
+              snapshot.settings.favouriteColourLongPressEnabled
+            }
+            favouriteColourLongPressSeconds={
+              snapshot.settings.favouriteColourLongPressSeconds
+            }
             favouritePenColours={snapshot.settings.favouritePenColours}
             penNib={snapshot.settings.penNib}
             penNibProfiles={snapshot.settings.penNibProfiles}
             penOpacity={snapshot.settings.penOpacity}
             penWidth={snapshot.settings.penWidth}
             myWords={snapshot.settings.myWords}
-            navigationObscured={navigationMenuOpen || navigationMenuOpening}
+            navigationObscured={
+              navigationMenuOpen || navigationMenuOpening || helpModeActive
+            }
             recordingLimitMinutes={snapshot.settings.recordingLimitMinutes}
             share={share}
             sketchRepository={sketchRepository}
@@ -869,6 +887,15 @@ export default function App() {
         onSectionChange={openSection}
         sketchRepository={sketchRepository}
       />
+      <HelpMode
+        active={helpModeActive}
+        onActiveChange={(active) => {
+          if (active) {
+            closeNavigationMenu();
+          }
+          setHelpModeActive(active);
+        }}
+      />
       {storageBlocked ? (
         <div className="storage-blocked-warning" role="alert">
           <strong>The diary cannot finish opening its saved storage.</strong>
@@ -881,6 +908,12 @@ export default function App() {
       {content}
       {portraitEditorOpen ? (
         <ProfilePortraitEditor
+          favouriteColourLongPressEnabled={
+            snapshot.settings.favouriteColourLongPressEnabled
+          }
+          favouriteColourLongPressMs={
+            snapshot.settings.favouriteColourLongPressSeconds * 1000
+          }
           initialPenSettings={{
             color: snapshot.settings.penColor,
             nib: snapshot.settings.penNib,
@@ -890,6 +923,7 @@ export default function App() {
             fingerDrawing: snapshot.settings.fingerDrawingEnabled,
             favouriteColours: snapshot.settings.favouritePenColours,
           }}
+          interactionObscured={helpModeActive}
           onPenSettingsChange={(penSettings) => {
             void commit({
               type: "settings-update",
@@ -897,6 +931,9 @@ export default function App() {
                 penColor: penSettings.color,
                 penNib: penSettings.nib ?? "pen",
                 ...(penSettings.profiles ? { penNibProfiles: penSettings.profiles } : {}),
+                ...(penSettings.favouriteColours
+                  ? { favouritePenColours: [...penSettings.favouriteColours] }
+                  : {}),
                 penWidth: penSettings.width,
                 penOpacity: penSettings.opacity,
                 fingerDrawingEnabled: penSettings.fingerDrawing !== false,
@@ -917,6 +954,7 @@ export default function App() {
             }
           }
           editing={Boolean(welcomePreview)}
+          interactionObscured={helpModeActive}
           onDismiss={() => {
             if (welcomePreview) {
               setWelcomePreview(undefined);
@@ -931,6 +969,9 @@ export default function App() {
                 penColor: penSettings.color,
                 penNib: penSettings.nib ?? "pen",
                 ...(penSettings.profiles ? { penNibProfiles: penSettings.profiles } : {}),
+                ...(penSettings.favouriteColours
+                  ? { favouritePenColours: [...penSettings.favouriteColours] }
+                  : {}),
                 penWidth: penSettings.width,
                 penOpacity: penSettings.opacity,
                 fingerDrawingEnabled: penSettings.fingerDrawing !== false,
@@ -940,6 +981,12 @@ export default function App() {
           onReturnToSettings={() => setWelcomePreview(undefined)}
           penColor={snapshot.settings.penColor}
           fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
+          favouriteColourLongPressEnabled={
+            snapshot.settings.favouriteColourLongPressEnabled
+          }
+          favouriteColourLongPressSeconds={
+            snapshot.settings.favouriteColourLongPressSeconds
+          }
           favouritePenColours={snapshot.settings.favouritePenColours}
           penNib={snapshot.settings.penNib}
           penNibProfiles={snapshot.settings.penNibProfiles}

@@ -106,6 +106,8 @@ describe("accessible navigation and settings", () => {
             "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
             "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
           ],
+          favouriteColourLongPressEnabled: true,
+          favouriteColourLongPressSeconds: 2,
           penNib: "pen",
           penNibProfiles: {
             pen: { color: "#171410", width: 4.2, opacity: 1 },
@@ -140,6 +142,25 @@ describe("accessible navigation and settings", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Canvas" }));
     expect(screen.getAllByRole("button", { name: /^(Black|Blue|Green|Red|Purple|Brown|Orange|Teal|Rose|Grey)$/ })).toHaveLength(10);
+    const longHoldToggle = screen.getByRole("checkbox", {
+      name: "Change colours with a long hold",
+    });
+    expect(longHoldToggle).toBeChecked();
+    fireEvent.click(longHoldToggle);
+    expect(commit).toHaveBeenCalledWith({
+      type: "settings-update",
+      settings: { favouriteColourLongPressEnabled: false },
+    });
+    fireEvent.change(
+      screen.getByRole("slider", {
+        name: "Favourite colour long-hold time",
+      }),
+      { target: { value: "3" } },
+    );
+    expect(commit).toHaveBeenCalledWith({
+      type: "settings-update",
+      settings: { favouriteColourLongPressSeconds: 3 },
+    });
     fireEvent.change(screen.getByRole("slider", { name: "Canvas colour hue" }), {
       target: { value: "180" },
     });

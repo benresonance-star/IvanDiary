@@ -615,12 +615,20 @@ describe("document operations", () => {
       resultingRevision: 1,
       createdAt: "2026-08-03T10:00:00.000Z",
       pageId: page.id,
-      grid: { enabled: true, spacing: 96, rotationDegrees: 45 },
+      grid: {
+        enabled: true,
+        spacing: 96,
+        rotationDegrees: 45,
+        type: "dots",
+        color: "#884422",
+      },
     });
     expect(updated.pages[0]?.drawingGrid).toEqual({
       enabled: true,
       spacing: 96,
       rotationDegrees: 45,
+      type: "dots",
+      color: "#884422",
     });
   });
 
@@ -634,7 +642,13 @@ describe("document operations", () => {
       resultingRevision: 1,
       createdAt: "2026-08-03T10:00:00.000Z",
       pageId: page.id,
-      grid: { enabled: true, spacing: 60, rotationDegrees: 75 },
+      grid: {
+        enabled: true,
+        spacing: 60,
+        rotationDegrees: 75,
+        type: "lines",
+        color: "#435b70",
+      },
     });
     expect(updated.pages[0]?.drawingGrid?.rotationDegrees).toBe(75);
   });

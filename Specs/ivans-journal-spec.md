@@ -293,6 +293,22 @@ Requirements:
 
 **Warm Journal** should be the default.
 
+### Drawing guides
+
+Each diary and sketchbook page can independently keep a drawing grid. Grid
+settings persist with that page across navigation, force-close, and relaunch.
+The Draw settings provide:
+
+-   On or Off
+-   Small, Medium, or Large spacing
+-   Lines or visible Dots
+-   an adjustable guide colour
+-   rotation in 15-degree steps with a direct Straighten action
+
+The visible native iPad guide and stroke snapping must use the same origin,
+spacing, and rotation. Guides are editing aids and are not baked into saved
+strokes.
+
 ------------------------------------------------------------------------
 
 ## 9. Natural Ink Rendering

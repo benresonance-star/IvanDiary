@@ -65,7 +65,7 @@ describe("TextComposer", () => {
     expect(screen.getByRole("button", { name: "Add to canvas" })).toBeVisible();
   });
 
-  it("restarts editor focus when switching from the voice input view", () => {
+  it("focuses a separate text-input editor when switching from voice", () => {
     render(
       <TextComposer
         draft={{ ...emptyDraft, text: "A remembered day" }}
@@ -78,23 +78,22 @@ describe("TextComposer", () => {
       />,
     );
 
-    const editor = screen.getByLabelText(
+    const voiceEditor = screen.getByLabelText(
       "Text for the page",
     ) as HTMLTextAreaElement;
-    editor.focus();
-    const blur = vi.spyOn(editor, "blur");
-    const focus = vi.spyOn(editor, "focus");
+    voiceEditor.focus();
 
     fireEvent.click(screen.getByRole("radio", { name: "Keyboard" }));
 
-    expect(blur).toHaveBeenCalled();
-    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
-    expect(blur.mock.invocationCallOrder[0]!).toBeLessThan(
-      focus.mock.invocationCallOrder[0]!,
-    );
-    expect(editor).toHaveAttribute("inputmode", "text");
-    expect(editor).toHaveFocus();
-    expect(editor.selectionStart).toBe(3);
+    const keyboardEditor = screen.getByLabelText(
+      "Text for the page",
+    ) as HTMLTextAreaElement;
+    expect(keyboardEditor).not.toBe(voiceEditor);
+    expect(voiceEditor).toHaveAttribute("inputmode", "none");
+    expect(voiceEditor).not.toHaveFocus();
+    expect(keyboardEditor).toHaveAttribute("inputmode", "text");
+    expect(keyboardEditor).toHaveFocus();
+    expect(keyboardEditor.selectionStart).toBe(3);
   });
 
   it("keeps voice mode and shows the caret when the text canvas is tapped", () => {

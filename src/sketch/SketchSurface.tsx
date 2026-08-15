@@ -499,6 +499,10 @@ function SketchSurfaceComponent(
                 start,
                 grid,
                 activeGridAxisRef.current,
+                {
+                  x: document.size.width / 2,
+                  y: document.size.height / 2,
+                },
               ),
             );
           }
@@ -508,6 +512,10 @@ function SketchSurfaceComponent(
               start,
               grid,
               activeGridAxisRef.current,
+              {
+                x: document.size.width / 2,
+                y: document.size.height / 2,
+              },
             );
           }
         }

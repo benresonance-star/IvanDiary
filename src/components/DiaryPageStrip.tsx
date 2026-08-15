@@ -414,6 +414,7 @@ export function DiaryPageStrip({
                     : `Open page ${pageNumber}`
                 }
                 className={`diary-page-button${current ? " current" : ""}${draggedPageId === page.id ? " dragging" : ""}${arrange ? " reorderable" : ""}`}
+                data-help-topic="page-strip"
                 data-page-id={page.id}
                 draggable={arrange}
                 onDragEnd={finishNativeDrag}
@@ -456,6 +457,7 @@ export function DiaryPageStrip({
                       : `Delete page ${pageNumber}`
                   }
                   className="page-thumbnail-delete"
+                  data-help-topic="arrange-delete"
                   disabled={pages.length <= 1}
                   onClick={() => setPagePendingDelete(page)}
                   type="button"
@@ -470,6 +472,7 @@ export function DiaryPageStrip({
           <button
             aria-label={pageLimitReached ? "Maximum of 10 pages reached" : addPageLabel}
             className="diary-page-button add-diary-page"
+            data-help-topic="add-page"
             disabled={pageLimitReached}
             onClick={() => {
               void onAddPage().then((added) => {

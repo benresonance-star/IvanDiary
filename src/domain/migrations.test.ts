@@ -42,6 +42,8 @@ describe("journal migrations", () => {
         "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
         "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
       ],
+      favouriteColourLongPressEnabled: true,
+      favouriteColourLongPressSeconds: 2,
       penNib: "pen",
       penNibProfiles: {
         pen: { color: "#171410", width: 4.2, opacity: 1 },
@@ -96,6 +98,32 @@ describe("journal migrations", () => {
     });
 
     expect(migrated.settings.penNibProfiles).toEqual(penNibProfiles);
+  });
+
+  it("adds safe visual defaults to legacy page grids", () => {
+    const current = createInitialJournalSnapshot();
+    const page = current.pages[0]!;
+    const migrated = migrateJournalSnapshot({
+      ...current,
+      pages: [
+        {
+          ...page,
+          drawingGrid: {
+            enabled: true,
+            spacing: 96,
+            rotationDegrees: 45,
+          },
+        },
+      ],
+    });
+
+    expect(migrated.pages[0]?.drawingGrid).toEqual({
+      enabled: true,
+      spacing: 96,
+      rotationDegrees: 45,
+      type: "lines",
+      color: "#435b70",
+    });
   });
 
   it("validates per-nib pen profiles with safe legacy fallbacks", () => {

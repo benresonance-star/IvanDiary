@@ -1,14 +1,18 @@
 import {
+  DEFAULT_GRID_COLOR,
   GRID_ROTATION_MAX,
   GRID_ROTATION_STEP,
   type DrawingGridSettings,
 } from "../domain/models";
+import { colourWithOpacity } from "../utils/colour";
 import type { PencilSample } from "./types";
 
 export const DEFAULT_DRAWING_GRID: DrawingGridSettings = {
   enabled: false,
   spacing: 60,
   rotationDegrees: 0,
+  type: "lines",
+  color: DEFAULT_GRID_COLOR,
 };
 
 export function clampGridRotation(degrees: number): number {
@@ -21,14 +25,15 @@ export function snapSampleToGrid(
   start: PencilSample,
   grid: DrawingGridSettings,
   axis?: "horizontal" | "vertical",
+  center: { x: number; y: number } = { x: 0, y: 0 },
 ): PencilSample {
   if (!grid.enabled) return sample;
   const angle = (grid.rotationDegrees * Math.PI) / 180;
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   const local = (point: PencilSample) => ({
-    x: point.x * cos + point.y * sin,
-    y: -point.x * sin + point.y * cos,
+    x: (point.x - center.x) * cos + (point.y - center.y) * sin,
+    y: -(point.x - center.x) * sin + (point.y - center.y) * cos,
   });
   const origin = local(start);
   const point = local(sample);
@@ -43,8 +48,8 @@ export function snapSampleToGrid(
     : point.y;
   return {
     ...sample,
-    x: snappedX * cos - snappedY * sin,
-    y: snappedX * sin + snappedY * cos,
+    x: snappedX * cos - snappedY * sin + center.x,
+    y: snappedX * sin + snappedY * cos + center.y,
   };
 }
 
@@ -82,17 +87,31 @@ export function drawGrid(
 ): void {
   if (!grid.enabled) return;
   const diagonal = Math.hypot(width, height);
+  const offsets = gridLineOffsets(diagonal, grid.spacing);
   context.save();
+  context.translate(width / 2, height / 2);
   context.rotate((grid.rotationDegrees * Math.PI) / 180);
   context.beginPath();
-  for (const offset of gridLineOffsets(diagonal, grid.spacing)) {
-    context.moveTo(-diagonal, offset);
-    context.lineTo(diagonal, offset);
-    context.moveTo(offset, -diagonal);
-    context.lineTo(offset, diagonal);
+  if (grid.type === "dots") {
+    const radius = Math.max(2.2, Math.min(3.5, grid.spacing / 20));
+    for (const x of offsets) {
+      for (const y of offsets) {
+        context.moveTo(x + radius, y);
+        context.arc(x, y, radius, 0, Math.PI * 2);
+      }
+    }
+    context.fillStyle = colourWithOpacity(grid.color, 0.48);
+    context.fill();
+  } else {
+    for (const offset of offsets) {
+      context.moveTo(-diagonal, offset);
+      context.lineTo(diagonal, offset);
+      context.moveTo(offset, -diagonal);
+      context.lineTo(offset, diagonal);
+    }
+    context.strokeStyle = colourWithOpacity(grid.color, 0.34);
+    context.lineWidth = 1.5;
+    context.stroke();
   }
-  context.strokeStyle = "rgba(67, 91, 112, 0.28)";
-  context.lineWidth = 1.5;
-  context.stroke();
   context.restore();
 }

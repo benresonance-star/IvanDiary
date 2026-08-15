@@ -278,6 +278,13 @@ export function ArrangeablePageObject({
           : undefined
       }
       className={`${className}${layer === "behind-sketch" ? " behind-sketch" : ""}${arrange ? " arrangeable" : ""}${selected ? " selected-object" : ""}`}
+      data-help-body={
+        arrange
+          ? `This ${objectLabel.toLowerCase()} can be moved, resized, layered, or removed.`
+          : undefined
+      }
+      data-help-title={arrange ? objectLabel : undefined}
+      data-help-topic={arrange ? "arrange-object" : undefined}
       data-object-id={objectId}
       onClick={arrange ? onSelect : undefined}
       onKeyDown={arrange ? handleKeyDown : undefined}
@@ -297,6 +304,8 @@ export function ArrangeablePageObject({
               }
               aria-pressed={aspectLock}
               className={`arrange-aspect-lock${aspectLock ? " selected" : ""}`}
+              data-help-title={`Keep ${objectLabel.toLowerCase()} shape`}
+              data-help-topic="arrange-proportion"
               onClick={(event) => {
                 event.stopPropagation();
                 onToggleAspectLock();
@@ -309,6 +318,8 @@ export function ArrangeablePageObject({
           <button
             aria-label={`Drag to move ${objectLabel}`}
             className="arrange-handle move-handle"
+            data-help-title={`Move ${objectLabel.toLowerCase()}`}
+            data-help-topic="arrange-move"
             onLostPointerCapture={finishInteraction}
             onPointerCancel={cancelInteraction}
             onPointerDown={(event) => beginInteraction(event, "move")}
@@ -321,6 +332,8 @@ export function ArrangeablePageObject({
           <button
             aria-label={`Drag to resize ${objectLabel}`}
             className="arrange-handle resize-handle"
+            data-help-title={`Resize ${objectLabel.toLowerCase()}`}
+            data-help-topic="arrange-resize"
             onLostPointerCapture={finishInteraction}
             onPointerCancel={cancelInteraction}
             onPointerDown={(event) => beginInteraction(event, "resize")}
@@ -333,6 +346,8 @@ export function ArrangeablePageObject({
           <button
             aria-label={`Delete ${objectLabel}`}
             className="arrange-delete"
+            data-help-title={`Delete ${objectLabel.toLowerCase()}`}
+            data-help-topic="arrange-delete"
             onClick={(event) => {
               event.stopPropagation();
               setDeleteDialogOpen(true);
@@ -344,6 +359,8 @@ export function ArrangeablePageObject({
           <button
             aria-label={`${layer === "behind-sketch" ? "Move in front of" : "Move behind"} sketch: ${objectLabel}`}
             className="arrange-layer-toggle"
+            data-help-title={`Layer ${objectLabel.toLowerCase()}`}
+            data-help-topic="arrange-layer"
             onClick={(event) => {
               event.stopPropagation();
               onToggleLayer();
@@ -362,28 +379,28 @@ export function ArrangeablePageObject({
               className="arrange-nudge-controls"
               aria-label={`Adjust ${objectLabel}`}
             >
-            <button aria-label="Move left" onClick={() => applyMove({ x: -0.02, y: 0 })} type="button">
+            <button aria-label="Move left" data-help-topic="arrange-move" onClick={() => applyMove({ x: -0.02, y: 0 })} type="button">
               <ArrowLeft aria-hidden="true" />
             </button>
-            <button aria-label="Move up" onClick={() => applyMove({ x: 0, y: -0.02 })} type="button">
+            <button aria-label="Move up" data-help-topic="arrange-move" onClick={() => applyMove({ x: 0, y: -0.02 })} type="button">
               <ArrowUp aria-hidden="true" />
             </button>
-            <button aria-label="Move down" onClick={() => applyMove({ x: 0, y: 0.02 })} type="button">
+            <button aria-label="Move down" data-help-topic="arrange-move" onClick={() => applyMove({ x: 0, y: 0.02 })} type="button">
               <ArrowDown aria-hidden="true" />
             </button>
-            <button aria-label="Move right" onClick={() => applyMove({ x: 0.02, y: 0 })} type="button">
+            <button aria-label="Move right" data-help-topic="arrange-move" onClick={() => applyMove({ x: 0.02, y: 0 })} type="button">
               <ArrowRight aria-hidden="true" />
             </button>
-            <button aria-label="Make narrower" onClick={() => applyResize({ width: -0.03, height: 0 })} type="button">
+            <button aria-label="Make narrower" data-help-topic="arrange-resize" onClick={() => applyResize({ width: -0.03, height: 0 })} type="button">
               W−
             </button>
-            <button aria-label="Make wider" onClick={() => applyResize({ width: 0.03, height: 0 })} type="button">
+            <button aria-label="Make wider" data-help-topic="arrange-resize" onClick={() => applyResize({ width: 0.03, height: 0 })} type="button">
               W+
             </button>
-            <button aria-label="Make shorter" onClick={() => applyResize({ width: 0, height: -0.03 })} type="button">
+            <button aria-label="Make shorter" data-help-topic="arrange-resize" onClick={() => applyResize({ width: 0, height: -0.03 })} type="button">
               H−
             </button>
-            <button aria-label="Make taller" onClick={() => applyResize({ width: 0, height: 0.03 })} type="button">
+            <button aria-label="Make taller" data-help-topic="arrange-resize" onClick={() => applyResize({ width: 0, height: 0.03 })} type="button">
               H+
             </button>
             </div>

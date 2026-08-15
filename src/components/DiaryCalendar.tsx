@@ -59,6 +59,7 @@ export function DiaryCalendar({
         aria-haspopup="dialog"
         aria-label="Open diary calendar"
         className="diary-calendar-trigger"
+        data-help-topic="calendar"
         onClick={() => {
           setVisibleMonth({
             year: selected.getFullYear(),

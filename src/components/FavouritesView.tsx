@@ -58,6 +58,7 @@ export function FavouritesView({
         <button
           aria-pressed={arranging}
           className={arranging ? "large-action arrange-action selected" : "large-action arrange-action"}
+          data-help-topic="library-arrange"
           onClick={() => setArranging((current) => !current)}
           type="button"
         >
@@ -138,6 +139,7 @@ export function FavouritesView({
                   aria-label={`Open favourite: ${title}`}
                   aria-disabled={arranging}
                   className="favourite-card-link"
+                  data-help-topic="open-favourite"
                   onClick={() => {
                     if (!arranging) onOpenFavourite(favourite);
                   }}
@@ -195,6 +197,7 @@ export function FavouritesView({
                     <button
                       aria-label={`Remove ${title} from favourites`}
                       className="favourite-remove-button"
+                      data-help-topic="favourite"
                       onClick={() => setPendingRemoval(favourite)}
                       type="button"
                     >

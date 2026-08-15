@@ -99,6 +99,7 @@ export function Navigation({
         aria-haspopup="dialog"
         aria-label={`${displayName} navigation`}
         className="ivan-profile"
+        data-help-topic="navigation"
         disabled={menuOpening}
         onClick={menuOpen ? onMenuClose : onMenuOpen}
         ref={triggerRef}
@@ -138,6 +139,7 @@ export function Navigation({
                       ? "navigation-button selected"
                       : "navigation-button"
                   }
+                  data-help-topic={`nav-${id}`}
                   key={id}
                   onClick={() => selectSection(id)}
                   type="button"

@@ -12,6 +12,7 @@ import { clampOpacity } from "../utils/colour";
 import { SketchSurface } from "../sketch/SketchSurface";
 import { favouriteColourName } from "./penColours";
 import { PEN_WIDTH_MAX, PEN_WIDTH_MIN } from "./PenSettingsHud";
+import { SettingToggle } from "./SettingToggle";
 
 const NIBS = [
   { id: "pen", label: "Pen", Icon: PenLine },
@@ -129,10 +130,46 @@ export function CanvasSettingsPanel({
   return (
     <div className="canvas-settings-content">
       <h2>Canvas</h2>
-      <p className="setting-description">Choose ten favourite drawing colours and try them below.</p>
 
       <section aria-labelledby="favourite-colours-heading" className="canvas-colour-editor">
         <h3 id="favourite-colours-heading">My favourite colours</h3>
+        <p className="setting-description">
+          Choose ten favourite drawing colours and try them below.
+        </p>
+        <SettingToggle
+          checked={settings.favouriteColourLongPressEnabled}
+          description="Hold a favourite colour to open its colour selector."
+          label="Change colours with a long hold"
+          onChange={(favouriteColourLongPressEnabled) =>
+            commit({
+              type: "settings-update",
+              settings: { favouriteColourLongPressEnabled },
+            })
+          }
+        />
+        {settings.favouriteColourLongPressEnabled ? (
+          <label className="pen-width-control canvas-long-press-control">
+            <span>
+              Long-hold time {settings.favouriteColourLongPressSeconds}s
+            </span>
+            <input
+              aria-label="Favourite colour long-hold time"
+              max="5"
+              min="0.5"
+              onChange={(event) =>
+                commit({
+                  type: "settings-update",
+                  settings: {
+                    favouriteColourLongPressSeconds: Number(event.target.value),
+                  },
+                })
+              }
+              step="0.5"
+              type="range"
+              value={settings.favouriteColourLongPressSeconds}
+            />
+          </label>
+        ) : null}
         <p className="canvas-colour-instructions">
           Select one of the round colour swatches then move the sliders to change it to one of your favourite colours
         </p>

@@ -193,6 +193,8 @@ export function PageWorkspace({
   pages,
   penColor,
   fingerDrawingEnabled,
+  favouriteColourLongPressEnabled,
+  favouriteColourLongPressSeconds,
   favouritePenColours,
   penNib,
   penNibProfiles,
@@ -225,6 +227,8 @@ export function PageWorkspace({
   pages: Page[];
   penColor: string;
   fingerDrawingEnabled: boolean;
+  favouriteColourLongPressEnabled: boolean;
+  favouriteColourLongPressSeconds: number;
   favouritePenColours: string[];
   penNib: "pen" | "marker" | "pencil" | "brush";
   penNibProfiles: PenSettings["profiles"];
@@ -979,6 +983,7 @@ export function PageWorkspace({
       penSettings.color !== penColor ||
       penSettings.nib !== penNib ||
       penSettings.profiles !== penNibProfiles ||
+      penSettings.favouriteColours !== favouritePenColours ||
       Math.abs(penSettings.width - penWidth) > 0.001 ||
       Math.abs(penSettings.opacity - penOpacity) > 0.001
     ) {
@@ -988,6 +993,9 @@ export function PageWorkspace({
           penColor: penSettings.color,
           penNib: penSettings.nib ?? "pen",
           ...(penSettings.profiles ? { penNibProfiles: penSettings.profiles } : {}),
+          ...(penSettings.favouriteColours
+            ? { favouritePenColours: [...penSettings.favouriteColours] }
+            : {}),
           penWidth: penSettings.width,
           penOpacity: penSettings.opacity,
           fingerDrawingEnabled: penSettings.fingerDrawing !== false,
@@ -1017,6 +1025,7 @@ export function PageWorkspace({
           <button
           aria-pressed={tool === "view"}
           className={tool === "view" ? "tool selected" : "tool"}
+          data-help-topic="view"
           onClick={() => {
             setTool("view");
             setPenHudOpen(false);
@@ -1030,6 +1039,7 @@ export function PageWorkspace({
           <button
             aria-pressed={tool === "arrange"}
             className={tool === "arrange" ? "tool arrange-tool selected" : "tool arrange-tool"}
+            data-help-topic="arrange"
             onClick={() => setTool("arrange")}
             type="button"
           >
@@ -1043,6 +1053,7 @@ export function PageWorkspace({
           aria-haspopup="dialog"
           aria-pressed={tool === "pen"}
           className={tool === "pen" ? "tool selected" : "tool"}
+          data-help-topic="draw"
           onClick={() => {
             if (tool === "pen") {
               setPenHudOpen(true);
@@ -1067,6 +1078,7 @@ export function PageWorkspace({
           <button
           aria-pressed={tool === "eraser"}
           className={tool === "eraser" ? "tool selected" : "tool"}
+          data-help-topic="erase"
           onClick={() => {
             setTool("eraser");
             setSelectedObjectId(undefined);
@@ -1082,17 +1094,19 @@ export function PageWorkspace({
         </div>
         <div aria-label="Media tools" className="tool-hud content-tool-hud" role="group">
           <button
-          aria-label={photoCount >= MAX_PHOTOS_PER_PAGE ? "Photo limit reached" : "Photo"}
+          aria-label={photoCount >= MAX_PHOTOS_PER_PAGE ? "Image limit reached" : "Image"}
           className="tool"
+          data-help-topic="photo"
           disabled={photoCount >= MAX_PHOTOS_PER_PAGE}
           onClick={() => photoInputRef.current?.click()}
           type="button"
         >
           <ImagePlus aria-hidden="true" />
-          <span>Photo</span>
+          <span>Image</span>
           </button>
           <button
           className="tool"
+          data-help-topic="link"
           onClick={() => {
             void openLinkComposerAboveSketch();
           }}
@@ -1103,7 +1117,7 @@ export function PageWorkspace({
           </button>
         </div>
         <div aria-label="Text and voice tools" className="tool-hud text-voice-tool-hud" role="group">
-          <button className="tool" onClick={() => {
+          <button className="tool" data-help-topic="text" onClick={() => {
             setTextDraft(EMPTY_TEXT_DRAFT);
             textSelectionRef.current = { start: 0, end: 0 };
             setTextStatus(undefined);
@@ -1119,6 +1133,7 @@ export function PageWorkspace({
               ? "tool voice-tool recording"
               : "tool voice-tool"
           }
+          data-help-topic="voice"
           onClick={() => void toggleVoice()}
           type="button"
         >
@@ -1132,6 +1147,7 @@ export function PageWorkspace({
         <div aria-label="History tools" className="tool-hud" role="group">
           <button
             className="tool"
+            data-help-topic="undo"
             disabled={tool !== "pen" && tool !== "eraser" && tool !== "arrange"}
             onClick={undoLastAction}
             type="button"
@@ -1141,6 +1157,7 @@ export function PageWorkspace({
           </button>
           <button
             className="tool"
+            data-help-topic="redo"
             disabled={tool !== "pen" && tool !== "eraser"}
             onClick={redoDrawing}
             type="button"
@@ -1153,6 +1170,7 @@ export function PageWorkspace({
           <button
             aria-label="Share this page"
             className="tool"
+            data-help-topic="share"
             disabled={shareInProgress}
             onClick={() => void openShareChooser()}
             ref={shareToolRef}
@@ -1173,6 +1191,12 @@ export function PageWorkspace({
             type="button"
           />
           <PenSettingsHud
+            favouriteColourLongPressEnabled={
+              favouriteColourLongPressEnabled
+            }
+            favouriteColourLongPressMs={
+              favouriteColourLongPressSeconds * 1000
+            }
             grid={drawingGrid}
             onChange={setPenSettings}
             onDone={closePenSettings}
@@ -1203,6 +1227,7 @@ export function PageWorkspace({
           <button
             aria-label="Back to sketchbooks"
             className="back-to-library"
+            data-help-topic="back-sketchbooks"
             onClick={context.onBack}
             type="button"
           >
@@ -1235,6 +1260,7 @@ export function PageWorkspace({
           }
           aria-pressed={context.favourite}
           className="page-favourite"
+          data-help-topic="favourite"
           onClick={() => void (async () => {
             const adding = !context.favourite;
             const saved = await commit({
@@ -1484,6 +1510,7 @@ export function PageWorkspace({
                         <button
                           aria-label={`Edit link named ${object.title}`}
                           className="link-name-edit"
+                          data-help-topic="arrange-edit-link"
                           onClick={(event) => {
                             event.stopPropagation();
                             void openLinkComposerAboveSketch(object);

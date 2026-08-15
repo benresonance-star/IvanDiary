@@ -254,7 +254,7 @@ export function SettingsView({
     <section className="library-view" aria-labelledby="settings-heading">
       <header className="library-heading">
         <div>
-          <p className="eyebrow">Make the diary comfortable</p>
+          <p className="eyebrow">Change the Settings to Suit you</p>
           <h1 id="settings-heading">Settings</h1>
         </div>
         <Eye aria-hidden="true" />
@@ -265,6 +265,7 @@ export function SettingsView({
           <button
             aria-controls={`settings-panel-${tab.id}`}
             aria-selected={activeTab === tab.id}
+            data-help-topic="settings-tab"
             id={`settings-tab-${tab.id}`}
             key={tab.id}
             onClick={() => selectTab(tab.id)}

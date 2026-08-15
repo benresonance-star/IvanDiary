@@ -14,12 +14,18 @@ import type { SketchRepository, SketchTool } from "../sketch/types";
 import { PenSettingsHud, type PenSettings } from "./PenSettingsHud";
 
 export function ProfilePortraitEditor({
+  favouriteColourLongPressEnabled = true,
+  favouriteColourLongPressMs = 2000,
   initialPenSettings,
+  interactionObscured = false,
   onPenSettingsChange,
   onReturn,
   sketchRepository,
 }: {
+  favouriteColourLongPressEnabled?: boolean;
+  favouriteColourLongPressMs?: number;
   initialPenSettings: PenSettings;
+  interactionObscured?: boolean;
   onPenSettingsChange: (settings: PenSettings) => void;
   onReturn: () => void;
   sketchRepository: SketchRepository;
@@ -32,7 +38,7 @@ export function ProfilePortraitEditor({
   const [penSettings, setPenSettings] = useState(initialPenSettings);
   const { overlayActive, overlayRequested } = useNativeDrawingOverlay({
     documentId: PROFILE_PORTRAIT_DOCUMENT_ID,
-    enabled: !penHudOpen && hasNativePencilKit(),
+    enabled: !interactionObscured && !penHudOpen && hasNativePencilKit(),
     tool,
     color: penSettings.color,
     nib: penSettings.nib,
@@ -58,7 +64,12 @@ export function ProfilePortraitEditor({
 
   return (
     <section className="portrait-editor" aria-label="Draw my portrait">
-      <button className="portrait-editor-return" onClick={onReturn} type="button">
+      <button
+        className="portrait-editor-return"
+        data-help-topic="portrait-return"
+        onClick={onReturn}
+        type="button"
+      >
         <ChevronLeft aria-hidden="true" />
         Return to About Me
       </button>
@@ -66,14 +77,20 @@ export function ProfilePortraitEditor({
         <button
           aria-expanded={penHudOpen}
           aria-pressed={tool === "pen"}
+          data-help-topic="draw"
           onClick={() => tool === "pen" ? setPenHudOpen(true) : setTool("pen")}
           type="button"
         ><PenLine aria-hidden="true" />Draw</button>
-        <button aria-pressed={tool === "eraser"} onClick={() => setTool("eraser")} type="button">
+        <button
+          aria-pressed={tool === "eraser"}
+          data-help-topic="erase"
+          onClick={() => setTool("eraser")}
+          type="button"
+        >
           <Eraser aria-hidden="true" />Erase
         </button>
-        <button onClick={undo} type="button"><Undo2 aria-hidden="true" />Undo</button>
-        <button onClick={redo} type="button"><Redo2 aria-hidden="true" />Redo</button>
+        <button data-help-topic="undo" onClick={undo} type="button"><Undo2 aria-hidden="true" />Undo</button>
+        <button data-help-topic="redo" onClick={redo} type="button"><Redo2 aria-hidden="true" />Redo</button>
       </div>
       <div className="portrait-editor-canvas" ref={canvasRef}>
         <SketchSurface
@@ -96,7 +113,15 @@ export function ProfilePortraitEditor({
       {penHudOpen ? (
         <>
           <button aria-label="Close pen settings" className="pen-hud-backdrop portrait-pen-backdrop" onClick={closePenSettings} type="button" />
-          <PenSettingsHud onChange={setPenSettings} onDone={closePenSettings} settings={penSettings} />
+          <PenSettingsHud
+            favouriteColourLongPressEnabled={
+              favouriteColourLongPressEnabled
+            }
+            favouriteColourLongPressMs={favouriteColourLongPressMs}
+            onChange={setPenSettings}
+            onDone={closePenSettings}
+            settings={penSettings}
+          />
         </>
       ) : null}
     </section>

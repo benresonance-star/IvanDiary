@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { hslToHex } from "../utils/colour";
 import { PenSettingsHud } from "./PenSettingsHud";
 
 describe("PenSettingsHud", () => {
@@ -21,7 +20,7 @@ describe("PenSettingsHud", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("switch", { name: /Draw with Finger.*On/i }));
+    fireEvent.click(screen.getByRole("switch", { name: "Draw with finger" }));
 
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       color: "#171410",
@@ -110,6 +109,20 @@ describe("PenSettingsHud", () => {
     }));
   });
 
+  it("identifies the selected nib style in the preview", () => {
+    render(
+      <PenSettingsHud
+        onChange={vi.fn()}
+        onDone={vi.fn()}
+        settings={{ color: "#171410", width: 12, opacity: 1, nib: "brush" }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Brush preview")).toHaveClass(
+      "nib-brush",
+    );
+  });
+
   it("shares the selected colour across every nib profile", () => {
     const onChange = vi.fn();
     render(
@@ -152,7 +165,7 @@ describe("PenSettingsHud", () => {
     )).toBe(true);
   });
 
-  it("offers a large-slider custom colour picker", () => {
+  it("uses the system colour selector for a custom pen colour", () => {
     const onChange = vi.fn();
     render(
       <PenSettingsHud
@@ -162,60 +175,121 @@ describe("PenSettingsHud", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Custom colour" }));
-    expect(
-      screen.getByRole("group", { name: "Custom colour picker" }),
-    ).toBeInTheDocument();
-
-    fireEvent.change(screen.getByRole("slider", { name: "Hue" }), {
-      target: { value: "200" },
+    const customColour = screen.getByLabelText("Custom colour");
+    expect(customColour).toHaveAttribute("type", "color");
+    fireEvent.change(customColour, {
+      target: { value: "#2a7f6f" },
     });
-    expect(onChange).toHaveBeenCalled();
-    const next = onChange.mock.calls.at(-1)?.[0] as { color: string };
-    expect(next.color).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ color: "#2a7f6f" }),
+    );
   });
 
-  it("keeps hue, colour strength, and lightness independent", () => {
+  it("opens and updates a favourite colour after the configured long hold", () => {
+    vi.useFakeTimers();
+    const previousShowPicker = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "showPicker",
+    );
+    const showPicker = vi.fn();
+    Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
+      configurable: true,
+      value: showPicker,
+    });
     const onChange = vi.fn();
-    render(
+    const { container } = render(
       <PenSettingsHud
+        favouriteColourLongPressMs={2000}
         onChange={onChange}
         onDone={vi.fn()}
-        settings={{ color: "#245b8a", width: 5, opacity: 1 }}
+        settings={{ color: "#171410", width: 5, opacity: 1 }}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Custom colour" }));
-    const hue = screen.getByRole("slider", { name: "Hue" });
-    const strength = screen.getByRole("slider", {
-      name: "Colour strength",
-    });
-    const lightness = screen.getByRole("slider", { name: "Lightness" });
+    try {
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Blue" }));
+      vi.advanceTimersByTime(1999);
+      expect(showPicker).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(showPicker).toHaveBeenCalledOnce();
 
-    fireEvent.change(hue, { target: { value: "210" } });
-    fireEvent.change(strength, { target: { value: "80" } });
-    fireEvent.change(lightness, { target: { value: "0" } });
-    fireEvent.change(hue, { target: { value: "300" } });
+      const picker = container.querySelector<HTMLInputElement>(
+        '.pen-colour-favourite input[type="color"][value="#245b8a"]',
+      );
+      expect(picker).not.toBeNull();
+      fireEvent.change(picker!, { target: { value: "#336699" } });
+      expect(onChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          color: "#336699",
+          favouriteColours: expect.arrayContaining(["#336699"]),
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+      if (previousShowPicker) {
+        Object.defineProperty(
+          HTMLInputElement.prototype,
+          "showPicker",
+          previousShowPicker,
+        );
+      } else {
+        delete (HTMLInputElement.prototype as Partial<HTMLInputElement>)
+          .showPicker;
+      }
+    }
+  });
 
-    expect(hue).toHaveValue("300");
-    expect(strength).toHaveValue("80");
-    expect(lightness).toHaveValue("0");
-
-    fireEvent.change(lightness, { target: { value: "50" } });
-
-    expect(hue).toHaveValue("300");
-    expect(strength).toHaveValue("80");
-    expect(lightness).toHaveValue("50");
-    expect(onChange.mock.calls.at(-1)?.[0]).toEqual(
-      expect.objectContaining({ color: hslToHex(300, 80, 50) }),
+  it("does not open favourite colour editing when long hold is off", () => {
+    vi.useFakeTimers();
+    const previousShowPicker = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "showPicker",
     );
+    const showPicker = vi.fn();
+    Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
+      configurable: true,
+      value: showPicker,
+    });
+    render(
+      <PenSettingsHud
+        favouriteColourLongPressEnabled={false}
+        favouriteColourLongPressMs={2000}
+        onChange={vi.fn()}
+        onDone={vi.fn()}
+        settings={{ color: "#171410", width: 5, opacity: 1 }}
+      />,
+    );
+
+    try {
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Blue" }));
+      vi.advanceTimersByTime(2500);
+      expect(showPicker).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      if (previousShowPicker) {
+        Object.defineProperty(
+          HTMLInputElement.prototype,
+          "showPicker",
+          previousShowPicker,
+        );
+      } else {
+        delete (HTMLInputElement.prototype as Partial<HTMLInputElement>)
+          .showPicker;
+      }
+    }
   });
 
   it("toggles the grid with a single switch", () => {
     const onGridChange = vi.fn();
     render(
       <PenSettingsHud
-        grid={{ enabled: false, spacing: 60, rotationDegrees: 0 }}
+        grid={{
+          enabled: false,
+          spacing: 60,
+          rotationDegrees: 0,
+          type: "lines",
+          color: "#435b70",
+        }}
         onChange={vi.fn()}
         onDone={vi.fn()}
         onGridChange={onGridChange}
@@ -223,19 +297,63 @@ describe("PenSettingsHud", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("switch", { name: /Grid.*Off/i }));
+    fireEvent.click(screen.getByRole("tab", { name: "Grid" }));
+    fireEvent.click(screen.getByRole("switch", { name: /Drawing grid.*Off/i }));
     expect(onGridChange).toHaveBeenCalledWith({
       enabled: true,
       spacing: 60,
       rotationDegrees: 0,
+      type: "lines",
+      color: "#435b70",
     });
   });
 
-  it("cycles grid size and rotation in 15 degree steps", () => {
+  it("hides finger drawing in Grid without changing its setting", () => {
+    const onChange = vi.fn();
+    render(
+      <PenSettingsHud
+        grid={{
+          enabled: true,
+          spacing: 60,
+          rotationDegrees: 0,
+          type: "lines",
+          color: "#435b70",
+        }}
+        onChange={onChange}
+        onDone={vi.fn()}
+        onGridChange={vi.fn()}
+        settings={{
+          color: "#171410",
+          width: 8,
+          opacity: 1,
+          fingerDrawing: true,
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Grid" }));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("switch", { name: "Draw with finger" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Pen" }));
+    expect(
+      screen.getByRole("switch", { name: "Draw with finger" }),
+    ).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("selects grid size, type, colour, and rotation directly", () => {
     const onGridChange = vi.fn();
     render(
       <PenSettingsHud
-        grid={{ enabled: true, spacing: 60, rotationDegrees: 0 }}
+        grid={{
+          enabled: true,
+          spacing: 60,
+          rotationDegrees: 0,
+          type: "lines",
+          color: "#435b70",
+        }}
         onChange={vi.fn()}
         onDone={vi.fn()}
         onGridChange={onGridChange}
@@ -243,26 +361,46 @@ describe("PenSettingsHud", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Grid size: Medium" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Grid" }));
+    fireEvent.click(screen.getByRole("button", { name: "Large" }));
     expect(onGridChange).toHaveBeenCalledWith({
       enabled: true,
       spacing: 96,
       rotationDegrees: 0,
+      type: "lines",
+      color: "#435b70",
     });
-    fireEvent.click(screen.getByRole("button", { name: /Grid rotation: 0°/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Dots" }));
     expect(onGridChange).toHaveBeenCalledWith({
       enabled: true,
       spacing: 60,
-      rotationDegrees: 15,
+      rotationDegrees: 0,
+      type: "dots",
+      color: "#435b70",
     });
+    fireEvent.change(screen.getByLabelText("Grid colour"), {
+      target: { value: "#884422" },
+    });
+    expect(onGridChange).toHaveBeenCalledWith(
+      expect.objectContaining({ color: "#884422" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "45°" }));
+    expect(onGridChange).toHaveBeenCalledWith(
+      expect.objectContaining({ rotationDegrees: 45 }),
+    );
   });
 
-  it("resets grid rotation to straight on a long press", () => {
-    vi.useFakeTimers();
+  it("offers direct rotation toggle values including straight", () => {
     const onGridChange = vi.fn();
     render(
       <PenSettingsHud
-        grid={{ enabled: true, spacing: 60, rotationDegrees: 45 }}
+        grid={{
+          enabled: true,
+          spacing: 60,
+          rotationDegrees: 45,
+          type: "dots",
+          color: "#435b70",
+        }}
         onChange={vi.fn()}
         onDone={vi.fn()}
         onGridChange={onGridChange}
@@ -270,15 +408,17 @@ describe("PenSettingsHud", () => {
       />,
     );
 
-    const rotation = screen.getByRole("button", { name: /Grid rotation: 45°/i });
-    fireEvent.pointerDown(rotation);
-    vi.advanceTimersByTime(600);
-    fireEvent.pointerUp(rotation);
+    fireEvent.click(screen.getByRole("tab", { name: "Grid" }));
+    expect(
+      screen.getByRole("group", { name: "Grid rotation" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "0°" }));
     expect(onGridChange).toHaveBeenCalledWith({
       enabled: true,
       spacing: 60,
       rotationDegrees: 0,
+      type: "dots",
+      color: "#435b70",
     });
-    vi.useRealTimers();
   });
 });

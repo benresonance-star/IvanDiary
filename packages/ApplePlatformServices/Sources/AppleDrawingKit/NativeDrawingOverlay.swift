@@ -9,6 +9,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
     public var onDrawingChanged: ((String) -> Void)?
 
     private let canvasView = PKCanvasView()
+    private let gridGuideView = DrawingGridGuideView()
     private let gridInputView = GridStrokeInputView()
     private let store: any PencilDrawingStore
     private lazy var twoFingerUndoRecognizer: UITapGestureRecognizer = {
@@ -59,11 +60,17 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         canvasView.drawingGestureRecognizer.require(
             toFail: twoFingerUndoRecognizer
         )
+        gridGuideView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(gridGuideView)
         addSubview(canvasView)
         gridInputView.translatesAutoresizingMaskIntoConstraints = false
         gridInputView.isUserInteractionEnabled = false
         addSubview(gridInputView)
         NSLayoutConstraint.activate([
+            gridGuideView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            gridGuideView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            gridGuideView.topAnchor.constraint(equalTo: topAnchor),
+            gridGuideView.bottomAnchor.constraint(equalTo: bottomAnchor),
             canvasView.leadingAnchor.constraint(equalTo: leadingAnchor),
             canvasView.trailingAnchor.constraint(equalTo: trailingAnchor),
             canvasView.topAnchor.constraint(equalTo: topAnchor),
@@ -305,13 +312,16 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
     }
 
     private func updateGridInput() {
+        gridGuideView.grid = grid
         gridInputView.grid = DrawingGridSettings(
             enabled: grid.enabled && selectedTool == .pen,
             spacing: grid.spacing,
             rotationDegrees: grid.rotationDegrees,
             origin: grid.origin,
             pageSize: grid.pageSize,
-            documentSize: grid.documentSize
+            documentSize: grid.documentSize,
+            type: grid.type,
+            colorHex: grid.colorHex
         )
         gridInputView.inkColor = PencilInkColor.forLightPaper(color)
         gridInputView.inkWidth = width

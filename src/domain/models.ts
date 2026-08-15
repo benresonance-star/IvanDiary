@@ -43,10 +43,13 @@ export type DrawingGridSettings = {
   enabled: boolean;
   spacing: 36 | 60 | 96;
   rotationDegrees: number;
+  type: "lines" | "dots";
+  color: string;
 };
 
 export const GRID_ROTATION_STEP = 15;
 export const GRID_ROTATION_MAX = 75;
+export const DEFAULT_GRID_COLOR = "#435b70";
 
 type PageObjectBase = {
   id: EntityId;
@@ -171,6 +174,8 @@ export type JournalSettings = {
   penOpacity: number;
   fingerDrawingEnabled: boolean;
   favouritePenColours: string[];
+  favouriteColourLongPressEnabled: boolean;
+  favouriteColourLongPressSeconds: number;
   penNib: "pen" | "marker" | "pencil" | "brush";
   penNibProfiles: Record<
     "pen" | "marker" | "pencil" | "brush",

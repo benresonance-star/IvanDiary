@@ -103,7 +103,7 @@ describe("WelcomeScreen", () => {
 
     expect(screen.getByRole("toolbar", { name: "Welcome drawing tools" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Draw" }));
-    expect(screen.getByRole("dialog", { name: "Draw colour and thickness" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Draw settings" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     fireEvent.click(screen.getByRole("button", { name: "Erase" }));
     expect(screen.getByRole("button", { name: "Erase" })).toHaveAttribute("aria-pressed", "true");

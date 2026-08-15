@@ -193,6 +193,10 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         let enabled = value["enabled"] as? Bool ?? false
         let spacing = value["spacing"] as? Double ?? 60
         let rotation = value["rotationDegrees"] as? Double ?? 0
+        let type = (value["type"] as? String)
+            .flatMap(DrawingGridVisualType.init(rawValue:)) ?? .lines
+        let colorHex = value["color"] as? String
+            ?? DrawingGridSettings.defaultColorHex
         let originX = call.getDouble("gridOriginX") ?? 0
         let originY = call.getDouble("gridOriginY") ?? 0
         let pageWidth = call.getDouble("gridPageWidth") ?? 1200
@@ -206,7 +210,9 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
             documentSize: CGSize(
                 width: call.getDouble("gridDocumentWidth") ?? 1200,
                 height: call.getDouble("gridDocumentHeight") ?? 820
-            )
+            ),
+            type: type,
+            colorHex: colorHex
         )
     }
 

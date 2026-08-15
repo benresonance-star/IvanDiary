@@ -121,6 +121,8 @@ export async function updateNativeDrawingOverlay(options: {
     options.grid?.enabled ?? "",
     options.grid?.spacing ?? "",
     options.grid?.rotationDegrees ?? "",
+    options.grid?.type ?? "",
+    options.grid?.color ?? "",
     options.gridOriginX ?? "",
     options.gridOriginY ?? "",
     options.gridPageWidth ?? "",

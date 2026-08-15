@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { GRID_ROTATION_MAX } from "../domain/models";
 import {
   clampGridRotation,
+  drawGrid,
   gridAxisForSample,
   gridLineOffsets,
   snapSampleToGrid,
@@ -21,7 +22,13 @@ describe("drawing grid geometry", () => {
     const snapped = snapSampleToGrid(
       point(130, 77),
       point(10, 68),
-      { enabled: true, spacing: 60, rotationDegrees: 0 },
+      {
+        enabled: true,
+        spacing: 60,
+        rotationDegrees: 0,
+        type: "lines",
+        color: "#435b70",
+      },
       "horizontal",
     );
     expect(snapped.x).toBeCloseTo(130);
@@ -31,6 +38,25 @@ describe("drawing grid geometry", () => {
   it("recognises directions in a rotated grid", () => {
     expect(gridAxisForSample(point(80, 80), point(0, 0), 45)).toBe("horizontal");
     expect(gridAxisForSample(point(-80, 80), point(0, 0), 45)).toBe("vertical");
+  });
+
+  it("snaps to a lattice centred on the canvas", () => {
+    const snapped = snapSampleToGrid(
+      point(150, 92),
+      point(110, 88),
+      {
+        enabled: true,
+        spacing: 60,
+        rotationDegrees: 0,
+        type: "lines",
+        color: "#435b70",
+      },
+      "horizontal",
+      { x: 100, y: 80 },
+    );
+
+    expect(snapped.x).toBeCloseTo(150);
+    expect(snapped.y).toBeCloseTo(80);
   });
 
   it.each([36, 60, 96] as const)(
@@ -52,7 +78,13 @@ describe("drawing grid geometry", () => {
       const snapped = snapSampleToGrid(
         point(347, 211),
         point(113, 97),
-        { enabled: true, spacing, rotationDegrees },
+        {
+          enabled: true,
+          spacing,
+          rotationDegrees,
+          type: "lines",
+          color: "#435b70",
+        },
         "horizontal",
       );
       const angle = (rotationDegrees * Math.PI) / 180;
@@ -71,5 +103,36 @@ describe("drawing grid geometry", () => {
     ]);
     expect(clampGridRotation(90)).toBe(75);
     expect(clampGridRotation(-90)).toBe(-75);
+  });
+
+  it("renders visible dots using the selected grid colour", () => {
+    const context = {
+      arc: vi.fn(),
+      beginPath: vi.fn(),
+      fill: vi.fn(),
+      fillStyle: "",
+      moveTo: vi.fn(),
+      restore: vi.fn(),
+      rotate: vi.fn(),
+      save: vi.fn(),
+      stroke: vi.fn(),
+      strokeStyle: "",
+      translate: vi.fn(),
+      lineWidth: 0,
+    } as unknown as CanvasRenderingContext2D;
+
+    drawGrid(context, 120, 80, {
+      enabled: true,
+      spacing: 60,
+      rotationDegrees: 15,
+      type: "dots",
+      color: "#884422",
+    });
+
+    expect(context.arc).toHaveBeenCalled();
+    expect(context.fill).toHaveBeenCalledOnce();
+    expect(context.stroke).not.toHaveBeenCalled();
+    expect(context.fillStyle).toBe("rgba(136, 68, 34, 0.48)");
+    expect(context.translate).toHaveBeenCalledWith(60, 40);
   });
 });

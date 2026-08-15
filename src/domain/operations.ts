@@ -8,6 +8,7 @@ import {
   GRID_ROTATION_MAX,
   MAX_PAGES_PER_COLLECTION,
 } from "./models";
+import { isHexColor } from "../utils/colour";
 
 export class OperationConflictError extends Error {
   constructor(message: string) {
@@ -527,7 +528,9 @@ export function applyDocumentOperation(
       if (
         ![36, 60, 96].includes(operation.grid.spacing) ||
         !Number.isInteger(operation.grid.rotationDegrees / 15) ||
-        Math.abs(operation.grid.rotationDegrees) > GRID_ROTATION_MAX
+        Math.abs(operation.grid.rotationDegrees) > GRID_ROTATION_MAX ||
+        !["lines", "dots"].includes(operation.grid.type) ||
+        !isHexColor(operation.grid.color)
       ) {
         throw new OperationConflictError("The drawing grid settings are invalid.");
       }
