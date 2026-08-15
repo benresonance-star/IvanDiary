@@ -1105,7 +1105,7 @@ export function PageWorkspace({
         aria-label="Page tools"
         ref={toolPaletteRef}
       >
-        <div aria-label="View and arrange tools" className="tool-hud" role="group">
+        <div aria-label="View and edit tools" className="tool-hud" role="group">
           <button
           aria-pressed={tool === "view"}
           className={tool === "view" ? "tool selected" : "tool"}
@@ -1128,7 +1128,59 @@ export function PageWorkspace({
             type="button"
           >
             <Move aria-hidden="true" />
-            <span>Arrange</span>
+            <span>Edit</span>
+          </button>
+        </div>
+        <div aria-label="Media tools" className="tool-hud content-tool-hud" role="group">
+          <button
+          aria-label={photoCount >= MAX_PHOTOS_PER_PAGE ? "Image limit reached" : "Image"}
+          className="tool"
+          data-help-topic="photo"
+          disabled={photoCount >= MAX_PHOTOS_PER_PAGE}
+          onClick={() => photoInputRef.current?.click()}
+          type="button"
+        >
+          <ImagePlus aria-hidden="true" />
+          <span>Image</span>
+          </button>
+          <button
+          className="tool"
+          data-help-topic="link"
+          onClick={() => {
+            void openLinkComposerAboveSketch();
+          }}
+          type="button"
+        >
+          <LinkIcon aria-hidden="true" />
+          <span>Link</span>
+          </button>
+        </div>
+        <div aria-label="Text and voice tools" className="tool-hud text-voice-tool-hud" role="group">
+          <button className="tool" data-help-topic="text" onClick={() => {
+            setTextDraft(EMPTY_TEXT_DRAFT);
+            textSelectionRef.current = { start: 0, end: 0 };
+            setTextStatus(undefined);
+            void openTextComposerAboveSketch();
+          }} type="button">
+            <Type aria-hidden="true" />
+            <span>Text</span>
+          </button>
+          <button
+          aria-pressed={recording?.state === "recording"}
+          className={
+            recording?.state === "recording"
+              ? "tool voice-tool recording"
+              : "tool voice-tool"
+          }
+          data-help-topic="voice"
+          onClick={() => void toggleVoice()}
+          type="button"
+        >
+          <Mic aria-hidden="true" />
+          <span>{recording?.state === "recording" ? "Stop recording" : "Voice"}</span>
+          {recording?.state === "recording" ? (
+            <small>{Math.floor(recording.elapsedMs / 60_000)}:{String(Math.floor(recording.elapsedMs / 1_000) % 60).padStart(2, "0")}</small>
+          ) : null}
           </button>
         </div>
         <div aria-label="Drawing tools" className="tool-hud" role="group">
@@ -1196,58 +1248,6 @@ export function PageWorkspace({
           >
             <Redo2 aria-hidden="true" />
             <span>Redo</span>
-          </button>
-        </div>
-        <div aria-label="Media tools" className="tool-hud content-tool-hud" role="group">
-          <button
-          aria-label={photoCount >= MAX_PHOTOS_PER_PAGE ? "Image limit reached" : "Image"}
-          className="tool"
-          data-help-topic="photo"
-          disabled={photoCount >= MAX_PHOTOS_PER_PAGE}
-          onClick={() => photoInputRef.current?.click()}
-          type="button"
-        >
-          <ImagePlus aria-hidden="true" />
-          <span>Image</span>
-          </button>
-          <button
-          className="tool"
-          data-help-topic="link"
-          onClick={() => {
-            void openLinkComposerAboveSketch();
-          }}
-          type="button"
-        >
-          <LinkIcon aria-hidden="true" />
-          <span>Link</span>
-          </button>
-        </div>
-        <div aria-label="Text and voice tools" className="tool-hud text-voice-tool-hud" role="group">
-          <button className="tool" data-help-topic="text" onClick={() => {
-            setTextDraft(EMPTY_TEXT_DRAFT);
-            textSelectionRef.current = { start: 0, end: 0 };
-            setTextStatus(undefined);
-            void openTextComposerAboveSketch();
-          }} type="button">
-            <Type aria-hidden="true" />
-            <span>Text</span>
-          </button>
-          <button
-          aria-pressed={recording?.state === "recording"}
-          className={
-            recording?.state === "recording"
-              ? "tool voice-tool recording"
-              : "tool voice-tool"
-          }
-          data-help-topic="voice"
-          onClick={() => void toggleVoice()}
-          type="button"
-        >
-          <Mic aria-hidden="true" />
-          <span>{recording?.state === "recording" ? "Stop recording" : "Voice"}</span>
-          {recording?.state === "recording" ? (
-            <small>{Math.floor(recording.elapsedMs / 60_000)}:{String(Math.floor(recording.elapsedMs / 1_000) % 60).padStart(2, "0")}</small>
-          ) : null}
           </button>
         </div>
         <div aria-label="Share tool" className="tool-hud" role="group">

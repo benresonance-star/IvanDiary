@@ -179,7 +179,7 @@ describe("PageWorkspace share", () => {
     vi.unstubAllGlobals();
   });
 
-  it("puts Share last in the toolbar and Favourite after the entry label", () => {
+  it("puts drawing and history immediately before Share", () => {
     renderWorkspace();
     const tools = screen.getByLabelText("Page tools");
     const share = screen.getByRole("button", { name: "Share this page" });
@@ -187,12 +187,12 @@ describe("PageWorkspace share", () => {
     const toolbarTools = tools.querySelectorAll(".tool");
     expect(toolbarTools[toolbarTools.length - 1]).toBe(share);
     const toolLabels = Array.from(toolbarTools, (tool) => tool.textContent?.trim());
-    const drawIndex = toolLabels.findIndex((label) => label?.startsWith("Draw"));
-    expect(toolLabels.slice(drawIndex, drawIndex + 4)).toEqual([
+    expect(toolLabels.slice(-5)).toEqual([
       expect.stringMatching(/^Draw/),
       "Erase",
       "Undo",
       "Redo",
+      "Share",
     ]);
     const favourite = screen.getByRole("button", {
       name: "Add this page to favourites",

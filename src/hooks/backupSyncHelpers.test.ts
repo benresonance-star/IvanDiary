@@ -28,9 +28,23 @@ describe("backupContentToken", () => {
         displayName: `${snapshot.settings.displayName} updated`,
       },
     };
+    const changedStory = {
+      ...snapshot,
+      myStory: {
+        ...snapshot.myStory!,
+        pages: snapshot.myStory!.pages.map((page, index) =>
+          index === 0
+            ? { ...page, textSide: "right" as const }
+            : page,
+        ),
+      },
+    };
 
     expect(backupContentToken(changedTab)).toBe(backupContentToken(snapshot));
     expect(backupContentToken(changedContent)).not.toBe(
+      backupContentToken(snapshot),
+    );
+    expect(backupContentToken(changedStory)).not.toBe(
       backupContentToken(snapshot),
     );
   });

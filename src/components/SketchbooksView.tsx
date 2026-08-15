@@ -184,7 +184,7 @@ export function SketchbooksView({
             type="button"
           >
             <Move aria-hidden="true" />
-            {editMode ? "Done arranging" : "Arrange"}
+            {editMode ? "Done editing" : "Edit"}
           </button>
           <button
             className="large-action"

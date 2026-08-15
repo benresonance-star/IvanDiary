@@ -36,12 +36,12 @@ describe("DiaryPageStrip", () => {
     );
 
     expect(
-      screen.getByRole("button", { name: "Open page 1" }),
+      screen.getByRole("button", { name: "Page 1" }),
     ).not.toHaveAttribute("aria-current");
     expect(
-      screen.getByRole("button", { name: "Open page 2" }),
+      screen.getByRole("button", { name: "Page 2" }),
     ).toHaveAttribute("aria-current", "page");
-    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(container.querySelectorAll(".story-page-item")).toHaveLength(2);
     expect(container.querySelector(".page-preview-object")).not.toBeInTheDocument();
     expect(container.querySelector(".sketch-thumbnail")).not.toBeInTheDocument();
   });
@@ -92,7 +92,7 @@ describe("DiaryPageStrip", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Open page 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Page 2" }));
     expect(onSelectPage).toHaveBeenCalledWith("page-two");
 
     fireEvent.click(
@@ -130,7 +130,7 @@ describe("DiaryPageStrip", () => {
     );
   });
 
-  it("reorders thumbnails with accessible controls in Arrange mode", () => {
+  it("reorders thumbnails with accessible controls in Edit mode", () => {
     const onReorderPages = vi.fn().mockResolvedValue(true);
     const journalPages = pages();
     render(
@@ -202,7 +202,7 @@ describe("DiaryPageStrip", () => {
     ]);
   });
 
-  it("confirms page deletion from the bottom-left Arrange control", () => {
+  it("confirms page deletion from the bottom-left Edit control", () => {
     const onDeletePage = vi.fn().mockResolvedValue(true);
     render(
       <DiaryPageStrip

@@ -3,10 +3,12 @@ import PencilKit
 import UIKit
 
 @MainActor
-public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
+public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGestureRecognizerDelegate {
     public private(set) var documentID: String?
     public private(set) var isPresented = false
     public var onDrawingChanged: ((String) -> Void)?
+    public var onCanvasTapped: ((CGPoint) -> Void)?
+    public var onCanvasLongPressed: ((CGPoint) -> Void)?
 
     private let canvasView = PKCanvasView()
     private let gridGuideView = DrawingGridGuideView()
@@ -20,8 +22,36 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         recognizer.numberOfTouchesRequired = 2
         recognizer.cancelsTouchesInView = true
         recognizer.allowedTouchTypes = [
+            NSNumber(value: UITouch.TouchType.direct.rawValue),
+            NSNumber(value: UITouch.TouchType.pencil.rawValue)
+        ]
+        return recognizer
+    }()
+    private lazy var oneFingerSelectionRecognizer: UITapGestureRecognizer = {
+        let recognizer = UITapGestureRecognizer(
+            target: self,
+            action: #selector(handleOneFingerSelection(_:))
+        )
+        recognizer.numberOfTouchesRequired = 1
+        recognizer.cancelsTouchesInView = true
+        recognizer.allowedTouchTypes = [
+            NSNumber(value: UITouch.TouchType.direct.rawValue),
+            NSNumber(value: UITouch.TouchType.pencil.rawValue)
+        ]
+        recognizer.delegate = self
+        return recognizer
+    }()
+    private lazy var oneFingerLongPressRecognizer: UILongPressGestureRecognizer = {
+        let recognizer = UILongPressGestureRecognizer(
+            target: self,
+            action: #selector(handleOneFingerLongPress(_:))
+        )
+        recognizer.minimumPressDuration = 0.65
+        recognizer.cancelsTouchesInView = true
+        recognizer.allowedTouchTypes = [
             NSNumber(value: UITouch.TouchType.direct.rawValue)
         ]
+        recognizer.delegate = self
         return recognizer
     }()
     private var color: UIColor = .label
@@ -57,8 +87,19 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         canvasView.drawingPolicy = .anyInput
         canvasView.delegate = self
         canvasView.addGestureRecognizer(twoFingerUndoRecognizer)
+        canvasView.addGestureRecognizer(oneFingerSelectionRecognizer)
+        canvasView.addGestureRecognizer(oneFingerLongPressRecognizer)
+        oneFingerSelectionRecognizer.require(
+            toFail: oneFingerLongPressRecognizer
+        )
         canvasView.drawingGestureRecognizer.require(
             toFail: twoFingerUndoRecognizer
+        )
+        canvasView.drawingGestureRecognizer.require(
+            toFail: oneFingerSelectionRecognizer
+        )
+        canvasView.drawingGestureRecognizer.require(
+            toFail: oneFingerLongPressRecognizer
         )
         gridGuideView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(gridGuideView)
@@ -135,16 +176,26 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
         }
         var importedLegacyStrokes = false
         if let legacyInk,
-           !legacyInk.strokes.isEmpty,
-           canvasView.drawing.strokes.isEmpty {
+           !legacyInk.strokes.isEmpty {
             let canvasSize = bounds.isEmpty ? frame.size : bounds.size
-            canvasView.drawing = LegacyInkImport.merging(
-                canvasView.drawing,
-                with: legacyInk,
+            let missingStrokes = LegacyInkImport.missingStrokes(
+                from: legacyInk,
+                in: canvasView.drawing,
                 canvasSize: canvasSize
             )
-            _ = try saveDrawing()
-            importedLegacyStrokes = true
+            let importableStrokeCount = LegacyInkImport.strokes(
+                from: legacyInk,
+                canvasSize: canvasSize
+            ).count
+            if importableStrokeCount > 0 {
+                if !missingStrokes.isEmpty {
+                    canvasView.drawing.strokes.append(
+                        contentsOf: missingStrokes
+                    )
+                    _ = try saveDrawing()
+                }
+                importedLegacyStrokes = true
+            }
         }
         if superview !== host {
             removeFromSuperview()
@@ -258,6 +309,24 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
 
     public func redo() {
         canvasView.undoManager?.redo()
+    }
+
+    @objc
+    private func handleOneFingerSelection(_ recognizer: UITapGestureRecognizer) {
+        guard recognizer.state == .ended else {
+            return
+        }
+        onCanvasTapped?(recognizer.location(in: self))
+    }
+
+    @objc
+    private func handleOneFingerLongPress(
+        _ recognizer: UILongPressGestureRecognizer
+    ) {
+        guard recognizer.state == .began else {
+            return
+        }
+        onCanvasLongPressed?(recognizer.location(in: self))
     }
 
     @objc

@@ -2,13 +2,15 @@ import type {
   DocumentOperation,
   Favourite,
   JournalSnapshot,
+  MyStoryPage,
   Page,
 } from "./models";
 import {
   GRID_ROTATION_MAX,
   MAX_PAGES_PER_COLLECTION,
 } from "./models";
-import { isHexColor } from "../utils/colour";
+import { isHexColor, readableTextColour } from "../utils/colour";
+import { webHttpUrl } from "../utils/webHttpUrl";
 
 export class OperationConflictError extends Error {
   constructor(message: string) {
@@ -36,6 +38,38 @@ function updatePage(
   }
 
   return { ...snapshot, pages };
+}
+
+function updateStoryPage(
+  snapshot: JournalSnapshot,
+  pageId: string,
+  update: (page: MyStoryPage) => MyStoryPage,
+): JournalSnapshot {
+  const story = snapshot.myStory;
+  if (!story) {
+    throw new OperationConflictError("My Story is not available.");
+  }
+  let found = false;
+  const pages = story.pages.map((page) => {
+    if (page.id !== pageId) {
+      return page;
+    }
+    found = true;
+    return update(page);
+  });
+  if (!found) {
+    throw new OperationConflictError(`My Story page ${pageId} does not exist.`);
+  }
+  return { ...snapshot, myStory: { ...story, pages } };
+}
+
+function isExactReorder(currentIds: string[], nextIds: string[]): boolean {
+  const uniqueIds = new Set(nextIds);
+  return (
+    nextIds.length === currentIds.length &&
+    uniqueIds.size === currentIds.length &&
+    nextIds.every((id) => currentIds.includes(id))
+  );
 }
 
 function applyFavourite(
@@ -608,6 +642,338 @@ export function applyDocumentOperation(
         revision: page.revision + 1,
         updatedAt: operation.createdAt,
       }));
+      break;
+    case "my-story-page-create": {
+      const pages = snapshot.myStory?.pages ?? [];
+      if (pages.length >= MAX_PAGES_PER_COLLECTION) {
+        throw new OperationConflictError("My Story can contain no more than 10 pages.");
+      }
+      if (pages.some((page) => page.id === operation.page.id)) {
+        throw new OperationConflictError(
+          `My Story page ${operation.page.id} already exists.`,
+        );
+      }
+      next = {
+        ...snapshot,
+        myStory: {
+          defaultTextColor:
+            snapshot.myStory?.defaultTextColor ?? "#171410",
+          pages: [...pages, operation.page],
+        },
+      };
+      break;
+    }
+    case "my-story-pages-reorder": {
+      const pages = snapshot.myStory?.pages;
+      const currentIds = pages?.map((page) => page.id) ?? [];
+      if (!pages || !isExactReorder(currentIds, operation.pageIds)) {
+        throw new OperationConflictError(
+          "Reordered story pages must contain every page exactly once.",
+        );
+      }
+      next = {
+        ...snapshot,
+        myStory: {
+          ...snapshot.myStory,
+          defaultTextColor:
+            snapshot.myStory?.defaultTextColor ?? "#171410",
+          pages: operation.pageIds.map(
+            (pageId) => pages.find((page) => page.id === pageId)!,
+          ),
+        },
+      };
+      break;
+    }
+    case "my-story-page-delete": {
+      const pages = snapshot.myStory?.pages;
+      if (!pages?.some((page) => page.id === operation.pageId)) {
+        throw new OperationConflictError(
+          `My Story page ${operation.pageId} does not exist.`,
+        );
+      }
+      if (pages.length <= 1) {
+        throw new OperationConflictError(
+          "My Story must keep at least one page.",
+        );
+      }
+      next = {
+        ...snapshot,
+        myStory: {
+          ...snapshot.myStory,
+          defaultTextColor:
+            snapshot.myStory?.defaultTextColor ?? "#171410",
+          pages: pages.filter((page) => page.id !== operation.pageId),
+        },
+      };
+      break;
+    }
+    case "my-story-layout-update": {
+      if (
+        (operation.splitRatio !== undefined &&
+          (!Number.isFinite(operation.splitRatio) ||
+            operation.splitRatio < 0.3 ||
+            operation.splitRatio > 0.7)) ||
+        (operation.textSide !== undefined &&
+          operation.textSide !== "left" &&
+          operation.textSide !== "right") ||
+        (operation.textBackgroundColor !== undefined &&
+          !isHexColor(operation.textBackgroundColor)) ||
+        (operation.textColor !== undefined &&
+          !isHexColor(operation.textColor))
+      ) {
+        throw new OperationConflictError("The My Story layout is invalid.");
+      }
+      let updatedTextColor: string | undefined;
+      next = updateStoryPage(snapshot, operation.pageId, (page) => {
+        const textBackgroundColor =
+          operation.textBackgroundColor ?? page.textBackgroundColor;
+        const requestedTextColor = operation.textColor ?? page.textColor;
+        const textColor = readableTextColour(
+          requestedTextColor,
+          textBackgroundColor,
+        );
+        const textColorChanged =
+          operation.textColor !== undefined || textColor !== page.textColor;
+        updatedTextColor = textColorChanged ? textColor : undefined;
+        return {
+          ...page,
+          ...(operation.splitRatio === undefined
+            ? {}
+            : { splitRatio: operation.splitRatio }),
+          ...(operation.textSide === undefined
+            ? {}
+            : { textSide: operation.textSide }),
+          ...(operation.textBackgroundColor === undefined
+            ? {}
+            : { textBackgroundColor }),
+          textBlocks: textColorChanged
+            ? page.textBlocks.map((block) => ({
+                ...block,
+                color: textColor,
+                revision: block.revision + 1,
+              }))
+            : page.textBlocks,
+          ...(textColorChanged ? { textColor } : {}),
+          revision: page.revision + 1,
+          updatedAt: operation.createdAt,
+        };
+      });
+      if (updatedTextColor !== undefined) {
+        next = {
+          ...next,
+          myStory: {
+            ...next.myStory!,
+            defaultTextColor: updatedTextColor,
+          },
+        };
+      }
+      break;
+    }
+    case "my-story-text-add":
+      if (!isHexColor(operation.block.color)) {
+        throw new OperationConflictError("The story text colour is invalid.");
+      }
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        textBlocks: page.textBlocks.some(
+          (block) => block.id === operation.block.id,
+        )
+          ? page.textBlocks
+          : [...page.textBlocks, operation.block],
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      next = {
+        ...next,
+        myStory: {
+          ...next.myStory!,
+          defaultTextColor: operation.block.color,
+        },
+      };
+      break;
+    case "my-story-text-update":
+      if (!isHexColor(operation.block.color)) {
+        throw new OperationConflictError("The story text colour is invalid.");
+      }
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        textBlocks: page.textBlocks.map((block) =>
+          block.id === operation.block.id ? operation.block : block,
+        ),
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      next = {
+        ...next,
+        myStory: {
+          ...next.myStory!,
+          defaultTextColor: operation.block.color,
+        },
+      };
+      break;
+    case "my-story-text-delete":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        textBlocks: page.textBlocks.filter(
+          (block) => block.id !== operation.blockId,
+        ),
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      break;
+    case "my-story-texts-reorder":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => {
+        const currentIds = page.textBlocks.map((block) => block.id);
+        if (!isExactReorder(currentIds, operation.blockIds)) {
+          throw new OperationConflictError(
+            "Reordered story text must contain every block exactly once.",
+          );
+        }
+        return {
+          ...page,
+          textBlocks: operation.blockIds.map(
+            (blockId) =>
+              page.textBlocks.find((block) => block.id === blockId)!,
+          ),
+          revision: page.revision + 1,
+          updatedAt: operation.createdAt,
+        };
+      });
+      break;
+    case "my-story-photo-add":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        photos: page.photos.some((photo) => photo.id === operation.photo.id)
+          ? page.photos
+          : [...page.photos, operation.photo],
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      break;
+    case "my-story-photo-update":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        photos: page.photos.map((photo) =>
+          photo.id === operation.photo.id ? operation.photo : photo,
+        ),
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      break;
+    case "my-story-photo-delete":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        photos: page.photos.filter(
+          (photo) => photo.id !== operation.photoId,
+        ),
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      break;
+    case "my-story-photos-reorder":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => {
+        const currentIds = page.photos.map((photo) => photo.id);
+        if (!isExactReorder(currentIds, operation.photoIds)) {
+          throw new OperationConflictError(
+            "Reordered story photos must contain every photo exactly once.",
+          );
+        }
+        return {
+          ...page,
+          photos: operation.photoIds.map(
+            (photoId) =>
+              page.photos.find((photo) => photo.id === photoId)!,
+          ),
+          revision: page.revision + 1,
+          updatedAt: operation.createdAt,
+        };
+      });
+      break;
+    case "my-story-recording-add":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        recordings: page.recordings.some(
+          (recording) => recording.id === operation.recording.id,
+        )
+          ? page.recordings
+          : [...page.recordings, operation.recording],
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      break;
+    case "my-story-recording-update":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        recordings: page.recordings.map((recording) =>
+          recording.id === operation.recording.id
+            ? operation.recording
+            : recording,
+        ),
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      break;
+    case "my-story-recording-delete":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        recordings: page.recordings.filter(
+          (recording) => recording.id !== operation.recordingId,
+        ),
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      break;
+    case "my-story-link-add":
+      if (!webHttpUrl(operation.link.url) || !operation.link.title.trim()) {
+        throw new OperationConflictError("The story link is invalid.");
+      }
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        links: page.links.some((link) => link.id === operation.link.id)
+          ? page.links
+          : [...page.links, operation.link],
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      break;
+    case "my-story-link-update":
+      if (!webHttpUrl(operation.link.url) || !operation.link.title.trim()) {
+        throw new OperationConflictError("The story link is invalid.");
+      }
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        links: page.links.map((link) =>
+          link.id === operation.link.id ? operation.link : link,
+        ),
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      break;
+    case "my-story-link-delete":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        links: page.links.filter((link) => link.id !== operation.linkId),
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      break;
+    case "my-story-links-reorder":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => {
+        const currentIds = page.links.map((link) => link.id);
+        if (!isExactReorder(currentIds, operation.linkIds)) {
+          throw new OperationConflictError(
+            "Reordered story links must contain every link exactly once.",
+          );
+        }
+        return {
+          ...page,
+          links: operation.linkIds.map(
+            (linkId) => page.links.find((link) => link.id === linkId)!,
+          ),
+          revision: page.revision + 1,
+          updatedAt: operation.createdAt,
+        };
+      });
       break;
     case "settings-update":
       next = {

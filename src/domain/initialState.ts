@@ -2,6 +2,7 @@ import { localDateKey } from "../utils/date";
 import {
   DOCUMENT_SCHEMA_VERSION,
   type JournalSnapshot,
+  type MyStoryPage,
   type PageObject,
 } from "./models";
 
@@ -12,6 +13,21 @@ export function createInitialJournalSnapshot(
   const date = localDateKey(now);
   const dayId = `day-${date}`;
   const pageId = `page-${date}-1`;
+  const storyPage: MyStoryPage = {
+    id: "my-story-page-1",
+    drawingDocumentId: "my-story-drawing-1",
+    splitRatio: 0.5,
+    textSide: "left",
+    textBackgroundColor: "#fffaf0",
+    textColor: "#171410",
+    textBlocks: [],
+    photos: [],
+    links: [],
+    recordings: [],
+    revision: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
 
   const objects: PageObject[] = [
     {
@@ -162,6 +178,7 @@ export function createInitialJournalSnapshot(
       },
     ],
     favourites: [],
+    myStory: { defaultTextColor: "#171410", pages: [storyPage] },
     settings: {
       displayName: "Ivan",
       lastSettingsTab: "about",
@@ -178,6 +195,7 @@ export function createInitialJournalSnapshot(
       ],
       favouriteColourLongPressEnabled: true,
       favouriteColourLongPressSeconds: 2,
+      standardAppAppearance: true,
       penNib: "pen",
       penNibProfiles: {
         pen: { color: "#171410", width: 4.2, opacity: 1 },

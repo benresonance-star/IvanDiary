@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Ivan's Diary uses the microphone to preserve your original voice recordings in your journal.</string>
+	<string>Ivan's Diary uses the microphone for live text dictation and journal voice recordings.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Ivan's Diary turns saved voice recordings into editable journal text.</string>
+	<string>Ivan's Diary uses Apple Speech to show live dictation as editable journal text.</string>
     <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
@@ -36,6 +36,8 @@
 	<array>
 		<string>armv7</string>
 	</array>
+	<key>UIRequiresFullScreen</key>
+	<true/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

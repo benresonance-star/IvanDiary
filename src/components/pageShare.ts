@@ -1,11 +1,17 @@
-import type { Page, TranscriptObject, VoiceRecordingObject } from "../domain/models";
+import type {
+  MyStoryPage,
+  Page,
+  TranscriptObject,
+  VoiceRecordingObject,
+} from "../domain/models";
 import type { PageShareLink } from "../native/contracts";
 import { webHttpUrl } from "../utils/webHttpUrl";
 import { defaultObjectFrame } from "./arrangeGeometry";
 
 export type PageShareContext =
   | { kind: "diary"; date: string }
-  | { kind: "sketchbook"; sketchbook: { name: string } };
+  | { kind: "sketchbook"; sketchbook: { name: string } }
+  | { kind: "story"; pageNumber: number };
 
 export function pageShareTitle({
   displayName,
@@ -17,12 +23,58 @@ export function pageShareTitle({
   if (context.kind === "sketchbook") {
     return `${displayName} ${context.sketchbook.name}`.trim();
   }
+  if (context.kind === "story") {
+    return `${displayName} My Story page ${context.pageNumber}`.trim();
+  }
   const date = new Intl.DateTimeFormat("en-AU", {
     day: "numeric",
     month: "long",
     year: "numeric",
   }).format(new Date(`${context.date}T12:00:00`));
   return `${displayName} ${date}`.trim();
+}
+
+export function storyShareRecordings(page: MyStoryPage): {
+  audioUris: string[];
+  hasRecordings: boolean;
+} {
+  return {
+    hasRecordings: page.recordings.length > 0,
+    audioUris: page.recordings
+      .map((recording) => recording.asset.localUri)
+      .filter((uri) => uri.startsWith("file:")),
+  };
+}
+
+export function storyShareLinks(
+  page: MyStoryPage,
+  paper: HTMLElement | null,
+): PageShareLink[] {
+  const paperRect = paper?.getBoundingClientRect();
+  if (!paper || !paperRect || paperRect.width < 8 || paperRect.height < 8) {
+    return [];
+  }
+  const elements = new Map(
+    Array.from(
+      paper.querySelectorAll<HTMLElement>("[data-story-link-id]"),
+    ).map((element) => [element.dataset.storyLinkId, element] as const),
+  );
+  return page.links.flatMap((link) => {
+    const url = webHttpUrl(link.url);
+    const element = elements.get(link.id);
+    if (!url || !element) {
+      return [];
+    }
+    const rect = element.getBoundingClientRect();
+    return [{
+      url,
+      title: link.title.trim() || new URL(url).hostname,
+      x: (rect.left - paperRect.left) / paperRect.width,
+      y: (rect.top - paperRect.top) / paperRect.height,
+      width: rect.width / paperRect.width,
+      height: rect.height / paperRect.height,
+    }];
+  });
 }
 
 export function shareFileStem(title: string): string {

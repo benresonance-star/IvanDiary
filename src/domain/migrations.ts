@@ -5,10 +5,17 @@ import {
   type DrawingGridSettings,
   type JournalSnapshot,
   type JournalSettings,
+  type MyStory,
+  type MyStoryLink,
+  type MyStoryPage,
+  type MyStoryPhoto,
+  type MyStoryTextBlock,
+  type MyStoryVoiceRecording,
   type MyWord,
   type PageObject,
   type Size,
 } from "./models";
+import { webHttpUrl } from "../utils/webHttpUrl";
 
 const DEFAULT_SETTINGS: JournalSettings = {
   displayName: "Ivan",
@@ -26,6 +33,7 @@ const DEFAULT_SETTINGS: JournalSettings = {
   ],
   favouriteColourLongPressEnabled: true,
   favouriteColourLongPressSeconds: 2,
+  standardAppAppearance: true,
   penNib: "pen",
   penNibProfiles: {
     pen: { color: "#171410", width: 4.2, opacity: 1 },
@@ -124,6 +132,7 @@ function migrateSettings(value: unknown): JournalSettings {
     Number.isFinite(value.favouriteColourLongPressSeconds)
       ? Math.min(5, Math.max(0.5, value.favouriteColourLongPressSeconds))
       : DEFAULT_SETTINGS.favouriteColourLongPressSeconds;
+  const standardAppAppearance = value.standardAppAppearance !== false;
   const favouriteColourLongPressEnabled =
     value.favouriteColourLongPressEnabled !== false;
   const penNib =
@@ -224,6 +233,7 @@ function migrateSettings(value: unknown): JournalSettings {
     favouritePenColours,
     favouriteColourLongPressEnabled,
     favouriteColourLongPressSeconds,
+    standardAppAppearance,
     penNib,
     penNibProfiles,
     welcomeGreeting,
@@ -296,6 +306,255 @@ function migratePageFrames(
   });
 }
 
+function defaultStoryPage(timestamp: string): MyStoryPage {
+  return {
+    id: "my-story-page-1",
+    drawingDocumentId: "my-story-drawing-1",
+    splitRatio: 0.5,
+    textSide: "left",
+    textBackgroundColor: "#fffaf0",
+    textColor: "#171410",
+    textBlocks: [],
+    photos: [],
+    links: [],
+    recordings: [],
+    revision: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+function migrateMyStory(value: unknown, timestamp: string): MyStory {
+  if (!isRecord(value) || !Array.isArray(value.pages)) {
+    return {
+      defaultTextColor: "#171410",
+      pages: [defaultStoryPage(timestamp)],
+    };
+  }
+  const pages = value.pages.flatMap((candidate): MyStoryPage[] => {
+    if (
+      !isRecord(candidate) ||
+      typeof candidate.id !== "string" ||
+      typeof candidate.drawingDocumentId !== "string"
+    ) {
+      return [];
+    }
+    const textBlocks = Array.isArray(candidate.textBlocks)
+      ? candidate.textBlocks.flatMap((block): MyStoryTextBlock[] => {
+          if (
+            !isRecord(block) ||
+            typeof block.id !== "string" ||
+            typeof block.text !== "string"
+          ) {
+            return [];
+          }
+          const text = block.text.trim().slice(0, 10_000);
+          if (!text) {
+            return [];
+          }
+          return [{
+            id: block.id,
+            text,
+            role:
+              block.role === "title" || block.role === "heading"
+                ? block.role
+                : "body",
+            color:
+              typeof block.color === "string" &&
+              /^#[0-9a-f]{6}$/i.test(block.color)
+                ? block.color
+                : "#171410",
+            revision:
+              typeof block.revision === "number" ? block.revision : 0,
+            createdAt:
+              typeof block.createdAt === "string"
+                ? block.createdAt
+                : timestamp,
+          }];
+        })
+      : [];
+    const photos = Array.isArray(candidate.photos)
+      ? candidate.photos.flatMap((photo): MyStoryPhoto[] => {
+          if (
+            !isRecord(photo) ||
+            typeof photo.id !== "string" ||
+            !isRecord(photo.asset) ||
+            !isRecord(photo.size) ||
+            typeof photo.size.width !== "number" ||
+            typeof photo.size.height !== "number"
+          ) {
+            return [];
+          }
+          return [{
+            id: photo.id,
+            asset: photo.asset as MyStoryPhoto["asset"],
+            size: {
+              width: Math.max(1, photo.size.width),
+              height: Math.max(1, photo.size.height),
+            },
+            ...(typeof photo.altText === "string"
+              ? { altText: photo.altText.slice(0, 300) }
+              : {}),
+            width:
+              photo.width === 0.5 || photo.width === 0.75
+                ? photo.width
+                : 1,
+            revision:
+              typeof photo.revision === "number" ? photo.revision : 0,
+            createdAt:
+              typeof photo.createdAt === "string"
+                ? photo.createdAt
+                : timestamp,
+          }];
+        })
+      : [];
+    const recordings = Array.isArray(candidate.recordings)
+      ? candidate.recordings.flatMap(
+          (recording, index): MyStoryVoiceRecording[] => {
+            if (
+              !isRecord(recording) ||
+              typeof recording.id !== "string" ||
+              !isRecord(recording.asset) ||
+              typeof recording.durationMs !== "number"
+            ) {
+              return [];
+            }
+            const transcriptionStatus =
+              recording.transcriptionStatus === "pending" ||
+              recording.transcriptionStatus === "transcribing" ||
+              recording.transcriptionStatus === "complete" ||
+              recording.transcriptionStatus === "failed"
+                ? recording.transcriptionStatus
+                : "not-requested";
+            return [{
+              id: recording.id,
+              asset: recording.asset as MyStoryVoiceRecording["asset"],
+              durationMs: Math.max(0, recording.durationMs),
+              transcriptionStatus,
+              position:
+                isRecord(recording.position) &&
+                typeof recording.position.x === "number" &&
+                typeof recording.position.y === "number"
+                  ? {
+                      x: Math.min(0.9, Math.max(0, recording.position.x)),
+                      y: Math.min(0.9, Math.max(0, recording.position.y)),
+                    }
+                  : {
+                      x: 0.06 + (index % 3) * 0.3,
+                      y: Math.min(
+                        0.84,
+                        0.7 + Math.floor(index / 3) * 0.12,
+                      ),
+                    },
+              frame:
+                isRecord(recording.frame) &&
+                typeof recording.frame.width === "number" &&
+                typeof recording.frame.height === "number"
+                  ? {
+                      width: Math.min(
+                        0.8,
+                        Math.max(0.12, recording.frame.width),
+                      ),
+                      height: Math.min(
+                        0.5,
+                        Math.max(0.08, recording.frame.height),
+                      ),
+                    }
+                  : { width: 0.26, height: 0.1 },
+              layer:
+                recording.layer === "behind-sketch"
+                  ? "behind-sketch"
+                  : "above-sketch",
+              revision:
+                typeof recording.revision === "number"
+                  ? recording.revision
+                  : 0,
+              createdAt:
+                typeof recording.createdAt === "string"
+                  ? recording.createdAt
+                  : timestamp,
+            }];
+          },
+        )
+      : [];
+    const links = Array.isArray(candidate.links)
+      ? candidate.links.flatMap((link): MyStoryLink[] => {
+          if (
+            !isRecord(link) ||
+            typeof link.id !== "string" ||
+            typeof link.url !== "string"
+          ) {
+            return [];
+          }
+          const url = webHttpUrl(link.url);
+          if (!url) {
+            return [];
+          }
+          return [{
+            id: link.id,
+            url,
+            title:
+              typeof link.title === "string" && link.title.trim()
+                ? link.title.trim().slice(0, 300)
+                : new URL(url).hostname,
+            revision:
+              typeof link.revision === "number" ? link.revision : 0,
+            createdAt:
+              typeof link.createdAt === "string" ? link.createdAt : timestamp,
+          }];
+        })
+      : [];
+    const splitRatio =
+      typeof candidate.splitRatio === "number" &&
+      Number.isFinite(candidate.splitRatio)
+        ? Math.min(0.7, Math.max(0.3, candidate.splitRatio))
+        : 0.5;
+    return [{
+      id: candidate.id,
+      drawingDocumentId: candidate.drawingDocumentId,
+      splitRatio,
+      textSide: candidate.textSide === "right" ? "right" : "left",
+      textBackgroundColor:
+        typeof candidate.textBackgroundColor === "string" &&
+        /^#[0-9a-f]{6}$/i.test(candidate.textBackgroundColor)
+          ? candidate.textBackgroundColor
+          : "#fffaf0",
+      textColor:
+        typeof candidate.textColor === "string" &&
+        /^#[0-9a-f]{6}$/i.test(candidate.textColor)
+          ? candidate.textColor
+          : textBlocks.at(-1)?.color ?? "#171410",
+      textBlocks,
+      photos,
+      links,
+      recordings,
+      revision:
+        typeof candidate.revision === "number" ? candidate.revision : 0,
+      createdAt:
+        typeof candidate.createdAt === "string"
+          ? candidate.createdAt
+          : timestamp,
+      updatedAt:
+        typeof candidate.updatedAt === "string"
+          ? candidate.updatedAt
+          : timestamp,
+    }];
+  }).slice(0, 10);
+  const migratedPages =
+    pages.length > 0 ? pages : [defaultStoryPage(timestamp)];
+  const latestTextColor = migratedPages
+    .flatMap((page) => page.textBlocks)
+    .at(-1)?.color;
+  return {
+    defaultTextColor:
+      typeof value.defaultTextColor === "string" &&
+      /^#[0-9a-f]{6}$/i.test(value.defaultTextColor)
+        ? value.defaultTextColor
+        : latestTextColor ?? "#171410",
+    pages: migratedPages,
+  };
+}
+
 export function migrateJournalSnapshot(value: unknown): JournalSnapshot {
   if (!isRecord(value) || !hasSnapshotCollections(value)) {
     throw new JournalMigrationError("Journal data is incomplete or unreadable.");
@@ -317,6 +576,7 @@ export function migrateJournalSnapshot(value: unknown): JournalSnapshot {
     return {
       ...(value as unknown as JournalSnapshot),
       pages: migratePageFrames(value.pages),
+      myStory: migrateMyStory(value.myStory, value.updatedAt),
       settings: migrateSettings(value.settings),
     };
   }
@@ -337,6 +597,7 @@ export function migrateJournalSnapshot(value: unknown): JournalSnapshot {
       pages: migratePageFrames(value.pages),
       sketchbooks: value.sketchbooks,
       favourites: Array.isArray(value.favourites) ? value.favourites : [],
+      myStory: migrateMyStory(value.myStory, value.updatedAt),
       settings: migrateSettings(value.settings),
       appliedOperationIds: Array.isArray(value.appliedOperationIds)
         ? value.appliedOperationIds.filter(

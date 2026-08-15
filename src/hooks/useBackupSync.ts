@@ -67,15 +67,24 @@ async function collectCloudBackupAssets(
       addAsset(word.sample, "audio");
     }
   }
+  for (const page of snapshot.myStory?.pages ?? []) {
+    for (const photo of page.photos) {
+      addAsset(photo.asset, "photo");
+    }
+    for (const recording of page.recordings) {
+      addAsset(recording.asset, "audio");
+    }
+  }
 
-  const drawingIDs = new Set([
-    ...snapshot.pages.map((page) => page.drawingDocumentId),
-    PROFILE_PORTRAIT_DOCUMENT_ID,
-    WELCOME_DRAWING_DOCUMENT_ID,
-  ]);
-  await Promise.all(
-    [...drawingIDs].map(async (documentId) => {
-      try {
+  if (hasNativePencilKit()) {
+    const drawingIDs = new Set([
+      ...snapshot.pages.map((page) => page.drawingDocumentId),
+      ...(snapshot.myStory?.pages.map((page) => page.drawingDocumentId) ?? []),
+      PROFILE_PORTRAIT_DOCUMENT_ID,
+      WELCOME_DRAWING_DOCUMENT_ID,
+    ]);
+    await Promise.all(
+      [...drawingIDs].map(async (documentId) => {
         const preview = await getNativeDrawingPreview(documentId);
         if (preview.available) {
           assets.set(`drawing-${documentId}`, {
@@ -85,11 +94,9 @@ async function collectCloudBackupAssets(
             mimeType: "application/x-pencilkit-drawing",
           });
         }
-      } catch {
-        // A missing native drawing has nothing to upload.
-      }
-    }),
-  );
+      }),
+    );
+  }
   return [...assets.values()];
 }
 
@@ -181,11 +188,7 @@ export function useBackupSync({
     }));
     try {
       if (hasNativePencilKit()) {
-        try {
-          await flushNativeDrawingOverlay();
-        } catch {
-          // The overlay may already be closed; stored drawing files remain valid.
-        }
+        await flushNativeDrawingOverlay();
       }
       const result = await backup.backupSnapshot({
         snapshotJson: JSON.stringify(snapshot),

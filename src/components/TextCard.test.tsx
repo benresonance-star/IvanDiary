@@ -53,7 +53,7 @@ describe("TextCard", () => {
     });
   });
 
-  it("blocks native editing while arranging", () => {
+  it("blocks native editing while repositioning in Edit mode", () => {
     const onEdit = vi.fn();
     render(
       <TextCard

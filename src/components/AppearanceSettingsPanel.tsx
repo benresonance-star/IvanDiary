@@ -23,6 +23,17 @@ export function AppearanceSettingsPanel({
       <Contrast aria-hidden="true" />
       <div>
         <h2>Appearance</h2>
+        <SettingToggle
+          checked={settings.standardAppAppearance}
+          description="Keep the app in landscape. Turn this off to allow portrait orientation."
+          label="Standard app appearance"
+          onChange={(standardAppAppearance) =>
+            commit({
+              type: "settings-update",
+              settings: { standardAppAppearance },
+            })
+          }
+        />
         <section
           aria-labelledby="appearance-text-size-heading"
           className="appearance-setting-section"

@@ -41,6 +41,8 @@ public struct LegacyInkDocument: Sendable {
 }
 
 public enum LegacyInkImport {
+    private static let comparisonTolerance: CGFloat = 0.75
+
     public static func strokes(
         from document: LegacyInkDocument,
         canvasSize: CGSize
@@ -91,13 +93,64 @@ public enum LegacyInkImport {
         with document: LegacyInkDocument,
         canvasSize: CGSize
     ) -> PKDrawing {
-        let imported = strokes(from: document, canvasSize: canvasSize)
+        let imported = missingStrokes(
+            from: document,
+            in: drawing,
+            canvasSize: canvasSize
+        )
         guard !imported.isEmpty else {
             return drawing
         }
         var merged = drawing
         merged.strokes.append(contentsOf: imported)
         return merged
+    }
+
+    public static func missingStrokes(
+        from document: LegacyInkDocument,
+        in drawing: PKDrawing,
+        canvasSize: CGSize
+    ) -> [PKStroke] {
+        strokes(from: document, canvasSize: canvasSize).filter { candidate in
+            !drawing.strokes.contains { existing in
+                equivalent(existing, candidate)
+            }
+        }
+    }
+
+    private static func equivalent(_ left: PKStroke, _ right: PKStroke) -> Bool {
+        guard left.ink.inkType == right.ink.inkType,
+              left.path.count == right.path.count,
+              approximatelyEqual(left.renderBounds, right.renderBounds),
+              approximatelyEqual(
+                left.path.first?.location,
+                right.path.first?.location
+              ),
+              approximatelyEqual(
+                left.path.last?.location,
+                right.path.last?.location
+              ) else {
+            return false
+        }
+        return true
+    }
+
+    private static func approximatelyEqual(_ left: CGRect, _ right: CGRect) -> Bool {
+        abs(left.minX - right.minX) <= comparisonTolerance &&
+            abs(left.minY - right.minY) <= comparisonTolerance &&
+            abs(left.width - right.width) <= comparisonTolerance &&
+            abs(left.height - right.height) <= comparisonTolerance
+    }
+
+    private static func approximatelyEqual(
+        _ left: CGPoint?,
+        _ right: CGPoint?
+    ) -> Bool {
+        guard let left, let right else {
+            return left == nil && right == nil
+        }
+        return abs(left.x - right.x) <= comparisonTolerance &&
+            abs(left.y - right.y) <= comparisonTolerance
     }
 }
 #endif

@@ -294,6 +294,7 @@ describe("Capacitor service adapters", () => {
         title: "Ivan 14 August 2026",
         fileStem: "Ivan 14 August 2026",
         paperRect,
+        captureMode: "webview",
         transcripts: ["Hello"],
       }),
     ).resolves.toEqual({
@@ -314,6 +315,7 @@ describe("Capacitor service adapters", () => {
       title: "Ivan 14 August 2026",
       fileStem: "Ivan 14 August 2026",
       paperRect,
+      captureMode: "webview",
       transcripts: ["Hello"],
     });
     expect(plugin.share).toHaveBeenCalledWith({

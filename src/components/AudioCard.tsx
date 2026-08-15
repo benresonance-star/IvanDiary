@@ -1,19 +1,23 @@
 import { useEffect, useState } from "react";
 import { Pause, Play } from "lucide-react";
 
-import type { VoiceRecordingObject } from "../domain/models";
+import type {
+  MyStoryVoiceRecording,
+  VoiceRecordingObject,
+} from "../domain/models";
 import type { JournalAudioPlugin } from "../native/contracts";
 
 export function AudioCard({
   disabled = false,
   audio,
-  onConvertToText,
   recording,
 }: {
   disabled?: boolean;
   audio: JournalAudioPlugin;
   onConvertToText?: () => void;
-  recording: VoiceRecordingObject;
+  recording:
+    | VoiceRecordingObject
+    | MyStoryVoiceRecording;
 }) {
   const [playing, setPlaying] = useState(false);
 
@@ -49,32 +53,6 @@ export function AudioCard({
         {playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
         <span>{playing ? "Pause" : "Play"}</span>
       </button>
-      {recording.transcriptionStatus !== "complete" && onConvertToText ? (
-        <button
-          className="audio-convert-button"
-          disabled={
-            disabled || recording.transcriptionStatus === "transcribing"
-          }
-          onClick={onConvertToText}
-          type="button"
-        >
-          {recording.transcriptionStatus === "transcribing"
-            ? "Converting…"
-            : recording.transcriptionStatus === "failed"
-              ? "Try again"
-              : "Convert to text"}
-        </button>
-      ) : null}
-      {recording.transcriptionStatus === "transcribing" ? (
-        <p aria-live="polite" className="audio-transcription-status">
-          Converting recording to text…
-        </p>
-      ) : null}
-      {recording.transcriptionStatus === "failed" ? (
-        <p aria-live="polite" className="audio-transcription-status error">
-          Text could not be generated. Your recording is still saved.
-        </p>
-      ) : null}
     </article>
   );
 }

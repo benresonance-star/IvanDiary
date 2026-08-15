@@ -1,4 +1,5 @@
 import {
+  Book,
   BookOpen,
   CloudAlert,
   NotebookTabs,
@@ -12,12 +13,14 @@ import { ProfilePortrait } from "./ProfilePortrait";
 
 export type AppSection =
   | "diary"
+  | "story"
   | "sketchbooks"
   | "favourites"
   | "settings";
 
 const NAVIGATION_ITEMS = [
   { id: "diary", label: "My Journal", Icon: BookOpen },
+  { id: "story", label: "My Story", Icon: Book },
   { id: "sketchbooks", label: "My Sketchbooks", Icon: NotebookTabs },
   { id: "favourites", label: "My Favourites", Icon: ThumbsUp },
   { id: "settings", label: "My Settings", Icon: Settings },

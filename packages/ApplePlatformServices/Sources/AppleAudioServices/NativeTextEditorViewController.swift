@@ -57,11 +57,14 @@ private final class NativeMicrophoneMeterView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func start(levelProvider: @escaping () -> Float) {
+    func start(
+        accessibilityValue: String,
+        levelProvider: @escaping () -> Float
+    ) {
         self.levelProvider = levelProvider
-        guard timer == nil else { return }
+        self.accessibilityValue = accessibilityValue
         isHidden = false
-        accessibilityValue = "Recording"
+        guard timer == nil else { return }
         let timer = Timer(
             timeInterval: 0.06,
             target: self,
@@ -83,7 +86,8 @@ private final class NativeMicrophoneMeterView: UIView {
     }
 
     @objc private func updateBars() {
-        let level = CGFloat(min(1, max(0, levelProvider?() ?? 0)))
+        let measuredLevel = CGFloat(min(1, max(0, levelProvider?() ?? 0)))
+        let level = max(0.2, measuredLevel)
         if !UIAccessibility.isReduceMotionEnabled {
             phase += 0.72
         }
@@ -106,7 +110,12 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
     private let localeIdentifier: String
     private let voiceCoordinator: NativeTextVoiceCoordinator?
     private var recordingLimitTask: Task<Void, Never>?
+    private var recordingStartTask: Task<Void, Never>?
     private var transcriptionTask: Task<Void, Never>?
+    private var provisionalRenderTask: Task<Void, Never>?
+    private var cardWidthConstraint: NSLayoutConstraint?
+    private var methodControlWidthConstraint: NSLayoutConstraint?
+    private var voiceButtonWidthConstraint: NSLayoutConstraint?
     private var completed = false
     private var lastAnnouncedStatus: String?
 
@@ -167,7 +176,7 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
         contextualStrings: [String],
         recordingLimitMilliseconds: Int?,
         localeIdentifier: String = "en-AU",
-        voiceCoordinator: NativeTextVoiceCoordinator? = try? NativeTextVoiceCoordinator()
+        voiceCoordinator: NativeTextVoiceCoordinator? = NativeTextVoiceCoordinator()
     ) {
         state = NativeTextEditorState(text: text)
         self.mode = mode
@@ -197,9 +206,12 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
 
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        if state.inputMethod == .keyboard {
+            textView.becomeFirstResponder()
+        }
         UIAccessibility.post(
             notification: .screenChanged,
-            argument: methodControl
+            argument: state.inputMethod == .keyboard ? textView : methodControl
         )
     }
 
@@ -207,6 +219,7 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
         super.viewDidDisappear(animated)
         if !completed {
             recordingLimitTask?.cancel()
+            recordingStartTask?.cancel()
             transcriptionTask?.cancel()
             microphoneMeter.stop()
             voiceCoordinator?.cancel()
@@ -217,13 +230,21 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
         NotificationCenter.default.removeObserver(self)
     }
 
-    public override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        actionsStack.axis =
-            cardView.bounds.width < 820 ||
+    public override func viewWillLayoutSubviews() {
+        super.viewWillLayoutSubviews()
+        let safeAreaWidth = view.safeAreaLayoutGuide.layoutFrame.width
+        if safeAreaWidth > 0 {
+            cardWidthConstraint?.constant =
+                NativeTextEditorLayout.editorWidth(
+                    safeAreaWidth: safeAreaWidth
+                )
+        }
+        let usesVerticalActions =
+            (cardWidthConstraint?.constant ?? 920) < 820 ||
             traitCollection.preferredContentSizeCategory.isAccessibilityCategory
-            ? .vertical
-            : .horizontal
+        actionsStack.axis = usesVerticalActions ? .vertical : .horizontal
+        methodControlWidthConstraint?.isActive = !usesVerticalActions
+        voiceButtonWidthConstraint?.isActive = !usesVerticalActions
     }
 
     private func configureActionButton(
@@ -396,12 +417,7 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
         header.alignment = .top
         header.spacing = 18
 
-        methodControl.backgroundColor = UIColor(
-            red: 234 / 255,
-            green: 219 / 255,
-            blue: 195 / 255,
-            alpha: 1
-        )
+        methodControl.backgroundColor = .clear
         methodControl.accessibilityLabel = "Text input method"
         methodControl.layer.borderColor = Self.warmBorder.cgColor
         methodControl.layer.borderWidth = 1
@@ -420,13 +436,16 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
             systemImage: "keyboard",
             action: #selector(keyboardMethodTapped)
         )
+        let methodDivider = UIView()
+        methodDivider.backgroundColor = Self.warmBorder.withAlphaComponent(0.55)
         let methodButtons = UIStackView(arrangedSubviews: [
             voiceMethodButton,
+            methodDivider,
             keyboardMethodButton,
         ])
         methodButtons.axis = .horizontal
-        methodButtons.distribution = .fillEqually
-        methodButtons.spacing = 2
+        methodButtons.distribution = .fill
+        methodButtons.spacing = 0
         methodButtons.translatesAutoresizingMaskIntoConstraints = false
         methodControl.addSubview(methodButtons)
         NSLayoutConstraint.activate([
@@ -446,6 +465,10 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
                 equalTo: methodControl.bottomAnchor,
                 constant: -3
             ),
+            voiceMethodButton.widthAnchor.constraint(
+                equalTo: keyboardMethodButton.widthAnchor
+            ),
+            methodDivider.widthAnchor.constraint(equalToConstant: 1),
         ])
 
         textView.text = state.text
@@ -472,7 +495,10 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
             right: 16
         )
         textView.accessibilityLabel = "Text for the page"
-        textView.inputView = keyboardSpacer
+        textView.inputView =
+            state.inputMethod == .keyboard ? nil : keyboardSpacer
+        textView.inputAssistantItem.leadingBarButtonGroups = []
+        textView.inputAssistantItem.trailingBarButtonGroups = []
 
         var voiceConfiguration = UIButton.Configuration.bordered()
         voiceConfiguration.title = "Tap to begin speaking"
@@ -500,6 +526,8 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
             }
         voiceButton.configuration = voiceConfiguration
         voiceButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        voiceButton.titleLabel?.numberOfLines = 0
+        voiceButton.titleLabel?.textAlignment = .center
         voiceButton.addTarget(
             self,
             action: #selector(voiceTapped),
@@ -561,9 +589,7 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
                 equalTo: view.safeAreaLayoutGuide.trailingAnchor
             ),
             methodControl.heightAnchor.constraint(greaterThanOrEqualToConstant: 48),
-            methodControl.widthAnchor.constraint(equalToConstant: 280),
             voiceButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
-            voiceButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 260),
             doneButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
             doneButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
             cancelButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
@@ -596,13 +622,19 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
             stack.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 28),
             stack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -28),
         ])
+        methodControlWidthConstraint =
+            methodControl.widthAnchor.constraint(equalToConstant: 380)
+        methodControlWidthConstraint?.isActive = true
+        voiceButtonWidthConstraint =
+            voiceButton.widthAnchor.constraint(equalToConstant: 220)
+        voiceButtonWidthConstraint?.isActive = true
+        cardWidthConstraint =
+            cardView.widthAnchor.constraint(equalToConstant: 920)
+        cardWidthConstraint?.isActive = true
         let microphoneMeterHeight =
             microphoneMeter.heightAnchor.constraint(equalToConstant: 38)
         microphoneMeterHeight.priority = .defaultHigh
         microphoneMeterHeight.isActive = true
-        let preferredWidth = cardView.widthAnchor.constraint(equalToConstant: 920)
-        preferredWidth.priority = .defaultHigh
-        preferredWidth.isActive = true
         let preferredHeight = cardView.heightAnchor.constraint(equalToConstant: 900)
         preferredHeight.priority = .defaultHigh
         preferredHeight.isActive = true
@@ -668,26 +700,80 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
             renderState()
             return
         }
-        if state.phase == .recording {
+        switch state.phase {
+        case .recording:
             stopAndTranscribe(using: voiceCoordinator)
-        } else {
+        case .ready, .error:
             startRecording(using: voiceCoordinator)
+        case .transcribing:
+            return
         }
     }
 
     private func startRecording(using coordinator: NativeTextVoiceCoordinator) {
-        Task { @MainActor [weak self] in
+        recordingStartTask?.cancel()
+        state.update(text: textView.text, selection: textView.selectedRange)
+        state.beginLiveTranscription()
+        renderState()
+        recordingStartTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 try await coordinator.start(
-                    maximumDurationMilliseconds: recordingLimitMilliseconds
+                    localeIdentifier: localeIdentifier,
+                    contextualStrings: contextualStrings,
+                    onEvent: { [weak self, weak coordinator] event in
+                        guard let self else { return }
+                        switch event {
+                        case .provisional(_, let text, _):
+                            guard state.phase == .recording else { return }
+                            state.updateLivePreview(text)
+                            scheduleProvisionalRender()
+                        case .finalized(_, let text, _):
+                            state.updateLiveFinalized(text)
+                            provisionalRenderTask?.cancel()
+                            provisionalRenderTask = nil
+                            textView.text = state.text
+                            textView.selectedRange = state.selection
+                        case .failed(_, let error):
+                            guard state.phase == .recording ||
+                                    state.phase == .transcribing else { return }
+                            recordingLimitTask?.cancel()
+                            coordinator?.cancel()
+                            state.failLiveTranscription(
+                                error.localizedDescription
+                            )
+                            textView.text = state.text
+                            textView.selectedRange = state.selection
+                            renderState()
+                        }
+                    }
                 )
-                state.beginRecording()
+                guard !Task.isCancelled else {
+                    coordinator.cancel()
+                    state.cancelLiveTranscription()
+                    return
+                }
+                recordingStartTask = nil
                 scheduleRecordingLimit(using: coordinator)
             } catch {
-                state.fail(error.localizedDescription)
+                guard !Task.isCancelled else { return }
+                state.failLiveTranscription(error.localizedDescription)
+                textView.text = state.text
+                textView.selectedRange = state.selection
             }
             renderState()
+            recordingStartTask = nil
+        }
+    }
+
+    private func scheduleProvisionalRender() {
+        guard provisionalRenderTask == nil else { return }
+        provisionalRenderTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled, let self else { return }
+            textView.text = state.text
+            textView.selectedRange = state.selection
+            provisionalRenderTask = nil
         }
     }
 
@@ -711,35 +797,37 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
     private func stopAndTranscribe(
         using coordinator: NativeTextVoiceCoordinator
     ) {
+        if let recordingStartTask {
+            recordingStartTask.cancel()
+            self.recordingStartTask = nil
+            coordinator.cancel()
+            state.cancelLiveTranscription()
+            renderState()
+            return
+        }
         recordingLimitTask?.cancel()
-        state.update(text: textView.text, selection: textView.selectedRange)
-        let stateBeforeTranscription = state
+        provisionalRenderTask?.cancel()
+        provisionalRenderTask = nil
+        textView.text = state.text
+        textView.selectedRange = state.selection
         state.beginTranscribing()
         renderState()
         transcriptionTask?.cancel()
         transcriptionTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let spoken = try await coordinator.stopAndTranscribe(
-                    localeIdentifier: localeIdentifier,
-                    contextualStrings: contextualStrings,
-                    onPartialResult: { [weak self] partialText in
-                        guard let self else { return }
-                        var previewState = stateBeforeTranscription
-                        previewState.finishTranscribing(partialText)
-                        previewState.beginTranscribing()
-                        state = previewState
-                        textView.text = state.text
-                        textView.selectedRange = state.selection
-                        renderState()
-                    }
-                )
-                state = stateBeforeTranscription
-                state.finishTranscribing(spoken)
+                let spoken = try await coordinator.stop()
+                state.finishLiveTranscription(spoken)
                 textView.text = state.text
                 textView.selectedRange = state.selection
             } catch {
-                state.fail(error.localizedDescription)
+                guard !Task.isCancelled else {
+                    transcriptionTask = nil
+                    return
+                }
+                state.failLiveTranscription(error.localizedDescription)
+                textView.text = state.text
+                textView.selectedRange = state.selection
             }
             renderState()
             transcriptionTask = nil
@@ -747,12 +835,28 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
     }
 
     @objc private func applicationDidEnterBackground() {
-        guard state.phase == .recording, let voiceCoordinator else { return }
-        stopAndTranscribe(using: voiceCoordinator)
+        guard state.phase == .recording ||
+                state.phase == .transcribing,
+              let voiceCoordinator else { return }
+        recordingLimitTask?.cancel()
+        recordingStartTask?.cancel()
+        transcriptionTask?.cancel()
+        provisionalRenderTask?.cancel()
+        voiceCoordinator.cancel()
+        state.failLiveTranscription(
+            "Voice entry stopped when the app moved to the background. Your text is unchanged."
+        )
+        textView.text = state.text
+        textView.selectedRange = state.selection
+        renderState()
     }
 
     @objc private func cancelTapped() {
-        guard state.canCancel else { return }
+        recordingStartTask?.cancel()
+        transcriptionTask?.cancel()
+        provisionalRenderTask?.cancel()
+        voiceCoordinator?.cancel()
+        state.cancelLiveTranscription()
         finish(with: NativeTextEditorResult(cancelled: true, text: state.text))
     }
 
@@ -768,7 +872,9 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
     private func finish(with result: NativeTextEditorResult) {
         completed = true
         recordingLimitTask?.cancel()
+        recordingStartTask?.cancel()
         transcriptionTask?.cancel()
+        voiceCoordinator?.cancel()
         microphoneMeter.stop()
         view.endEditing(true)
         dismiss(animated: !UIAccessibility.isReduceMotionEnabled) { [onComplete] in
@@ -777,22 +883,29 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
     }
 
     private func renderState() {
-        cancelButton.isEnabled = state.canCancel
+        cancelButton.isEnabled = true
         doneButton.isHidden = !state.shouldShowSubmitAction(for: mode)
         doneButton.isEnabled = state.canSubmit
         methodControl.isUserInteractionEnabled = state.canCancel
-        voiceMethodButton.isEnabled = state.canCancel
-        keyboardMethodButton.isEnabled = state.canCancel
         updateMethodButtonSelection()
-        textView.isEditable = state.canCancel
+        textView.isEditable =
+            state.canCancel && state.inputMethod == .keyboard
+        textView.isSelectable = state.canCancel
         voiceButton.isHidden = state.inputMethod == .keyboard
 
         switch state.phase {
         case .ready:
-            microphoneMeter.stop()
-            statusLabel.text = state.inputMethod == .voice
-                ? "Ready to listen"
-                : "Keyboard ready"
+            statusLabel.isHidden = true
+            statusLabel.text = nil
+            if state.inputMethod == .voice {
+                microphoneMeter.start(
+                    accessibilityValue: "Voice mode ready"
+                ) { [weak voiceCoordinator] in
+                    voiceCoordinator?.currentPowerLevel ?? 0
+                }
+            } else {
+                microphoneMeter.stop()
+            }
             voiceButton.configuration?.title = "Tap to begin speaking"
             voiceButton.configuration?.baseForegroundColor = Self.readyGreenText
             voiceButton.configuration?.baseBackgroundColor =
@@ -802,11 +915,13 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
             voiceButton.isEnabled = state.inputMethod == .voice
             voiceButton.accessibilityValue = "Not recording"
         case .recording:
-            microphoneMeter.start { [weak voiceCoordinator] in
+            statusLabel.isHidden = false
+            microphoneMeter.start(accessibilityValue: "Recording") {
+                [weak voiceCoordinator] in
                 voiceCoordinator?.currentPowerLevel ?? 0
             }
-            statusLabel.text = "Listening. Tap Stop when you are finished."
-            voiceButton.configuration?.title = "Stop and turn voice into text"
+            statusLabel.text = "Listening. Words appear as you speak."
+            voiceButton.configuration?.title = "Stop listening"
             voiceButton.configuration?.baseForegroundColor = UIColor(
                 red: 114 / 255,
                 green: 38 / 255,
@@ -828,9 +943,10 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
             voiceButton.isEnabled = true
             voiceButton.accessibilityValue = "Recording"
         case .transcribing:
+            statusLabel.isHidden = false
             microphoneMeter.stop()
-            statusLabel.text = "Turning your voice into text…"
-            voiceButton.configuration?.title = "Working…"
+            statusLabel.text = "Finishing your text…"
+            voiceButton.configuration?.title = "Finishing…"
             voiceButton.configuration?.baseBackgroundColor = UIColor(
                 red: 1,
                 green: 241 / 255,
@@ -840,7 +956,16 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
             voiceButton.isEnabled = false
             voiceButton.accessibilityValue = "Transcribing"
         case .error(let message):
-            microphoneMeter.stop()
+            statusLabel.isHidden = false
+            if state.inputMethod == .voice {
+                microphoneMeter.start(
+                    accessibilityValue: "Voice mode ready"
+                ) { [weak voiceCoordinator] in
+                    voiceCoordinator?.currentPowerLevel ?? 0
+                }
+            } else {
+                microphoneMeter.stop()
+            }
             statusLabel.text = message
             voiceButton.configuration?.title = "Try speaking again"
             voiceButton.configuration?.baseForegroundColor = UIColor(
@@ -872,9 +997,7 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
             (keyboardMethodButton, state.inputMethod == .keyboard),
         ]
         for (button, selected) in selections {
-            button.isSelected = selected
-            button.backgroundColor = selected ? Self.warmPaper : .clear
-            button.configuration?.baseForegroundColor = selected
+            let foregroundColor = selected
                 ? Self.ink
                 : UIColor(
                     red: 85 / 255,
@@ -882,6 +1005,16 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
                     blue: 39 / 255,
                     alpha: 1
                 )
+            button.backgroundColor = selected
+                ? UIColor(
+                    red: 234 / 255,
+                    green: 220 / 255,
+                    blue: 195 / 255,
+                    alpha: 1
+                )
+                : .clear
+            button.configuration?.baseForegroundColor = foregroundColor
+            button.tintColor = foregroundColor
             if selected {
                 button.accessibilityTraits.insert(.selected)
             } else {

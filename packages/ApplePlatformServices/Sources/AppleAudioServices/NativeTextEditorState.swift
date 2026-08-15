@@ -23,15 +23,24 @@ public enum NativeKeyboardSessionCoordinator {
     public static func transition(
         to inputMethod: NativeTextInputMethod
     ) -> [NativeKeyboardSessionAction] {
-        [
+        var actions: [NativeKeyboardSessionAction] = [
             .resignFirstResponder,
             inputMethod == .keyboard
                 ? .useSystemInputView
                 : .useHiddenInputView,
             .reloadInputViews,
-            .becomeFirstResponder,
-            .restoreSelection,
         ]
+        if inputMethod == .keyboard {
+            actions.append(.becomeFirstResponder)
+        }
+        actions.append(.restoreSelection)
+        return actions
+    }
+}
+
+public enum NativeTextEditorLayout {
+    public static func editorWidth(safeAreaWidth: CGFloat) -> CGFloat {
+        min(920, max(0, safeAreaWidth - 36))
     }
 }
 
@@ -43,21 +52,30 @@ public enum NativeTextEditorPhase: Equatable, Sendable {
 }
 
 public struct NativeTextEditorState: Equatable, Sendable {
+    private struct LiveAnchor: Equatable, Sendable {
+        let text: String
+        let selection: NSRange
+    }
+
     public var text: String
     public var selection: NSRange
     public var inputMethod: NativeTextInputMethod
     public var phase: NativeTextEditorPhase
+    private var liveAnchor: LiveAnchor?
+    private var liveFinalizedText = ""
+    private var liveProvisionalText = ""
 
     public init(
         text: String,
         selection: NSRange? = nil,
-        inputMethod: NativeTextInputMethod = .voice,
+        inputMethod: NativeTextInputMethod = .keyboard,
         phase: NativeTextEditorPhase = .ready
     ) {
         self.text = text
         self.selection = selection ?? NSRange(location: (text as NSString).length, length: 0)
         self.inputMethod = inputMethod
         self.phase = phase
+        liveAnchor = nil
         clampSelection()
     }
 
@@ -74,7 +92,12 @@ public struct NativeTextEditorState: Equatable, Sendable {
     }
 
     public func shouldShowSubmitAction(for mode: NativeTextEditorMode) -> Bool {
-        mode == .edit || hasPreviewContent
+        switch mode {
+        case .add:
+            hasPreviewContent && canCancel
+        case .edit:
+            true
+        }
     }
 
     public mutating func selectInputMethod(_ inputMethod: NativeTextInputMethod) {
@@ -89,6 +112,57 @@ public struct NativeTextEditorState: Equatable, Sendable {
 
     public mutating func beginRecording() {
         phase = .recording
+    }
+
+    public mutating func beginLiveTranscription() {
+        liveAnchor = LiveAnchor(text: text, selection: selection)
+        liveFinalizedText = ""
+        liveProvisionalText = ""
+        phase = .recording
+    }
+
+    public mutating func updateLivePreview(_ spokenText: String) {
+        guard liveAnchor != nil, phase == .recording else { return }
+        liveProvisionalText = spokenText
+        renderLiveTranscript()
+    }
+
+    public mutating func updateLiveFinalized(_ spokenText: String) {
+        guard liveAnchor != nil,
+              phase == .recording || phase == .transcribing else { return }
+        liveFinalizedText = spokenText
+        liveProvisionalText = ""
+        renderLiveTranscript()
+    }
+
+    public mutating func finishLiveTranscription(_ spokenText: String) {
+        guard let liveAnchor else {
+            finishTranscribing(spokenText)
+            return
+        }
+        text = liveAnchor.text
+        selection = liveAnchor.selection
+        insertSpokenText(spokenText)
+        self.liveAnchor = nil
+        liveFinalizedText = ""
+        liveProvisionalText = ""
+        phase = .ready
+    }
+
+    public mutating func cancelLiveTranscription() {
+        if let liveAnchor {
+            text = liveAnchor.text
+            selection = liveAnchor.selection
+        }
+        liveAnchor = nil
+        liveFinalizedText = ""
+        liveProvisionalText = ""
+        phase = .ready
+    }
+
+    public mutating func failLiveTranscription(_ message: String) {
+        cancelLiveTranscription()
+        phase = .error(message)
     }
 
     public mutating func beginTranscribing() {
@@ -124,6 +198,16 @@ public struct NativeTextEditorState: Equatable, Sendable {
             location: selection.location + (insertion as NSString).length,
             length: 0
         )
+    }
+
+    private mutating func renderLiveTranscript() {
+        guard let liveAnchor else { return }
+        text = liveAnchor.text
+        selection = liveAnchor.selection
+        let transcript = [liveFinalizedText, liveProvisionalText]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        insertSpokenText(transcript)
     }
 
     private mutating func clampSelection() {

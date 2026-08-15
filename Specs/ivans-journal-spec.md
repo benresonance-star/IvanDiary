@@ -850,7 +850,7 @@ nudge and size shortcut buttons stay hidden.
 ### Media
 
 -   add photographs that can cover the 16:9 page
--   keep photograph proportions in Arrange unless turned off
+-   keep photograph proportions in Edit mode unless turned off
 -   paste and open web links from View mode
 -   tappable web links in a shared PDF
 

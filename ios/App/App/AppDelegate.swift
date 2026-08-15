@@ -34,6 +34,40 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
                 data: ["documentId": documentID]
             )
         }
+        created.onCanvasTapped = { [weak self, weak created] point in
+            guard let self,
+                  let created,
+                  let webView = self.bridge?.webView,
+                  let documentID = created.documentID else {
+                return
+            }
+            let webPoint = created.convert(point, to: webView)
+            self.notifyListeners(
+                "overlayTapped",
+                data: [
+                    "documentId": documentID,
+                    "x": webPoint.x,
+                    "y": webPoint.y
+                ]
+            )
+        }
+        created.onCanvasLongPressed = { [weak self, weak created] point in
+            guard let self,
+                  let created,
+                  let webView = self.bridge?.webView,
+                  let documentID = created.documentID else {
+                return
+            }
+            let webPoint = created.convert(point, to: webView)
+            self.notifyListeners(
+                "overlayLongPressed",
+                data: [
+                    "documentId": documentID,
+                    "x": webPoint.x,
+                    "y": webPoint.y
+                ]
+            )
+        }
         self.overlay = created
         return created
     }
@@ -508,10 +542,63 @@ public final class NativeTextEditorPlugin: CAPPlugin, @preconcurrency CAPBridged
     }
 }
 
+@MainActor
+private enum AppOrientationPolicy {
+    static var landscapeLocked = true
+}
+
+@objc(AppOrientationPlugin)
+@MainActor
+public final class AppOrientationPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin {
+    public let identifier = "AppOrientationPlugin"
+    public let jsName = "AppOrientation"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(
+            name: "setLandscapeLocked",
+            returnType: CAPPluginReturnPromise
+        )
+    ]
+
+    @objc public func setLandscapeLocked(_ call: CAPPluginCall) {
+        let locked = call.getBool("locked") ?? true
+        DispatchQueue.main.async { [weak self] in
+            AppOrientationPolicy.landscapeLocked = locked
+            guard let host = self?.bridge?.viewController else {
+                call.reject("The app orientation host is unavailable.")
+                return
+            }
+
+            if #available(iOS 16.0, *) {
+                host.setNeedsUpdateOfSupportedInterfaceOrientations()
+                let mask: UIInterfaceOrientationMask =
+                    locked ? .landscape : .all
+                host.view.window?.windowScene?.requestGeometryUpdate(
+                    .iOS(interfaceOrientations: mask)
+                ) { _ in }
+                call.resolve()
+            } else {
+                if locked {
+                    UIDevice.current.setValue(
+                        UIInterfaceOrientation.landscapeLeft.rawValue,
+                        forKey: "orientation"
+                    )
+                }
+                UIViewController.attemptRotationToDeviceOrientation()
+                call.resolve()
+            }
+        }
+    }
+}
+
 final class AppViewController: CAPBridgeViewController {
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        AppOrientationPolicy.landscapeLocked ? .landscape : .all
+    }
+
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(PencilKitPlugin())
         bridge?.registerPluginInstance(NativeTextEditorPlugin())
+        bridge?.registerPluginInstance(AppOrientationPlugin())
         bridge?.registerPluginInstance(JournalAudioPlugin())
         bridge?.registerPluginInstance(AppleTranscriptionPlugin())
         bridge?.registerPluginInstance(JournalFilesPlugin())
@@ -540,6 +627,27 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
+        guard AppOrientationPolicy.landscapeLocked else { return }
+        if #available(iOS 16.0, *) {
+            window?.rootViewController?
+                .setNeedsUpdateOfSupportedInterfaceOrientations()
+            window?.windowScene?.requestGeometryUpdate(
+                .iOS(interfaceOrientations: .landscape)
+            ) { _ in }
+        } else {
+            UIDevice.current.setValue(
+                UIInterfaceOrientation.landscapeLeft.rawValue,
+                forKey: "orientation"
+            )
+            UIViewController.attemptRotationToDeviceOrientation()
+        }
+    }
+
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        AppOrientationPolicy.landscapeLocked ? .landscape : .all
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

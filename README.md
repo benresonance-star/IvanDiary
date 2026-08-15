@@ -19,7 +19,7 @@ The Windows development foundation includes:
 - operation replay, idempotency, schema migration and recovery tests;
 - working Diary, Sketchbooks, Favourites and accessibility Settings views;
 - constrained text, photo, link, transcript and voice-card composition;
-- an accessible Arrange mode for moving and stretching page objects;
+- an accessible Edit mode for moving and stretching page objects;
 - durable multi-page diary days with visual, reorderable page thumbnails;
 - named, multi-page sketchbooks using the full shared page workspace;
 - typed or spoken sketchbook naming, renaming and directory reordering;

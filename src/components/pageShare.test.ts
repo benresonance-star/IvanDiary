@@ -8,6 +8,8 @@ import {
   pageShareTitle,
   paperShareRect,
   shareFileStem,
+  storyShareLinks,
+  storyShareRecordings,
 } from "./pageShare";
 
 function pageWithRecording(overrides?: Partial<Page>): Page {
@@ -53,7 +55,7 @@ function pageWithRecording(overrides?: Partial<Page>): Page {
 }
 
 describe("pageShare helpers", () => {
-  it("names diary and sketchbook shares from the display name", () => {
+  it("names diary, sketchbook, and Story shares from the display name", () => {
     expect(
       pageShareTitle({
         displayName: "Ivan",
@@ -69,6 +71,38 @@ describe("pageShare helpers", () => {
         },
       }),
     ).toBe("Ivan Garden birds");
+    expect(
+      pageShareTitle({
+        displayName: "Ivan",
+        context: { kind: "story", pageNumber: 2 },
+      }),
+    ).toBe("Ivan My Story page 2");
+  });
+
+  it("attaches durable Story recordings", () => {
+    const snapshot = createInitialJournalSnapshot(
+      new Date("2026-08-14T09:00:00.000Z"),
+    );
+    const page = snapshot.myStory!.pages[0]!;
+    page.recordings = [{
+      id: "story-voice",
+      asset: {
+        id: "story-audio",
+        localUri: "file:///story.m4a",
+        mimeType: "audio/mp4",
+        byteLength: 12,
+        checksum: "story-sum",
+      },
+      durationMs: 1_200,
+      transcriptionStatus: "not-requested",
+      revision: 0,
+      createdAt: page.createdAt,
+    }];
+
+    expect(storyShareRecordings(page)).toEqual({
+      hasRecordings: true,
+      audioUris: ["file:///story.m4a"],
+    });
   });
 
   it("keeps a filesystem-safe file stem", () => {
@@ -153,6 +187,47 @@ describe("pageShare helpers", () => {
         height: 0.12,
       },
     ]);
+  });
+
+  it("maps Story link cards into tappable PDF regions", () => {
+    const snapshot = createInitialJournalSnapshot(
+      new Date("2026-08-14T09:00:00.000Z"),
+    );
+    const page = snapshot.myStory!.pages[0]!;
+    page.links = [{
+      id: "story-link",
+      url: "https://example.com/memory",
+      title: "Family archive",
+      revision: 0,
+      createdAt: page.createdAt,
+    }];
+    const paper = document.createElement("div");
+    const link = document.createElement("button");
+    link.dataset.storyLinkId = "story-link";
+    paper.append(link);
+    Object.defineProperty(paper, "getBoundingClientRect", {
+      value: () => ({
+        x: 10, y: 20, width: 400, height: 800,
+        top: 20, left: 10, right: 410, bottom: 820,
+        toJSON: () => undefined,
+      }),
+    });
+    Object.defineProperty(link, "getBoundingClientRect", {
+      value: () => ({
+        x: 50, y: 100, width: 200, height: 80,
+        top: 100, left: 50, right: 250, bottom: 180,
+        toJSON: () => undefined,
+      }),
+    });
+
+    expect(storyShareLinks(page, paper)).toEqual([{
+      url: "https://example.com/memory",
+      title: "Family archive",
+      x: 0.1,
+      y: 0.1,
+      width: 0.5,
+      height: 0.1,
+    }]);
   });
 
   it("ignores a paper target that is too small to capture", () => {

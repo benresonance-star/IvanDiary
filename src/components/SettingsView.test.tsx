@@ -123,3 +123,30 @@ describe("SettingsView text editor preference", () => {
     });
   });
 });
+
+describe("SettingsView app orientation", () => {
+  it("defaults to the standard landscape appearance and can disable it", () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        disconnect() {}
+        observe() {}
+        unobserve() {}
+      },
+    );
+    const commit = vi.fn();
+    renderSettings({ commit });
+    fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+
+    const standardAppearance = screen.getByRole("checkbox", {
+      name: "Standard app appearance",
+    });
+    expect(standardAppearance).toBeChecked();
+    fireEvent.click(standardAppearance);
+
+    expect(commit).toHaveBeenCalledWith({
+      type: "settings-update",
+      settings: { standardAppAppearance: false },
+    });
+  });
+});

@@ -62,6 +62,7 @@ describe("accessible navigation and settings", () => {
       "aria-current",
       "page",
     );
+    expect(screen.getByRole("button", { name: "My Story" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "My Favourites" }));
     expect(onSectionChange).toHaveBeenCalledWith("favourites");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -108,6 +109,7 @@ describe("accessible navigation and settings", () => {
           ],
           favouriteColourLongPressEnabled: true,
           favouriteColourLongPressSeconds: 2,
+          standardAppAppearance: true,
           penNib: "pen",
           penNibProfiles: {
             pen: { color: "#171410", width: 4.2, opacity: 1 },

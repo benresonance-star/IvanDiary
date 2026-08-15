@@ -28,6 +28,22 @@ export function reconcileCloudRestore(
           : object,
       ),
     })),
+    myStory: snapshot.myStory
+      ? {
+          ...snapshot.myStory,
+          pages: snapshot.myStory.pages.map((page) => ({
+            ...page,
+            photos: page.photos.map((photo) => ({
+              ...photo,
+              asset: updateAsset(photo.asset),
+            })),
+            recordings: page.recordings.map((recording) => ({
+              ...recording,
+              asset: updateAsset(recording.asset),
+            })),
+          })),
+        }
+      : undefined,
     settings: {
       ...snapshot.settings,
       myWords: snapshot.settings.myWords.map((word) =>

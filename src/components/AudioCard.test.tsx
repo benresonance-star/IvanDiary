@@ -43,63 +43,20 @@ describe("AudioCard transcription state", () => {
     });
   });
 
-  it("keeps playback and offers transcription retry after failure", () => {
-    const retry = vi.fn();
-    render(
-      <AudioCard
-        audio={new BrowserJournalAudioMock()}
-        onConvertToText={retry}
-        recording={recording}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: "Play voice recording" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(retry).toHaveBeenCalledOnce();
-  });
-
-  it("announces transcription, disables conversion, and preserves playback", () => {
+  it("shows only playback regardless of transcription state", () => {
     render(
       <AudioCard
         audio={new BrowserJournalAudioMock()}
         onConvertToText={vi.fn()}
-        recording={{ ...recording, transcriptionStatus: "transcribing" }}
-      />,
-    );
-
-    expect(screen.getByText("Converting recording to text…")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Converting…" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Play voice recording" })).toBeEnabled();
-  });
-
-  it("allows recordings left pending by an older app build to generate text", () => {
-    const generate = vi.fn();
-    render(
-      <AudioCard
-        audio={new BrowserJournalAudioMock()}
-        onConvertToText={generate}
-        recording={{ ...recording, transcriptionStatus: "pending" }}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Convert to text" }));
-    expect(generate).toHaveBeenCalledOnce();
-  });
-
-  it("shows large labelled playback and opt-in conversion for a saved recording", () => {
-    const convert = vi.fn();
-    render(
-      <AudioCard
-        audio={new BrowserJournalAudioMock()}
-        onConvertToText={convert}
-        recording={{ ...recording, transcriptionStatus: "not-requested" }}
+        recording={recording}
       />,
     );
 
     expect(
       screen.getByRole("button", { name: "Play voice recording" }),
     ).toHaveTextContent("Play");
-    fireEvent.click(screen.getByRole("button", { name: "Convert to text" }));
-    expect(convert).toHaveBeenCalledOnce();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    expect(screen.queryByText(/convert|converting|try again/i))
+      .not.toBeInTheDocument();
   });
 });

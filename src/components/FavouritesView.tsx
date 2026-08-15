@@ -63,7 +63,7 @@ export function FavouritesView({
           type="button"
         >
           <Move aria-hidden="true" />
-          {arranging ? "Done arranging" : "Arrange"}
+          {arranging ? "Done editing" : "Edit"}
         </button>
       </header>
 

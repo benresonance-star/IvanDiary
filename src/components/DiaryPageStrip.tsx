@@ -10,7 +10,13 @@ import {
   type PointerEvent,
 } from "react";
 
-import { MAX_PAGES_PER_COLLECTION, type Page, type PageObject } from "../domain/models";
+import {
+  MAX_PAGES_PER_COLLECTION,
+  type MyStoryPage,
+  type Page,
+  type PageObject,
+  type PaperStyle,
+} from "../domain/models";
 import type { SketchRepository } from "../sketch/types";
 import { defaultObjectFrame } from "./arrangeGeometry";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -133,6 +139,12 @@ type NativePageDrag = {
   targetPageId?: string;
 };
 
+type PageStripPage = Page | MyStoryPage;
+
+function pagePaperStyle(page: PageStripPage): PaperStyle {
+  return "paperStyle" in page ? page.paperStyle : "warm-journal";
+}
+
 export function DiaryPageStrip({
   activePageId,
   addPageLabel = "Add another diary page",
@@ -150,13 +162,13 @@ export function DiaryPageStrip({
   addPageLabel?: string;
   arrange: boolean;
   collectionLabel?: string;
-  collectionType?: "journal" | "sketchbook";
+  collectionType?: "journal" | "sketchbook" | "story";
   displayName: string;
   onAddPage: () => Promise<boolean>;
   onDeletePage: (pageId: string) => Promise<boolean>;
   onReorderPages: (pageIds: string[]) => Promise<boolean>;
   onSelectPage: (pageId: string) => void;
-  pages: Page[];
+  pages: PageStripPage[];
 }) {
   const initialOrder = pages.map((page) => page.id);
   const activeDragRef = useRef<ActivePageDrag | undefined>(undefined);
@@ -165,7 +177,8 @@ export function DiaryPageStrip({
   const suppressClickRef = useRef(false);
   const [draggedPageId, setDraggedPageId] = useState<string>();
   const [pageLimitWarningOpen, setPageLimitWarningOpen] = useState(false);
-  const [pagePendingDelete, setPagePendingDelete] = useState<Page>();
+  const [pagePendingDelete, setPagePendingDelete] =
+    useState<PageStripPage>();
   const [orderedPageIds, setOrderedPageIds] = useState(initialOrder);
 
   useEffect(() => {
@@ -399,8 +412,12 @@ export function DiaryPageStrip({
   };
 
   return (
-    <nav aria-label={collectionLabel} className="diary-page-strip">
-      <div className="diary-page-list" role="list">
+    <nav
+      aria-label={collectionLabel}
+      className={arrange ? "diary-page-strip" : "story-page-strip"}
+    >
+      {arrange ? (
+        <div className="diary-page-list" role="list">
         {orderedPages.map((page, index) => {
           const pageNumber = index + 1;
           const current = page.id === activePageId;
@@ -438,7 +455,7 @@ export function DiaryPageStrip({
               >
                 <span
                   aria-hidden="true"
-                  className={`diary-page-preview paper-${page.paperStyle}`}
+                  className={`diary-page-preview paper-${pagePaperStyle(page)}`}
                 >
                   <span className="page-preview-label">Page {pageNumber}</span>
                 </span>
@@ -488,7 +505,44 @@ export function DiaryPageStrip({
             </span>
           </button>
         </div>
-      </div>
+        </div>
+      ) : (
+        <>
+          {orderedPages.map((page, index) => (
+            <div className="story-page-item" key={page.id}>
+              <button
+                aria-current={page.id === activePageId ? "page" : undefined}
+                className={page.id === activePageId ? "current" : ""}
+                onClick={() => onSelectPage(page.id)}
+                type="button"
+              >
+                Page {index + 1}
+              </button>
+            </div>
+          ))}
+          <button
+            aria-label={
+              pageLimitReached ? "Maximum of 10 pages reached" : addPageLabel
+            }
+            className="story-add-page"
+            disabled={pageLimitReached}
+            onClick={() => {
+              void onAddPage().then((added) => {
+                if (
+                  added &&
+                  pages.length === MAX_PAGES_PER_COLLECTION - 1
+                ) {
+                  setPageLimitWarningOpen(true);
+                }
+              });
+            }}
+            type="button"
+          >
+            <Plus aria-hidden="true" />
+            Page
+          </button>
+        </>
+      )}
       {pagePendingDelete ? (
         <ConfirmDialog
           cancelLabel="Keep it"
@@ -503,7 +557,12 @@ export function DiaryPageStrip({
           }}
           title="Delete this page?"
         >
-          <p>This removes its drawing, text, photos and recordings from this diary.</p>
+          <p>
+            This removes its drawing, text, photos and recordings{" "}
+            {collectionType === "story"
+              ? "from My Story."
+              : `from this ${collectionType}.`}
+          </p>
         </ConfirmDialog>
       ) : null}
       {pageLimitWarningOpen

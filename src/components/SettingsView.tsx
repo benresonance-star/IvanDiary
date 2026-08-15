@@ -279,6 +279,25 @@ export function SettingsView({
           <div>
             <h2>Voice</h2>
             <p className="setting-description">Choose a safety limit and words Apple should expect to hear.</p>
+            <section
+              aria-labelledby="voice-text-editor-heading"
+              className="voice-setting-section"
+            >
+              <h3 id="voice-text-editor-heading">Text entry</h3>
+              <SettingToggle
+                checked={settings.textEditorPreference === "native"}
+                description="Turn this off to use the standard editor. Both editors use Apple speech recognition."
+                label="Use native Apple text editor"
+                onChange={(enabled) =>
+                  commit({
+                    type: "settings-update",
+                    settings: {
+                      textEditorPreference: enabled ? "native" : "standard",
+                    },
+                  })
+                }
+              />
+            </section>
             <section className="voice-setting-section" aria-labelledby="voice-recording-heading">
               <h3 id="voice-recording-heading">Recording time</h3>
               <p className="setting-description">Choose how long one recording can continue before it stops safely.</p>
@@ -302,25 +321,6 @@ export function SettingsView({
                   <ChevronDown aria-hidden="true" />
                 </span>
               </label>
-            </section>
-            <section
-              aria-labelledby="voice-text-editor-heading"
-              className="voice-setting-section"
-            >
-              <h3 id="voice-text-editor-heading">Text entry</h3>
-              <SettingToggle
-                checked={settings.textEditorPreference === "native"}
-                description="Turn this off to use the standard editor. Both editors use Apple speech recognition."
-                label="Use native Apple text editor"
-                onChange={(enabled) =>
-                  commit({
-                    type: "settings-update",
-                    settings: {
-                      textEditorPreference: enabled ? "native" : "standard",
-                    },
-                  })
-                }
-              />
             </section>
             <MyWordsSettingsPanel
               audio={audio}

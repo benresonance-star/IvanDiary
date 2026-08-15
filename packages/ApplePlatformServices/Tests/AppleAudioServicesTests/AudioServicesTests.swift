@@ -210,6 +210,67 @@ import Testing
     #expect(state.hasPreviewContent)
     #expect(state.canSubmit)
     #expect(state.shouldShowSubmitAction(for: .add))
+
+    state.beginRecording()
+    #expect(!state.shouldShowSubmitAction(for: .add))
+    #expect(state.shouldShowSubmitAction(for: .edit))
+}
+
+@Test func nativeTextEditorDefaultsToKeyboard() {
+    let state = NativeTextEditorState(text: "")
+    #expect(state.inputMethod == .keyboard)
+}
+
+@Test func nativeTextEditorReplacesAndCommitsLivePreviewOnce() {
+    var state = NativeTextEditorState(
+        text: "Hello world",
+        selection: NSRange(location: 6, length: 5)
+    )
+    state.beginLiveTranscription()
+    state.updateLivePreview("Ivan")
+    #expect(state.text == "Hello Ivan")
+    state.updateLivePreview("Ivan Banksia")
+    #expect(state.text == "Hello Ivan Banksia")
+    state.finishLiveTranscription("Ivan Banksia.")
+    #expect(state.text == "Hello Ivan Banksia.")
+    #expect(state.phase == .ready)
+}
+
+@Test func nativeTextEditorRestoresDraftWhenLiveVoiceFails() {
+    var state = NativeTextEditorState(
+        text: "Keep this",
+        selection: NSRange(location: 4, length: 0)
+    )
+    state.beginLiveTranscription()
+    state.updateLivePreview("temporary words")
+    state.failLiveTranscription("Voice stopped")
+    #expect(state.text == "Keep this")
+    #expect(state.selection == NSRange(location: 4, length: 0))
+    #expect(state.phase == .error("Voice stopped"))
+}
+
+@Test func nativeTextEditorIgnoresLatePartialWhileFinishing() {
+    var state = NativeTextEditorState(text: "Draft")
+    state.beginLiveTranscription()
+    state.updateLivePreview("first words")
+    state.beginTranscribing()
+    state.updateLivePreview("late replacement")
+
+    #expect(state.phase == .transcribing)
+    #expect(state.text == "Draft first words")
+}
+
+@Test func nativeTextEditorKeepsFinalAndProvisionalSpeechSeparate() {
+    var state = NativeTextEditorState(text: "Draft")
+    state.beginLiveTranscription()
+    state.updateLiveFinalized("Hello")
+    state.updateLivePreview("world")
+    #expect(state.text == "Draft Hello world")
+    state.updateLivePreview("world again")
+    #expect(state.text == "Draft Hello world again")
+    state.beginTranscribing()
+    state.finishLiveTranscription("Hello world again")
+    #expect(state.text == "Draft Hello world again")
 }
 
 @Test func nativeKeyboardTransitionsRebuildInputSessionBeforeRestoringSelection() {
@@ -227,10 +288,16 @@ import Testing
             .resignFirstResponder,
             .useHiddenInputView,
             .reloadInputViews,
-            .becomeFirstResponder,
             .restoreSelection,
         ]
     )
+}
+
+@Test func nativeTextEditorWidthDependsOnlyOnSafeArea() {
+    #expect(NativeTextEditorLayout.editorWidth(safeAreaWidth: 1_330) == 920)
+    #expect(NativeTextEditorLayout.editorWidth(safeAreaWidth: 980) == 920)
+    #expect(NativeTextEditorLayout.editorWidth(safeAreaWidth: 744) == 708)
+    #expect(NativeTextEditorLayout.editorWidth(safeAreaWidth: 600) == 564)
 }
 
 @Test func firstGenerationIPadCapabilityProfileAlwaysUsesSpeechRecognizer() {
@@ -278,78 +345,48 @@ import Testing
 }
 
 @MainActor
-private final class FakeTextRecorder: NativeTextRecording {
-    let temporaryURL: URL
-    var acknowledged = false
-    var stopped = false
-    var maximumDurationMilliseconds: Int?
-
-    init(temporaryURL: URL) {
-        self.temporaryURL = temporaryURL
-    }
+private final class FakeLiveSpeechRecognizer: NativeTextLiveRecognizing {
+    var currentPowerLevel: Float = 0.72
+    var contextualStrings: [String] = []
+    var localeIdentifier = ""
+    var startError: Error?
+    var stopError: Error?
+    var stoppedText = "Hello Ivan"
+    var cancelled = false
+    var startCount = 0
+    var sessionID = UUID()
+    var eventHandler:
+        (@MainActor @Sendable (NativeTextLiveEvent) -> Void)?
 
     func start(
-        maximumDurationMilliseconds: Int?
-    ) async throws -> JournalRecordingSnapshot {
-        self.maximumDurationMilliseconds = maximumDurationMilliseconds
-        return JournalRecordingSnapshot(
-            id: "voice",
-            state: .recording,
-            temporaryURL: temporaryURL
-        )
-    }
-
-    func currentPowerLevel() -> Float { 0.72 }
-
-    func stop() throws -> JournalRecordingSnapshot {
-        stopped = true
-        return JournalRecordingSnapshot(
-            id: "voice",
-            state: .finalising,
-            temporaryURL: temporaryURL
-        )
-    }
-
-    func acknowledgeSaved() throws -> JournalRecordingSnapshot {
-        acknowledged = true
-        return JournalRecordingSnapshot(id: "voice", state: .saved)
-    }
-}
-
-@MainActor
-private final class FakeTextTranscriber: NativeTextTranscribing {
-    var permission = true
-    var contextualStrings: [String] = []
-
-    func requestPermission() async -> Bool {
-        permission
-    }
-
-    func transcribe(
-        fileURL _: URL,
+        sessionID: UUID,
         localeIdentifier: String,
         contextualStrings: [String],
-        onPartialResult: (@MainActor @Sendable (String) -> Void)?
-    ) async throws -> JournalTranscriptionResult {
+        onEvent:
+            @escaping @MainActor @Sendable (NativeTextLiveEvent) -> Void
+    ) async throws {
+        if let startError { throw startError }
+        startCount += 1
+        self.sessionID = sessionID
+        self.localeIdentifier = localeIdentifier
         self.contextualStrings = contextualStrings
-        onPartialResult?("Hello")
-        return JournalTranscriptionResult(
-            text: "Hello Ivan",
-            locale: localeIdentifier,
-            segments: []
+        eventHandler = onEvent
+        onEvent(
+            .provisional(sessionID: sessionID, text: "Hello", sequence: 1)
         )
     }
-}
 
-private final class FakeTextStorage: NativeTextStorageChecking {
-    let lowStorage: Bool
-
-    init(lowStorage: Bool) {
-        self.lowStorage = lowStorage
+    func stop() async throws -> String {
+        if let stopError { throw stopError }
+        return stoppedText
     }
 
-    func storageHealth(lowStorageThreshold _: Int64) -> StorageHealth {
-        StorageHealth(availableBytes: nil, lowStorage: lowStorage)
+    func cancel() {
+        cancelled = true
+    }
+
+    func interrupt() {
+        eventHandler?(.failed(sessionID: sessionID, error: .interrupted))
     }
 }
 
@@ -359,88 +396,120 @@ private final class PartialTextCollector {
 }
 
 @MainActor
-@Test func nativeVoiceTranscriptionCleansTemporaryAudioAndCapsMyWords() async throws {
-    let root = FileManager.default.temporaryDirectory
-        .appendingPathComponent(UUID().uuidString)
-    try FileManager.default.createDirectory(
-        at: root,
-        withIntermediateDirectories: true
-    )
-    defer { try? FileManager.default.removeItem(at: root) }
-    let temporaryURL = root.appendingPathComponent("voice.m4a")
-    try Data("voice".utf8).write(to: temporaryURL)
-    let recorder = FakeTextRecorder(temporaryURL: temporaryURL)
-    let transcriber = FakeTextTranscriber()
+@Test func nativeLiveVoiceCapsMyWordsAndPublishesPartials() async throws {
+    let recognizer = FakeLiveSpeechRecognizer()
     let partials = PartialTextCollector()
     let coordinator = NativeTextVoiceCoordinator(
-        recorder: recorder,
-        transcriber: transcriber,
-        storage: FakeTextStorage(lowStorage: false)
+        liveRecognizer: recognizer
     )
 
-    try await coordinator.start(maximumDurationMilliseconds: 5_000)
-    #expect(recorder.maximumDurationMilliseconds == 5_000)
-    #expect(coordinator.currentPowerLevel == 0.72)
-    let text = try await coordinator.stopAndTranscribe(
+    try await coordinator.start(
         localeIdentifier: "en-AU",
         contextualStrings: (0..<120).map { "Word \($0)" },
-        onPartialResult: { partials.values.append($0) }
+        onEvent: {
+            if case .provisional(_, let text, _) = $0 {
+                partials.values.append(text)
+            }
+        }
     )
+    #expect(coordinator.recording)
+    #expect(coordinator.currentPowerLevel == 0.72)
+    let text = try await coordinator.stop()
 
     #expect(text == "Hello Ivan")
-    #expect(transcriber.contextualStrings.count == 100)
+    #expect(recognizer.localeIdentifier == "en-AU")
+    #expect(recognizer.contextualStrings.count == 100)
     #expect(partials.values == ["Hello"])
-    #expect(recorder.acknowledged)
-    #expect(!FileManager.default.fileExists(atPath: temporaryURL.path))
+    #expect(!coordinator.recording)
 }
 
 @MainActor
-@Test func nativeVoicePermissionFailureKeepsCleanupGuarantee() async throws {
-    let root = FileManager.default.temporaryDirectory
-        .appendingPathComponent(UUID().uuidString)
-    try FileManager.default.createDirectory(
-        at: root,
-        withIntermediateDirectories: true
-    )
-    defer { try? FileManager.default.removeItem(at: root) }
-    let temporaryURL = root.appendingPathComponent("voice.m4a")
-    try Data("voice".utf8).write(to: temporaryURL)
-    let recorder = FakeTextRecorder(temporaryURL: temporaryURL)
-    let transcriber = FakeTextTranscriber()
-    transcriber.permission = false
+@Test func nativeLiveVoiceMapsPermissionFailure() async {
+    let recognizer = FakeLiveSpeechRecognizer()
+    recognizer.startError = AppleLiveSpeechError.speechPermissionDenied
     let coordinator = NativeTextVoiceCoordinator(
-        recorder: recorder,
-        transcriber: transcriber,
-        storage: FakeTextStorage(lowStorage: false)
+        liveRecognizer: recognizer
     )
 
-    try await coordinator.start(maximumDurationMilliseconds: 5_000)
-    #expect(recorder.maximumDurationMilliseconds == 5_000)
-    #expect(coordinator.currentPowerLevel == 0.72)
     await #expect(throws: NativeTextVoiceError.self) {
-        try await coordinator.stopAndTranscribe(
+        try await coordinator.start(
             localeIdentifier: "en-AU",
-            contextualStrings: []
+            contextualStrings: [],
+            onEvent: { _ in }
         )
     }
-
-    #expect(recorder.acknowledged)
-    #expect(!FileManager.default.fileExists(atPath: temporaryURL.path))
+    #expect(!coordinator.recording)
 }
 
 @MainActor
-@Test func nativeVoiceRejectsLowStorageBeforeStartingRecorder() async {
-    let recorder = FakeTextRecorder(
-        temporaryURL: URL(fileURLWithPath: "/tmp/not-created.m4a")
-    )
+@Test func nativeLiveVoiceCancelStopsRecognition() async throws {
+    let recognizer = FakeLiveSpeechRecognizer()
     let coordinator = NativeTextVoiceCoordinator(
-        recorder: recorder,
-        transcriber: FakeTextTranscriber(),
-        storage: FakeTextStorage(lowStorage: true)
+        liveRecognizer: recognizer
     )
 
-    await #expect(throws: NativeTextVoiceError.self) {
-        try await coordinator.start(maximumDurationMilliseconds: nil)
-    }
+    try await coordinator.start(
+        localeIdentifier: "en-AU",
+        contextualStrings: [],
+        onEvent: { _ in }
+    )
+    coordinator.cancel()
+
+    #expect(recognizer.cancelled)
     #expect(!coordinator.recording)
+}
+
+@MainActor
+@Test func nativeLiveVoiceReportsInterruptionAndCanRestart() async throws {
+    let recognizer = FakeLiveSpeechRecognizer()
+    let coordinator = NativeTextVoiceCoordinator(
+        liveRecognizer: recognizer
+    )
+    var receivedError: AppleLiveSpeechError?
+
+    try await coordinator.start(
+        localeIdentifier: "en-AU",
+        contextualStrings: [],
+        onEvent: {
+            if case .failed(_, let error) = $0 {
+                receivedError = error
+            }
+        }
+    )
+    recognizer.interrupt()
+    #expect(receivedError != nil)
+    #expect(!coordinator.recording)
+    coordinator.cancel()
+    try await coordinator.start(
+        localeIdentifier: "en-AU",
+        contextualStrings: [],
+        onEvent: { _ in }
+    )
+
+    #expect(recognizer.startCount == 2)
+    #expect(coordinator.recording)
+}
+
+@MainActor
+@Test func nativeLiveVoiceMapsNoSpeechAndTimeoutOutcomes() async throws {
+    let recognizer = FakeLiveSpeechRecognizer()
+    let coordinator = NativeTextVoiceCoordinator(
+        liveRecognizer: recognizer
+    )
+
+    for error in [
+        AppleLiveSpeechError.noSpeechRecognized,
+        AppleLiveSpeechError.timedOut,
+    ] {
+        recognizer.stopError = error
+        try await coordinator.start(
+            localeIdentifier: "en-AU",
+            contextualStrings: [],
+            onEvent: { _ in }
+        )
+        await #expect(throws: NativeTextVoiceError.self) {
+            try await coordinator.stop()
+        }
+        #expect(!coordinator.recording)
+    }
 }

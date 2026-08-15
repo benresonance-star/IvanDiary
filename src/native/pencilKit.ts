@@ -10,6 +10,9 @@ import type { DrawingGridSettings } from "../domain/models";
 
 const pencilKit = registerPlugin<PencilKitPlugin>("PencilKit");
 export const NATIVE_DRAWING_UPDATED_EVENT = "native-drawing-updated";
+export const NATIVE_DRAWING_TAPPED_EVENT = "native-drawing-tapped";
+export const NATIVE_DRAWING_LONG_PRESSED_EVENT =
+  "native-drawing-long-pressed";
 
 export type NativeDrawingPreview = PencilKitPreview & {
   previewSrc?: string;
@@ -189,12 +192,35 @@ export async function getNativeDrawingPreview(
 }
 
 export async function subscribeNativeDrawingChanges(): Promise<() => void> {
-  const handle = await pencilKit.addListener("drawingChanged", ({ documentId }) => {
-    globalThis.dispatchEvent(
-      new CustomEvent(NATIVE_DRAWING_UPDATED_EVENT, { detail: { documentId } }),
-    );
-  });
-  return () => void handle.remove();
+  const [drawingHandle, tapHandle, longPressHandle] = await Promise.all([
+    pencilKit.addListener("drawingChanged", ({ documentId }) => {
+      globalThis.dispatchEvent(
+        new CustomEvent(NATIVE_DRAWING_UPDATED_EVENT, { detail: { documentId } }),
+      );
+    }),
+    pencilKit.addListener("overlayTapped", ({ documentId, x, y }) => {
+      globalThis.dispatchEvent(
+        new CustomEvent(NATIVE_DRAWING_TAPPED_EVENT, {
+          detail: { documentId, x, y },
+        }),
+      );
+    }),
+    pencilKit.addListener(
+      "overlayLongPressed",
+      ({ documentId, x, y }) => {
+        globalThis.dispatchEvent(
+          new CustomEvent(NATIVE_DRAWING_LONG_PRESSED_EVENT, {
+            detail: { documentId, x, y },
+          }),
+        );
+      },
+    ),
+  ]);
+  return () => {
+    void drawingHandle.remove();
+    void tapHandle.remove();
+    void longPressHandle.remove();
+  };
 }
 
 function notifyDrawingUpdated(documentId: string, saved: boolean) {

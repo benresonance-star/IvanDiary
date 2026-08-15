@@ -106,7 +106,7 @@ describe("FavouritesView", () => {
     expect(onOpenFavourite).toHaveBeenCalledWith(favourite);
   });
 
-  it("removes a favourite through Arrange mode after confirmation", () => {
+  it("removes a favourite through Edit mode after confirmation", () => {
     const snapshot = createInitialJournalSnapshot(
       new Date("2026-08-03T09:00:00.000Z"),
     );
@@ -128,7 +128,7 @@ describe("FavouritesView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Arrange" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.click(
       screen.getByRole("button", { name: /Remove 3 August 2026 from favourites/i }),
     );
@@ -144,7 +144,7 @@ describe("FavouritesView", () => {
     });
   });
 
-  it("reorders favourites and labels removal controls in Arrange mode", () => {
+  it("reorders favourites and labels removal controls in Edit mode", () => {
     const snapshot = createInitialJournalSnapshot(
       new Date("2026-08-03T09:00:00.000Z"),
     );
@@ -174,7 +174,7 @@ describe("FavouritesView", () => {
       />,
     );
 
-    const arrangeButton = screen.getByRole("button", { name: "Arrange" });
+    const arrangeButton = screen.getByRole("button", { name: "Edit" });
     fireEvent.click(arrangeButton);
     expect(arrangeButton).toHaveClass("arrange-action", "selected");
     expect(
@@ -301,7 +301,7 @@ describe("SketchbooksView", () => {
     );
   });
 
-  it("renames and reorders sketchbooks in Arrange mode", async () => {
+  it("renames and reorders sketchbooks in Edit mode", async () => {
     const snapshot = createInitialJournalSnapshot(
       new Date("2026-08-03T09:00:00.000Z"),
     );
@@ -332,7 +332,7 @@ describe("SketchbooksView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Arrange" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.click(screen.getAllByRole("button", { name: "Rename" })[0]!);
     fireEvent.change(
       screen.getByRole("textbox", { name: "Sketchbook name" }),
@@ -355,7 +355,7 @@ describe("SketchbooksView", () => {
     ]);
   });
 
-  it("confirms sketchbook deletion from Arrange mode", () => {
+  it("confirms sketchbook deletion from Edit mode", () => {
     const snapshot = createInitialJournalSnapshot(
       new Date("2026-08-03T09:00:00.000Z"),
     );
@@ -377,7 +377,7 @@ describe("SketchbooksView", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Arrange" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.click(
       screen.getByRole("button", { name: `Delete ${sketchbook.name}` }),
     );

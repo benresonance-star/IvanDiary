@@ -701,4 +701,141 @@ describe("document operations", () => {
     ).toEqual({ x: 0.45, y: 0.35 });
     expect(moved.appliedOperationIds).toContain("move-text-block");
   });
+
+  it("updates structured My Story content and layout durably", () => {
+    const storyPage = initial.myStory!.pages[0]!;
+    const withText = applyDocumentOperation(initial, {
+      id: "add-story-heading",
+      type: "my-story-text-add",
+      journalId: initial.id,
+      baseRevision: 0,
+      resultingRevision: 1,
+      createdAt: "2026-08-03T10:00:00.000Z",
+      pageId: storyPage.id,
+      block: {
+        id: "story-heading",
+        text: "Growing up",
+        role: "heading",
+        color: "#245b8a",
+        revision: 0,
+        createdAt: "2026-08-03T10:00:00.000Z",
+      },
+    });
+    const resized = applyDocumentOperation(withText, {
+      id: "resize-story-sides",
+      type: "my-story-layout-update",
+      journalId: initial.id,
+      baseRevision: 1,
+      resultingRevision: 2,
+      createdAt: "2026-08-03T10:01:00.000Z",
+      pageId: storyPage.id,
+      splitRatio: 0.6,
+      textSide: "right",
+      textBackgroundColor: "#f4ead8",
+      textColor: "#171410",
+    });
+
+    expect(withText.myStory?.defaultTextColor).toBe("#245b8a");
+    expect(resized.myStory?.pages[0]).toEqual(
+      expect.objectContaining({
+        splitRatio: 0.6,
+        textSide: "right",
+        textBackgroundColor: "#f4ead8",
+        textColor: "#171410",
+        textBlocks: [
+          expect.objectContaining({
+            text: "Growing up",
+            role: "heading",
+            color: "#171410",
+          }),
+        ],
+      }),
+    );
+    expect(resized.myStory?.defaultTextColor).toBe("#171410");
+
+    const contrastAdjusted = applyDocumentOperation(withText, {
+      id: "adjust-story-contrast",
+      type: "my-story-layout-update",
+      journalId: initial.id,
+      baseRevision: 1,
+      resultingRevision: 2,
+      createdAt: "2026-08-03T10:01:00.000Z",
+      pageId: storyPage.id,
+      textBackgroundColor: "#245b8a",
+    });
+    expect(contrastAdjusted.myStory?.pages[0]).toEqual(
+      expect.objectContaining({
+        textBackgroundColor: "#245b8a",
+        textColor: "#ffffff",
+        textBlocks: [
+          expect.objectContaining({ color: "#ffffff" }),
+        ],
+      }),
+    );
+
+    const withRecording = applyDocumentOperation(initial, {
+      id: "add-story-recording",
+      type: "my-story-recording-add",
+      journalId: initial.id,
+      baseRevision: 0,
+      resultingRevision: 1,
+      createdAt: "2026-08-03T10:02:00.000Z",
+      pageId: storyPage.id,
+      recording: {
+        id: "story-recording",
+        asset: {
+          id: "story-recording-asset",
+          localUri: "file:///story-recording.m4a",
+          mimeType: "audio/mp4",
+          byteLength: 128,
+          checksum: "story-recording-checksum",
+        },
+        durationMs: 2_000,
+        transcriptionStatus: "not-requested",
+        revision: 0,
+        createdAt: "2026-08-03T10:02:00.000Z",
+      },
+    });
+    expect(withRecording.myStory?.pages[0]?.recordings).toEqual([
+      expect.objectContaining({ id: "story-recording" }),
+    ]);
+  });
+
+  it("adds and updates durable My Story links", () => {
+    const storyPage = initial.myStory!.pages[0]!;
+    const link = {
+      id: "story-link",
+      url: "https://example.com/memory",
+      title: "Family archive",
+      revision: 0,
+      createdAt: "2026-08-03T10:00:00.000Z",
+    };
+    const added = applyDocumentOperation(initial, {
+      id: "add-story-link",
+      type: "my-story-link-add",
+      journalId: initial.id,
+      baseRevision: 0,
+      resultingRevision: 1,
+      createdAt: "2026-08-03T10:00:00.000Z",
+      pageId: storyPage.id,
+      link,
+    });
+    const updated = applyDocumentOperation(added, {
+      id: "update-story-link",
+      type: "my-story-link-update",
+      journalId: initial.id,
+      baseRevision: 1,
+      resultingRevision: 2,
+      createdAt: "2026-08-03T10:01:00.000Z",
+      pageId: storyPage.id,
+      link: { ...link, title: "Updated archive", revision: 1 },
+    });
+
+    expect(updated.myStory?.pages[0]?.links).toEqual([
+      expect.objectContaining({
+        id: "story-link",
+        title: "Updated archive",
+      }),
+    ]);
+  });
 });

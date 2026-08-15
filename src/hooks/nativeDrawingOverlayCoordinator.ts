@@ -1,4 +1,3 @@
-import type { SaveHealth } from "../domain/models";
 import type { DrawingGridSettings } from "../domain/models";
 import {
   hideNativeDrawingOverlay,
@@ -241,6 +240,20 @@ export class NativeDrawingOverlayCoordinator {
             this.#presentedDocumentId = desired.documentId;
             this.#presentedOwner = desired.owner;
 
+            if (legacyInk && result.importedLegacyStrokes) {
+              const health = await desired.sketchRepository.save({
+                ...sketch,
+                strokes: [],
+                revision: sketch.revision + 1,
+              });
+              if (health.localDurability === "error") {
+                desired.onError?.(
+                  health.message ??
+                    "The previous drawing could not be marked as imported.",
+                );
+              }
+            }
+
             if (
               processedVersion === this.#version &&
               this.#desired?.owner === desired.owner
@@ -250,23 +263,6 @@ export class NativeDrawingOverlayCoordinator {
                 documentId: desired.documentId,
                 owner: desired.owner,
               });
-            }
-
-            if (legacyInk && result.importedLegacyStrokes) {
-              void desired.sketchRepository
-                .save({
-                  ...sketch,
-                  strokes: [],
-                  revision: sketch.revision + 1,
-                })
-                .then((health: SaveHealth) => {
-                  if (health.localDurability === "error") {
-                    desired.onError?.(
-                      health.message ??
-                        "The previous drawing could not be marked as imported.",
-                    );
-                  }
-                });
             }
           } catch (error) {
             this.#presentedDocumentId = undefined;

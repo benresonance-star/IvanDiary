@@ -66,13 +66,15 @@ export type VoiceRecordingObject = PageObjectBase & {
   type: "voice";
   asset: AssetRef;
   durationMs: number;
-  transcriptionStatus:
-    | "not-requested"
-    | "pending"
-    | "transcribing"
-    | "complete"
-    | "failed";
+  transcriptionStatus: TranscriptionStatus;
 };
+
+export type TranscriptionStatus =
+  | "not-requested"
+  | "pending"
+  | "transcribing"
+  | "complete"
+  | "failed";
 
 export type TranscriptObject = PageObjectBase & {
   type: "transcript";
@@ -97,7 +99,7 @@ export type PhotoObject = PageObjectBase & {
   asset: AssetRef;
   size: Size;
   altText?: string;
-  /** When unset, Arrange keeps the photograph’s original proportions. */
+  /** When unset, Edit mode keeps the photograph’s original proportions. */
   lockAspectRatio?: boolean;
 };
 
@@ -157,6 +159,68 @@ export type Sketchbook = {
   updatedAt: IsoDateTime;
 };
 
+export type MyStoryTextRole = "title" | "heading" | "body";
+
+export type MyStoryTextBlock = {
+  id: EntityId;
+  text: string;
+  role: MyStoryTextRole;
+  color: string;
+  revision: number;
+  createdAt: IsoDateTime;
+};
+
+export type MyStoryPhoto = {
+  id: EntityId;
+  asset: AssetRef;
+  size: Size;
+  altText?: string;
+  width: 0.5 | 0.75 | 1;
+  revision: number;
+  createdAt: IsoDateTime;
+};
+
+export type MyStoryVoiceRecording = {
+  id: EntityId;
+  asset: AssetRef;
+  durationMs: number;
+  transcriptionStatus: TranscriptionStatus;
+  position?: Position;
+  frame?: Size;
+  layer?: "above-sketch" | "behind-sketch";
+  revision: number;
+  createdAt: IsoDateTime;
+};
+
+export type MyStoryLink = {
+  id: EntityId;
+  url: string;
+  title: string;
+  revision: number;
+  createdAt: IsoDateTime;
+};
+
+export type MyStoryPage = {
+  id: EntityId;
+  drawingDocumentId: EntityId;
+  splitRatio: number;
+  textSide: "left" | "right";
+  textBackgroundColor: string;
+  textColor: string;
+  textBlocks: MyStoryTextBlock[];
+  photos: MyStoryPhoto[];
+  links: MyStoryLink[];
+  recordings: MyStoryVoiceRecording[];
+  revision: number;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+};
+
+export type MyStory = {
+  defaultTextColor: string;
+  pages: MyStoryPage[];
+};
+
 export type Favourite = {
   id: EntityId;
   targetType: "journal-day" | "page" | "sketchbook";
@@ -177,6 +241,7 @@ export type JournalSettings = {
   favouritePenColours: string[];
   favouriteColourLongPressEnabled: boolean;
   favouriteColourLongPressSeconds: number;
+  standardAppAppearance: boolean;
   penNib: "pen" | "marker" | "pencil" | "brush";
   penNibProfiles: Record<
     "pen" | "marker" | "pencil" | "brush",
@@ -229,6 +294,7 @@ export type JournalSnapshot = {
   pages: Page[];
   sketchbooks: Sketchbook[];
   favourites: Favourite[];
+  myStory?: MyStory;
   settings: JournalSettings;
   appliedOperationIds: EntityId[];
   revision: number;
@@ -345,6 +411,101 @@ export type DocumentOperation = OperationBase &
     | {
       type: "settings-update";
       settings: Partial<JournalSettings>;
+    }
+    | {
+      type: "my-story-page-create";
+      page: MyStoryPage;
+    }
+    | {
+      type: "my-story-pages-reorder";
+      pageIds: EntityId[];
+    }
+    | {
+      type: "my-story-page-delete";
+      pageId: EntityId;
+    }
+    | {
+      type: "my-story-layout-update";
+      pageId: EntityId;
+      splitRatio?: number;
+      textSide?: "left" | "right";
+      textBackgroundColor?: string;
+      textColor?: string;
+    }
+    | {
+      type: "my-story-text-add";
+      pageId: EntityId;
+      block: MyStoryTextBlock;
+    }
+    | {
+      type: "my-story-text-update";
+      pageId: EntityId;
+      block: MyStoryTextBlock;
+    }
+    | {
+      type: "my-story-text-delete";
+      pageId: EntityId;
+      blockId: EntityId;
+    }
+    | {
+      type: "my-story-texts-reorder";
+      pageId: EntityId;
+      blockIds: EntityId[];
+    }
+    | {
+      type: "my-story-photo-add";
+      pageId: EntityId;
+      photo: MyStoryPhoto;
+    }
+    | {
+      type: "my-story-photo-update";
+      pageId: EntityId;
+      photo: MyStoryPhoto;
+    }
+    | {
+      type: "my-story-photo-delete";
+      pageId: EntityId;
+      photoId: EntityId;
+    }
+    | {
+      type: "my-story-photos-reorder";
+      pageId: EntityId;
+      photoIds: EntityId[];
+    }
+    | {
+      type: "my-story-recording-add";
+      pageId: EntityId;
+      recording: MyStoryVoiceRecording;
+    }
+    | {
+      type: "my-story-recording-update";
+      pageId: EntityId;
+      recording: MyStoryVoiceRecording;
+    }
+    | {
+      type: "my-story-recording-delete";
+      pageId: EntityId;
+      recordingId: EntityId;
+    }
+    | {
+      type: "my-story-link-add";
+      pageId: EntityId;
+      link: MyStoryLink;
+    }
+    | {
+      type: "my-story-link-update";
+      pageId: EntityId;
+      link: MyStoryLink;
+    }
+    | {
+      type: "my-story-link-delete";
+      pageId: EntityId;
+      linkId: EntityId;
+    }
+    | {
+      type: "my-story-links-reorder";
+      pageId: EntityId;
+      linkIds: EntityId[];
     }
     | {
       type: "drawing-stroke-add";

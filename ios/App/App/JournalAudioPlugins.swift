@@ -668,6 +668,7 @@ public final class NativeSharePlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
         let transcripts = stringList(call, "transcripts")
         let links = shareLinks(from: call)
         let documentId = call.getString("documentId")
+        let captureMode = call.getString("captureMode")
         let previewInsetTop = call.getDouble("previewInsetTop")
             ?? call.getInt("previewInsetTop").map(Double.init)
             ?? 0
@@ -678,12 +679,21 @@ public final class NativeSharePlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
             }
             guard let format, format == "jpg" || format == "pdf",
                   let title,
-                  let fileStem,
-                  let image = self.renderJournalPage(
-                      paperRect: paperRect,
-                      documentId: documentId,
-                      previewInsetTop: previewInsetTop
-                  ) else {
+                  let fileStem else {
+                call.reject("This page could not be shared. Try again.", "NATIVE_FAILURE")
+                return
+            }
+            let image: UIImage?
+            if captureMode == "webview" {
+                image = await self.captureWebView(rect: paperRect)
+            } else {
+                image = self.renderJournalPage(
+                    paperRect: paperRect,
+                    documentId: documentId,
+                    previewInsetTop: previewInsetTop
+                )
+            }
+            guard let image else {
                 call.reject("This page could not be shared. Try again.", "NATIVE_FAILURE")
                 return
             }
@@ -809,6 +819,20 @@ public final class NativeSharePlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
             )
             self.drawingImage(documentId: documentId, size: drawingRect.size)?
                 .draw(in: drawingRect)
+        }
+    }
+
+    private func captureWebView(rect: CGRect?) async -> UIImage? {
+        guard let webView = bridge?.webView else { return nil }
+        let configuration = WKSnapshotConfiguration()
+        if let rect, rect.width > 8, rect.height > 8 {
+            configuration.rect = rect
+        }
+        configuration.afterScreenUpdates = true
+        return await withCheckedContinuation { continuation in
+            webView.takeSnapshot(with: configuration) { image, _ in
+                continuation.resume(returning: image)
+            }
         }
     }
 

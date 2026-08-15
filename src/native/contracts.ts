@@ -159,6 +159,7 @@ export interface NativeSharePlugin {
     title: string;
     fileStem: string;
     paperRect: PencilKitOverlayRect;
+    captureMode?: "drawing" | "webview";
     documentId?: string;
     previewInsetTop?: number;
     transcripts?: string[];
@@ -215,10 +216,22 @@ export interface NativeTextEditorPlugin {
   open(options: NativeTextEditorOptions): Promise<NativeTextEditorResult>;
 }
 
+export interface AppOrientationPlugin {
+  setLandscapeLocked(options: { locked: boolean }): Promise<void>;
+}
+
 export interface PencilKitPlugin {
   addListener(
     eventName: "drawingChanged",
     listener: (event: { documentId: string }) => void,
+  ): Promise<{ remove(): Promise<void> }>;
+  addListener(
+    eventName: "overlayTapped",
+    listener: (event: { documentId: string; x: number; y: number }) => void,
+  ): Promise<{ remove(): Promise<void> }>;
+  addListener(
+    eventName: "overlayLongPressed",
+    listener: (event: { documentId: string; x: number; y: number }) => void,
   ): Promise<{ remove(): Promise<void> }>;
   open(options: {
     documentId: EntityId;

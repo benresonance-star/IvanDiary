@@ -79,4 +79,63 @@ describe("reconcileCloudRestore", () => {
       `Cloud restore is missing required assets: ${voice.asset.id}`,
     );
   });
+
+  it("restores photographs used by My Story pages", () => {
+    const current = createInitialJournalSnapshot(
+      new Date("2026-08-03T09:00:00.000Z"),
+    );
+    const storyAsset = {
+      id: "story-photo-asset",
+      localUri: "file:///old-device/story.jpg",
+      mimeType: "image/jpeg",
+      byteLength: 42,
+      checksum: "story-checksum",
+    };
+    const storyAudio = {
+      id: "story-audio-asset",
+      localUri: "file:///old-device/story.m4a",
+      mimeType: "audio/mp4",
+      byteLength: 84,
+      checksum: "story-audio-checksum",
+    };
+    const snapshot = {
+      ...current,
+      myStory: {
+        ...current.myStory!,
+        pages: current.myStory!.pages.map((page) => ({
+          ...page,
+          textSide: "right" as const,
+          photos: [{
+            id: "story-photo",
+            asset: storyAsset,
+            size: { width: 800, height: 600 },
+            width: 1 as const,
+            revision: 0,
+            createdAt: current.updatedAt,
+          }],
+          recordings: [{
+            id: "story-recording",
+            asset: storyAudio,
+            durationMs: 2_000,
+            transcriptionStatus: "not-requested" as const,
+            revision: 0,
+            createdAt: current.updatedAt,
+          }],
+        })),
+      },
+    };
+
+    const restored = reconcileCloudRestore(snapshot, {
+      [storyAsset.id]: "file:///new-device/story.jpg",
+      [storyAudio.id]: "file:///new-device/story.m4a",
+    });
+
+    expect(restored.myStory?.pages[0]?.photos[0]?.asset.localUri).toBe(
+      "file:///new-device/story.jpg",
+    );
+    expect(restored.myStory?.pages[0]?.recordings[0]?.asset.localUri).toBe(
+      "file:///new-device/story.m4a",
+    );
+    expect(restored.myStory?.pages[0]?.textSide).toBe("right");
+  });
 });

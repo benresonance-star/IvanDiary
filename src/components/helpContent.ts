@@ -33,8 +33,8 @@ export const HELP_TIPS = {
     body: "Read and use the page without moving or changing its objects.",
   },
   arrange: {
-    title: "Arrange",
-    body: "Move, resize, edit, or remove items on this page. To explore those controls, enter Arrange first, then turn Help on.",
+    title: "Edit",
+    body: "Move, resize, edit, or remove items on this page. To explore those controls, enter Edit first, then turn Help on.",
   },
   draw: {
     title: "Draw",
@@ -62,7 +62,7 @@ export const HELP_TIPS = {
   },
   undo: {
     title: "Undo",
-    body: "Reverse your most recent drawing or arranging change.",
+    body: "Reverse your most recent drawing or editing change.",
   },
   redo: {
     title: "Redo",
@@ -82,7 +82,7 @@ export const HELP_TIPS = {
   },
   "page-strip": {
     title: "Page",
-    body: "Open this page. In Arrange mode, page controls can also reorder or remove it.",
+    body: "Open this page. In Edit mode, page controls can also reorder or remove it.",
   },
   "add-page": {
     title: "Add a page",
@@ -142,7 +142,7 @@ export const HELP_TIPS = {
   },
   "arrange-object": {
     title: "Page item",
-    body: "This item can be moved, resized, layered, or removed while Arrange is selected.",
+    body: "This item can be moved, resized, layered, or removed while Edit is selected.",
   },
   "arrange-move": {
     title: "Move item",
@@ -169,7 +169,7 @@ export const HELP_TIPS = {
     body: "Change this link’s web address or name.",
   },
   "library-arrange": {
-    title: "Arrange",
+    title: "Edit",
     body: "Reorder or remove items in this collection.",
   },
   "new-sketchbook": {

@@ -241,10 +241,12 @@ function SketchSurfaceComponent(
   const replaceDocument = useCallback(
     (next: SketchDocument) => {
       documentRef.current = next;
+      renderScene();
+      renderLiveStroke();
       scheduleSceneRender();
       void persist(next);
     },
-    [persist, scheduleSceneRender],
+    [persist, renderLiveStroke, renderScene, scheduleSceneRender],
   );
 
   const undo = useCallback(() => {
@@ -317,6 +319,8 @@ function SketchSurfaceComponent(
         historyRef.current = [];
         redoHistoryRef.current = [];
         setLoading(false);
+        renderScene();
+        renderLiveStroke();
         scheduleSceneRender();
         onSaveHealthChange?.({
           localDurability: "saved",
@@ -343,7 +347,71 @@ function SketchSurfaceComponent(
     return () => {
       cancelled = true;
     };
-  }, [documentId, onSaveHealthChange, repository, scheduleSceneRender]);
+  }, [
+    documentId,
+    onSaveHealthChange,
+    renderLiveStroke,
+    renderScene,
+    repository,
+    scheduleSceneRender,
+  ]);
+
+  useEffect(() => {
+    if (!repository.subscribe) {
+      return;
+    }
+    let cancelled = false;
+    let refreshSequence = 0;
+    const unsubscribe = repository.subscribe(documentId, () => {
+      const sequence = ++refreshSequence;
+      void repository
+        .load(documentId)
+        .then((document) => {
+          if (cancelled || sequence !== refreshSequence) {
+            return;
+          }
+          const current = documentRef.current;
+          if (current && document.revision <= current.revision) {
+            return;
+          }
+          documentRef.current = document;
+          historyRef.current = [];
+          redoHistoryRef.current = [];
+          renderScene();
+          renderLiveStroke();
+          scheduleSceneRender();
+          onSaveHealthChange?.({
+            localDurability: "saved",
+            remoteSync: "offline",
+            durableRevision: document.revision,
+            pendingOperationCount: document.revision,
+          });
+        })
+        .catch((error: unknown) => {
+          if (!cancelled && sequence === refreshSequence) {
+            onErrorRef.current?.({
+              code: "storage-failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "The drawing could not be refreshed.",
+              recoverable: true,
+            });
+          }
+        });
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [
+    documentId,
+    onSaveHealthChange,
+    renderLiveStroke,
+    renderScene,
+    repository,
+    scheduleSceneRender,
+  ]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -351,10 +419,14 @@ function SketchSurfaceComponent(
       return;
     }
 
-    const observer = new ResizeObserver(scheduleSceneRender);
+    const observer = new ResizeObserver(() => {
+      renderScene();
+      renderLiveStroke();
+      scheduleSceneRender();
+    });
     observer.observe(container);
     return () => observer.disconnect();
-  }, [scheduleSceneRender]);
+  }, [renderLiveStroke, renderScene, scheduleSceneRender]);
 
   useEffect(
     () => () => {

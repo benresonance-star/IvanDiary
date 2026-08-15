@@ -1,155 +1,182 @@
 import Foundation
 
-@MainActor
-public protocol NativeTextRecording: AnyObject {
-    func start(maximumDurationMilliseconds: Int?) async throws -> JournalRecordingSnapshot
-    func currentPowerLevel() -> Float
-    func stop() throws -> JournalRecordingSnapshot
-    func acknowledgeSaved() throws -> JournalRecordingSnapshot
-}
-
-public extension NativeTextRecording {
-    func currentPowerLevel() -> Float { 0 }
+public enum NativeTextLiveEvent: Equatable, Sendable {
+    case provisional(sessionID: UUID, text: String, sequence: Int)
+    case finalized(sessionID: UUID, text: String, sequence: Int)
+    case failed(sessionID: UUID, error: AppleLiveSpeechError)
 }
 
 @MainActor
-public protocol NativeTextTranscribing: AnyObject {
-    func requestPermission() async -> Bool
-    func transcribe(
-        fileURL: URL,
+public protocol NativeTextLiveRecognizing: AnyObject {
+    var currentPowerLevel: Float { get }
+
+    func start(
+        sessionID: UUID,
         localeIdentifier: String,
         contextualStrings: [String],
-        onPartialResult: (@MainActor @Sendable (String) -> Void)?
-    ) async throws -> JournalTranscriptionResult
+        onEvent:
+            @escaping @MainActor @Sendable (NativeTextLiveEvent) -> Void
+    ) async throws
+
+    func stop() async throws -> String
+    func cancel()
 }
 
-public protocol NativeTextStorageChecking: AnyObject {
-    func storageHealth(lowStorageThreshold: Int64) -> StorageHealth
-}
+#if canImport(AVFoundation) && canImport(Speech) && os(iOS)
+extension AppleLiveSpeechRecognizer: NativeTextLiveRecognizing {}
 
-extension AppleSpeechTranscriber: NativeTextTranscribing {}
-extension JournalFileStore: NativeTextStorageChecking {}
-#if canImport(AVFoundation) && os(iOS)
-extension JournalAudioRecorder: NativeTextRecording {}
+@MainActor
+private final class TieredLiveSpeechRecognizer:
+    NativeTextLiveRecognizing
+{
+    private var active: (any NativeTextLiveRecognizing)?
+
+    var currentPowerLevel: Float {
+        active?.currentPowerLevel ?? 0
+    }
+
+    func start(
+        sessionID: UUID,
+        localeIdentifier: String,
+        contextualStrings: [String],
+        onEvent:
+            @escaping @MainActor @Sendable (NativeTextLiveEvent) -> Void
+    ) async throws {
+        if #available(iOS 26.0, *) {
+            let modern = AppleModernLiveSpeechRecognizer()
+            do {
+                try await modern.start(
+                    sessionID: sessionID,
+                    localeIdentifier: localeIdentifier,
+                    contextualStrings: contextualStrings,
+                    onEvent: onEvent
+                )
+                active = modern
+                return
+            } catch {
+                modern.cancel()
+            }
+        }
+        let legacy = AppleLiveSpeechRecognizer()
+        try await legacy.start(
+            sessionID: sessionID,
+            localeIdentifier: localeIdentifier,
+            contextualStrings: contextualStrings,
+            onEvent: onEvent
+        )
+        active = legacy
+    }
+
+    func stop() async throws -> String {
+        guard let active else {
+            throw AppleLiveSpeechError.noSpeechRecognized
+        }
+        defer { self.active = nil }
+        return try await active.stop()
+    }
+
+    func cancel() {
+        active?.cancel()
+        active = nil
+    }
+}
 #endif
 
 public enum NativeTextVoiceError: LocalizedError {
-    case lowStorage
-    case missingRecording
     case microphoneUnavailable
+    case microphonePermissionDenied
     case speechPermissionDenied
     case noSpeechRecognized
     case recognitionTimedOut
+    case interrupted
     case speechUnavailable
 
     public var errorDescription: String? {
         switch self {
-        case .lowStorage:
-            "Storage is too low to record safely. Free some space or use the keyboard."
-        case .missingRecording:
-            "The recording could not be read. Try again or use the keyboard."
         case .microphoneUnavailable:
-            "The microphone could not start. Check permission or use the keyboard."
+            "The microphone could not start. Try again or use the keyboard."
+        case .microphonePermissionDenied:
+            "Microphone permission is off. Your text is unchanged."
         case .speechPermissionDenied:
             "Speech recognition permission is off. Your text is unchanged."
         case .noSpeechRecognized:
             "No words were recognized. Try again or use the keyboard."
         case .recognitionTimedOut:
-            "Speech recognition took too long. Try again or use the keyboard."
+            "Finishing the transcription took too long. Your text is unchanged."
+        case .interrupted:
+            "Voice entry was interrupted. Your text is unchanged."
         case .speechUnavailable:
-            "Voice could not be turned into text. Try again or use the keyboard."
+            "Live speech recognition is unavailable. Try again or use the keyboard."
         }
     }
 }
 
 @MainActor
 public final class NativeTextVoiceCoordinator {
-    private let recorder: any NativeTextRecording
-    private let transcriber: any NativeTextTranscribing
-    private let storage: any NativeTextStorageChecking
-    private let fileManager: FileManager
+    private let liveRecognizer: any NativeTextLiveRecognizing
+    private var sessionID: UUID?
     private(set) public var recording = false
 
     public var currentPowerLevel: Float {
-        recording ? recorder.currentPowerLevel() : 0
+        recording ? liveRecognizer.currentPowerLevel : 0
     }
 
-    public init(
-        recorder: any NativeTextRecording,
-        transcriber: any NativeTextTranscribing,
-        storage: any NativeTextStorageChecking,
-        fileManager: FileManager = .default
-    ) {
-        self.recorder = recorder
-        self.transcriber = transcriber
-        self.storage = storage
-        self.fileManager = fileManager
+    public init(liveRecognizer: any NativeTextLiveRecognizing) {
+        self.liveRecognizer = liveRecognizer
     }
 
-    #if canImport(AVFoundation) && os(iOS)
-    public convenience init(fileManager: FileManager = .default) throws {
-        try self.init(
-            recorder: JournalAudioRecorder(fileManager: fileManager),
-            transcriber: AppleSpeechTranscriber(),
-            storage: JournalFileStore(fileManager: fileManager),
-            fileManager: fileManager
-        )
+    #if canImport(AVFoundation) && canImport(Speech) && os(iOS)
+    public convenience init() {
+        self.init(liveRecognizer: TieredLiveSpeechRecognizer())
     }
     #endif
 
-    public func start(maximumDurationMilliseconds: Int?) async throws {
-        guard !storage.storageHealth(
-            lowStorageThreshold: 100 * 1_024 * 1_024
-        ).lowStorage else {
-            throw NativeTextVoiceError.lowStorage
-        }
+    public func start(
+        localeIdentifier: String,
+        contextualStrings: [String],
+        onEvent:
+            @escaping @MainActor @Sendable (NativeTextLiveEvent) -> Void
+    ) async throws {
+        liveRecognizer.cancel()
+        recording = false
+        let sessionID = UUID()
+        self.sessionID = sessionID
         do {
-            _ = try await recorder.start(
-                maximumDurationMilliseconds: maximumDurationMilliseconds
+            try await liveRecognizer.start(
+                sessionID: sessionID,
+                localeIdentifier: localeIdentifier,
+                contextualStrings: Array(contextualStrings.prefix(100)),
+                onEvent: { [weak self] event in
+                    guard let self, self.sessionID == event.sessionID else {
+                        return
+                    }
+                    if case .failed = event {
+                        recording = false
+                    }
+                    onEvent(event)
+                }
             )
             recording = true
-        } catch {
+        } catch AppleLiveSpeechError.microphonePermissionDenied {
+            throw NativeTextVoiceError.microphonePermissionDenied
+        } catch AppleLiveSpeechError.speechPermissionDenied {
+            throw NativeTextVoiceError.speechPermissionDenied
+        } catch AppleLiveSpeechError.recognizerUnavailable {
+            throw NativeTextVoiceError.speechUnavailable
+        } catch AppleLiveSpeechError.audioInputUnavailable {
             throw NativeTextVoiceError.microphoneUnavailable
+        } catch {
+            throw NativeTextVoiceError.speechUnavailable
         }
     }
 
-    public func stopAndTranscribe(
-        localeIdentifier: String,
-        contextualStrings: [String],
-        onPartialResult: (@MainActor @Sendable (String) -> Void)? = nil
-    ) async throws -> String {
-        let snapshot: JournalRecordingSnapshot
+    public func stop() async throws -> String {
+        recording = false
         do {
-            snapshot = try recorder.stop()
-            recording = false
-        } catch {
-            recording = false
-            throw NativeTextVoiceError.missingRecording
-        }
-        guard let temporaryURL = snapshot.temporaryURL else {
-            throw NativeTextVoiceError.missingRecording
-        }
-        defer {
-            try? fileManager.removeItem(at: temporaryURL)
-            _ = try? recorder.acknowledgeSaved()
-        }
-
-        guard await transcriber.requestPermission() else {
-            throw NativeTextVoiceError.speechPermissionDenied
-        }
-        do {
-            let result = try await transcriber.transcribe(
-                fileURL: temporaryURL,
-                localeIdentifier: localeIdentifier,
-                contextualStrings: Array(contextualStrings.prefix(100)),
-                onPartialResult: onPartialResult
-            )
-            return result.text
-        } catch AppleSpeechTranscriptionError.permissionDenied {
-            throw NativeTextVoiceError.speechPermissionDenied
-        } catch AppleSpeechTranscriptionError.noSpeechRecognized {
+            return try await liveRecognizer.stop()
+        } catch AppleLiveSpeechError.noSpeechRecognized {
             throw NativeTextVoiceError.noSpeechRecognized
-        } catch AppleSpeechTranscriptionError.timedOut {
+        } catch AppleLiveSpeechError.timedOut {
             throw NativeTextVoiceError.recognitionTimedOut
         } catch {
             throw NativeTextVoiceError.speechUnavailable
@@ -157,12 +184,40 @@ public final class NativeTextVoiceCoordinator {
     }
 
     public func cancel() {
-        guard recording else { return }
-        let snapshot = try? recorder.stop()
         recording = false
-        if let temporaryURL = snapshot?.temporaryURL {
-            try? fileManager.removeItem(at: temporaryURL)
+        sessionID = nil
+        liveRecognizer.cancel()
+    }
+
+    private static func map(
+        _ error: AppleLiveSpeechError
+    ) -> NativeTextVoiceError {
+        switch error {
+        case .microphonePermissionDenied:
+            .microphonePermissionDenied
+        case .speechPermissionDenied:
+            .speechPermissionDenied
+        case .recognizerUnavailable:
+            .speechUnavailable
+        case .audioInputUnavailable:
+            .microphoneUnavailable
+        case .interrupted:
+            .interrupted
+        case .noSpeechRecognized:
+            .noSpeechRecognized
+        case .timedOut:
+            .recognitionTimedOut
         }
-        _ = try? recorder.acknowledgeSaved()
+    }
+}
+
+private extension NativeTextLiveEvent {
+    var sessionID: UUID {
+        switch self {
+        case .provisional(let sessionID, _, _),
+             .finalized(let sessionID, _, _),
+             .failed(let sessionID, _):
+            sessionID
+        }
     }
 }

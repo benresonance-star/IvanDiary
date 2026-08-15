@@ -11,6 +11,7 @@ import {
   type AppSection,
 } from "./components/Navigation";
 import { SettingsView } from "./components/SettingsView";
+import { MyStoryWorkspace } from "./components/MyStoryWorkspace";
 import { ProfilePortraitEditor } from "./components/ProfilePortraitEditor";
 import { HelpMode } from "./components/HelpMode";
 import {
@@ -22,6 +23,7 @@ import {
   MAX_PAGES_PER_COLLECTION,
   type Favourite,
   type JournalSnapshot,
+  type MyStoryPage,
   type Page,
   type SaveHealth,
 } from "./domain/models";
@@ -29,6 +31,7 @@ import { useBackupSync } from "./hooks/useBackupSync";
 import { useJournal } from "./hooks/useJournal";
 import { nativeDrawingOverlayCoordinator } from "./hooks/nativeDrawingOverlayCoordinator";
 import { createAppServices } from "./native/composition";
+import { setLandscapeLocked } from "./native/orientation";
 import {
   deleteNativeDrawing,
   flushNativeDrawingOverlay,
@@ -139,6 +142,15 @@ export default function App() {
   );
   const [storageBlocked, setStorageBlocked] = useState(false);
   const [activeDiaryPageId, setActiveDiaryPageId] = useState<string>();
+  const [activeStoryPageId, setActiveStoryPageId] = useState<string>();
+
+  useEffect(() => {
+    const standardAppAppearance =
+      snapshot?.settings.standardAppAppearance ?? true;
+    void setLandscapeLocked(standardAppAppearance).catch(
+      () => undefined,
+    );
+  }, [snapshot?.settings.standardAppAppearance]);
   const [activePageTool, setActivePageTool] = useState<PageTool>("view");
   const [activeSketchbookId, setActiveSketchbookId] = useState<string>();
   const [activeSketchbookPageId, setActiveSketchbookPageId] =
@@ -360,6 +372,10 @@ export default function App() {
   const page =
     dayPages.find((candidate) => candidate.id === activeDiaryPageId) ??
     dayPages[0];
+  const storyPages = snapshot.myStory?.pages ?? [];
+  const storyPage =
+    storyPages.find((candidate) => candidate.id === activeStoryPageId) ??
+    storyPages[0];
   const activeSketchbook = snapshot.sketchbooks.find(
     (sketchbook) => sketchbook.id === activeSketchbookId,
   );
@@ -399,6 +415,71 @@ export default function App() {
     });
     if (saved) {
       setActiveDiaryPageId(newPage.id);
+    }
+    return saved;
+  };
+
+  const createStoryPage = async (): Promise<boolean> => {
+    if (storyPages.length >= MAX_PAGES_PER_COLLECTION) {
+      return false;
+    }
+    const timestamp = new Date().toISOString();
+    const newPage: MyStoryPage = {
+      id: createId(),
+      drawingDocumentId: createId(),
+      splitRatio: storyPage?.splitRatio ?? 0.5,
+      textSide: storyPage?.textSide ?? "left",
+      textBackgroundColor: storyPage?.textBackgroundColor ?? "#fffaf0",
+      textColor:
+        storyPage?.textColor ??
+        snapshot.myStory?.defaultTextColor ??
+        "#171410",
+      textBlocks: [],
+      photos: [],
+      links: [],
+      recordings: [],
+      revision: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    const saved = await commit({
+      type: "my-story-page-create",
+      page: newPage,
+    });
+    if (saved) {
+      setActiveStoryPageId(newPage.id);
+    }
+    return saved;
+  };
+
+  const trashStoryPageAssets = async (deletedPage: MyStoryPage) => {
+    await Promise.allSettled([
+      ...deletedPage.photos.map((photo) =>
+        files.removeToTrash({ assetId: photo.asset.id }),
+      ),
+      ...deletedPage.recordings.map((recording) =>
+        files.removeToTrash({ assetId: recording.asset.id }),
+      ),
+      ...(sketchRepository.remove
+        ? [sketchRepository.remove(deletedPage.drawingDocumentId)]
+        : []),
+      ...(hasNativePencilKit()
+        ? [deleteNativeDrawing(deletedPage.drawingDocumentId)]
+        : []),
+    ]);
+  };
+
+  const deleteStoryPage = async (pageId: string): Promise<boolean> => {
+    if (storyPages.length <= 1) return false;
+    const deletedPage = storyPages.find((candidate) => candidate.id === pageId);
+    if (!deletedPage) return false;
+    const index = storyPages.indexOf(deletedPage);
+    const nextPageId =
+      storyPages[index + 1]?.id ?? storyPages[index - 1]?.id;
+    const saved = await commit({ type: "my-story-page-delete", pageId });
+    if (saved) {
+      setActiveStoryPageId(nextPageId);
+      await trashStoryPageAssets(deletedPage);
     }
     return saved;
   };
@@ -727,6 +808,58 @@ export default function App() {
           </section>
         );
       break;
+    case "story":
+      content = storyPage ? (
+        <MyStoryWorkspace
+          audio={audio}
+          commit={commit}
+          defaultTextColor={
+            snapshot.myStory?.defaultTextColor ?? "#171410"
+          }
+          displayName={snapshot.settings.displayName}
+          favouriteColourLongPressEnabled={
+            snapshot.settings.favouriteColourLongPressEnabled
+          }
+          favouriteColourLongPressSeconds={
+            snapshot.settings.favouriteColourLongPressSeconds
+          }
+          favouritePenColours={snapshot.settings.favouritePenColours}
+          files={files}
+          fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
+          health={combinedHealth(health, drawingHealth)}
+          key={storyPage.id}
+          myWords={snapshot.settings.myWords}
+          navigationObscured={
+            navigationMenuOpen || navigationMenuOpening || helpModeActive
+          }
+          onAddPage={createStoryPage}
+          onDeletePage={deleteStoryPage}
+          onDrawingHealthChange={setDrawingHealth}
+          onReorderPages={(pageIds) =>
+            commit({ type: "my-story-pages-reorder", pageIds })
+          }
+          onSelectPage={setActiveStoryPageId}
+          onToolChange={setActivePageTool}
+          page={storyPage}
+          pages={storyPages}
+          penColor={snapshot.settings.penColor}
+          penNib={snapshot.settings.penNib}
+          penNibProfiles={snapshot.settings.penNibProfiles}
+          penOpacity={snapshot.settings.penOpacity}
+          penWidth={snapshot.settings.penWidth}
+          recordingLimitMinutes={snapshot.settings.recordingLimitMinutes}
+          share={share}
+          sketchRepository={sketchRepository}
+          textEditorPreference={snapshot.settings.textEditorPreference}
+          tool={activePageTool}
+          transcription={transcription}
+        />
+      ) : (
+        <section className="empty-library">
+          <h1>My Story is not ready.</h1>
+        </section>
+      );
+      break;
     case "sketchbooks":
       content =
         activeSketchbook && sketchbookPage ? (
@@ -889,15 +1022,17 @@ export default function App() {
         onSectionChange={openSection}
         sketchRepository={sketchRepository}
       />
-      <HelpMode
-        active={helpModeActive}
-        onActiveChange={(active) => {
-          if (active) {
-            closeNavigationMenu();
-          }
-          setHelpModeActive(active);
-        }}
-      />
+      {welcomeVisible || welcomePreview ? null : (
+        <HelpMode
+          active={helpModeActive}
+          onActiveChange={(active) => {
+            if (active) {
+              closeNavigationMenu();
+            }
+            setHelpModeActive(active);
+          }}
+        />
+      )}
       {storageBlocked ? (
         <div className="storage-blocked-warning" role="alert">
           <strong>The diary cannot finish opening its saved storage.</strong>
