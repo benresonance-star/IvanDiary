@@ -64,6 +64,15 @@ public final class JournalAudioRecorder: NSObject, AVAudioRecorderDelegate {
         return value
     }
 
+    public func currentPowerLevel() -> Float {
+        guard let recorder, recorder.isRecording else { return 0 }
+        recorder.updateMeters()
+        let decibels = recorder.averagePower(forChannel: 0)
+        guard decibels.isFinite else { return 0 }
+        let linearLevel = min(1, max(0, (decibels + 60) / 60))
+        return pow(linearLevel, 0.55)
+    }
+
     public func stop() throws -> JournalRecordingSnapshot {
         if recorder == nil, machine.snapshot.state == .interrupted {
             try machine.finalise(elapsedMilliseconds: machine.snapshot.elapsedMilliseconds)
@@ -74,7 +83,7 @@ public final class JournalAudioRecorder: NSObject, AVAudioRecorderDelegate {
         let elapsed = Int(recorder.currentTime * 1_000)
         recorder.stop()
         self.recorder = nil
-        try session.setActive(false, options: .notifyOthersOnDeactivation)
+        try? session.setActive(false, options: .notifyOthersOnDeactivation)
         try machine.finalise(elapsedMilliseconds: elapsed)
         try persistRecovery()
         return machine.snapshot

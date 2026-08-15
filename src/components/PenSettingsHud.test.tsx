@@ -211,6 +211,8 @@ describe("PenSettingsHud", () => {
       vi.advanceTimersByTime(1999);
       expect(showPicker).not.toHaveBeenCalled();
       vi.advanceTimersByTime(1);
+      expect(showPicker).not.toHaveBeenCalled();
+      fireEvent.pointerUp(screen.getByRole("button", { name: "Blue" }));
       expect(showPicker).toHaveBeenCalledOnce();
 
       const picker = container.querySelector<HTMLInputElement>(
@@ -285,6 +287,7 @@ describe("PenSettingsHud", () => {
       <PenSettingsHud
         grid={{
           enabled: false,
+          snapToGrid: true,
           spacing: 60,
           rotationDegrees: 0,
           type: "lines",
@@ -301,6 +304,40 @@ describe("PenSettingsHud", () => {
     fireEvent.click(screen.getByRole("switch", { name: /Drawing grid.*Off/i }));
     expect(onGridChange).toHaveBeenCalledWith({
       enabled: true,
+      snapToGrid: true,
+      spacing: 60,
+      rotationDegrees: 0,
+      type: "lines",
+      color: "#435b70",
+    });
+  });
+
+  it("toggles whether the pen snaps to the visible grid", () => {
+    const onGridChange = vi.fn();
+    render(
+      <PenSettingsHud
+        grid={{
+          enabled: true,
+          snapToGrid: true,
+          spacing: 60,
+          rotationDegrees: 0,
+          type: "lines",
+          color: "#435b70",
+        }}
+        onChange={vi.fn()}
+        onDone={vi.fn()}
+        onGridChange={onGridChange}
+        settings={{ color: "#171410", width: 8, opacity: 1 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Grid" }));
+    fireEvent.click(
+      screen.getByRole("switch", { name: /Snap pen to grid.*On/i }),
+    );
+    expect(onGridChange).toHaveBeenCalledWith({
+      enabled: true,
+      snapToGrid: false,
       spacing: 60,
       rotationDegrees: 0,
       type: "lines",
@@ -314,6 +351,7 @@ describe("PenSettingsHud", () => {
       <PenSettingsHud
         grid={{
           enabled: true,
+          snapToGrid: true,
           spacing: 60,
           rotationDegrees: 0,
           type: "lines",
@@ -349,6 +387,7 @@ describe("PenSettingsHud", () => {
       <PenSettingsHud
         grid={{
           enabled: true,
+          snapToGrid: true,
           spacing: 60,
           rotationDegrees: 0,
           type: "lines",
@@ -365,6 +404,7 @@ describe("PenSettingsHud", () => {
     fireEvent.click(screen.getByRole("button", { name: "Large" }));
     expect(onGridChange).toHaveBeenCalledWith({
       enabled: true,
+      snapToGrid: true,
       spacing: 96,
       rotationDegrees: 0,
       type: "lines",
@@ -373,6 +413,7 @@ describe("PenSettingsHud", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dots" }));
     expect(onGridChange).toHaveBeenCalledWith({
       enabled: true,
+      snapToGrid: true,
       spacing: 60,
       rotationDegrees: 0,
       type: "dots",
@@ -396,6 +437,7 @@ describe("PenSettingsHud", () => {
       <PenSettingsHud
         grid={{
           enabled: true,
+          snapToGrid: true,
           spacing: 60,
           rotationDegrees: 45,
           type: "dots",
@@ -415,6 +457,7 @@ describe("PenSettingsHud", () => {
     fireEvent.click(screen.getByRole("button", { name: "0°" }));
     expect(onGridChange).toHaveBeenCalledWith({
       enabled: true,
+      snapToGrid: true,
       spacing: 60,
       rotationDegrees: 0,
       type: "dots",

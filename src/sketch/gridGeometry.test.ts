@@ -24,6 +24,7 @@ describe("drawing grid geometry", () => {
       point(10, 68),
       {
         enabled: true,
+        snapToGrid: true,
         spacing: 60,
         rotationDegrees: 0,
         type: "lines",
@@ -46,6 +47,7 @@ describe("drawing grid geometry", () => {
       point(110, 88),
       {
         enabled: true,
+        snapToGrid: true,
         spacing: 60,
         rotationDegrees: 0,
         type: "lines",
@@ -57,6 +59,25 @@ describe("drawing grid geometry", () => {
 
     expect(snapped.x).toBeCloseTo(150);
     expect(snapped.y).toBeCloseTo(80);
+  });
+
+  it("leaves pen samples unchanged when snapping is off", () => {
+    const sample = point(130, 77);
+    expect(
+      snapSampleToGrid(
+        sample,
+        point(10, 68),
+        {
+          enabled: true,
+          snapToGrid: false,
+          spacing: 60,
+          rotationDegrees: 0,
+          type: "lines",
+          color: "#435b70",
+        },
+        "horizontal",
+      ),
+    ).toBe(sample);
   });
 
   it.each([36, 60, 96] as const)(
@@ -80,6 +101,7 @@ describe("drawing grid geometry", () => {
         point(113, 97),
         {
           enabled: true,
+          snapToGrid: true,
           spacing,
           rotationDegrees,
           type: "lines",
@@ -105,7 +127,7 @@ describe("drawing grid geometry", () => {
     expect(clampGridRotation(-90)).toBe(-75);
   });
 
-  it("renders visible dots using the selected grid colour", () => {
+  it("renders visible dots when snapping is off", () => {
     const context = {
       arc: vi.fn(),
       beginPath: vi.fn(),
@@ -123,6 +145,7 @@ describe("drawing grid geometry", () => {
 
     drawGrid(context, 120, 80, {
       enabled: true,
+      snapToGrid: false,
       spacing: 60,
       rotationDegrees: 15,
       type: "dots",

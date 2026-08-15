@@ -53,6 +53,10 @@ import {
   redoNativeDrawingOverlay,
   undoNativeDrawingOverlay,
 } from "../native/pencilKit";
+import {
+  hasNativeTextEditor,
+  openNativeTextEditor,
+} from "../native/textEditor";
 import type { BrowserSketchRepository } from "../repository/browserSketchRepository";
 import { measureDrawingOverlayLayout } from "../sketch/drawingOverlayLayout";
 import {
@@ -203,6 +207,7 @@ export function PageWorkspace({
   myWords,
   navigationObscured = false,
   recordingLimitMinutes,
+  textEditorPreference,
   share,
   sketchRepository,
   tool,
@@ -237,6 +242,7 @@ export function PageWorkspace({
   myWords: MyWord[];
   navigationObscured?: boolean;
   recordingLimitMinutes: 2 | 5 | 10 | 30 | null;
+  textEditorPreference: "native" | "standard";
   share: NativeSharePlugin;
   sketchRepository: BrowserSketchRepository;
   tool: PageTool;
@@ -271,6 +277,8 @@ export function PageWorkspace({
   const [linkComposerRequested, setLinkComposerRequested] = useState(false);
   const [textComposerOpen, setTextComposerOpen] = useState(false);
   const [textComposerRequested, setTextComposerRequested] = useState(false);
+  const [nativeTextEditorUnavailable, setNativeTextEditorUnavailable] =
+    useState(false);
   const [textDraft, setTextDraft] = useState<TextDraft>(EMPTY_TEXT_DRAFT);
   const textSelectionRef = useRef<TextSelection>({ start: 0, end: 0 });
   const [textRecording, setTextRecording] = useState<RecordingSnapshot>();
@@ -342,8 +350,44 @@ export function PageWorkspace({
   };
 
   const openTextComposerAboveSketch = async () => {
-    setTool("view");
     setSelectedObjectId(undefined);
+    if (
+      textEditorPreference === "native" &&
+      hasNativeTextEditor() &&
+      !nativeTextEditorUnavailable
+    ) {
+      try {
+        const result = await openNativeTextEditor({
+          initialText: "",
+          mode: "add",
+          contextualStrings: myWords
+            .filter((word) => word.enabled)
+            .map((word) => word.text)
+            .slice(0, 100),
+          recordingLimitMilliseconds:
+            recordingLimitMinutes === null
+              ? undefined
+              : recordingLimitMinutes * 60_000,
+          localeIdentifier: "en-AU",
+        });
+        if (result.cancelled) {
+          return;
+        }
+        if (!result.text.trim()) {
+          setNotice("No text was added.");
+          return;
+        }
+        await addText(result.text);
+        return;
+      } catch {
+        setNativeTextEditorUnavailable(true);
+        setNotice(
+          "The native editor was unavailable. The standard editor is open.",
+        );
+      }
+    }
+
+    setTool("view");
     setTextComposerRequested(true);
     const hidden = await suspendOverlay();
     setTextComposerRequested(false);
@@ -499,6 +543,43 @@ export function PageWorkspace({
       pageId: page.id,
       object,
     });
+  };
+
+  const editTextObjectNative = async (object: TextObject) => {
+    setSelectedObjectId(undefined);
+    try {
+      const result = await openNativeTextEditor({
+        initialText: object.text,
+        mode: "edit",
+        contextualStrings: myWords
+          .filter((word) => word.enabled)
+          .map((word) => word.text)
+          .slice(0, 100),
+        recordingLimitMilliseconds:
+          recordingLimitMinutes === null
+            ? undefined
+            : recordingLimitMinutes * 60_000,
+        localeIdentifier: "en-AU",
+      });
+      if (result.cancelled || result.text === object.text) {
+        return;
+      }
+      const saved = await commit({
+        type: "page-object-update",
+        pageId: page.id,
+        object: {
+          ...object,
+          text: result.text,
+          revision: object.revision + 1,
+        },
+      });
+      if (!saved) {
+        setNotice("The edited text could not be saved.");
+      }
+    } catch {
+      setNativeTextEditorUnavailable(true);
+      setNotice("The native editor was unavailable. You can edit this text here.");
+    }
   };
 
   const commitLayoutChange = (objectId: string, change: LayoutChange) => {
@@ -698,7 +779,7 @@ export function PageWorkspace({
     }
   };
 
-  const addText = async () => {
+  async function addText(text = textDraft.text): Promise<boolean> {
     const width = 0.42;
     const object: TextObject = {
       id: createId(),
@@ -708,7 +789,7 @@ export function PageWorkspace({
       frame: { width, height: 0.24 },
       createdAt: new Date().toISOString(),
       revision: 0,
-      text: textDraft.text.trim(),
+      text: text.trim(),
       textScale: 1,
       textAlign: "left",
       layer: "above-sketch",
@@ -723,8 +804,11 @@ export function PageWorkspace({
       setPlacingTextId(object.id);
       setSelectedObjectId(object.id);
       setTool("arrange");
-    } else setNotice("The text box could not be added.");
-  };
+    } else {
+      setNotice("The text box could not be added.");
+    }
+    return saved;
+  }
 
   const toggleTextVoice = async () => {
     if (textRecording?.state === "recording") {
@@ -1092,6 +1176,28 @@ export function PageWorkspace({
           <span>Erase</span>
           </button>
         </div>
+        <div aria-label="History tools" className="tool-hud" role="group">
+          <button
+            className="tool"
+            data-help-topic="undo"
+            disabled={tool !== "pen" && tool !== "eraser" && tool !== "arrange"}
+            onClick={undoLastAction}
+            type="button"
+          >
+            <Undo2 aria-hidden="true" />
+            <span>Undo</span>
+          </button>
+          <button
+            className="tool"
+            data-help-topic="redo"
+            disabled={tool !== "pen" && tool !== "eraser"}
+            onClick={redoDrawing}
+            type="button"
+          >
+            <Redo2 aria-hidden="true" />
+            <span>Redo</span>
+          </button>
+        </div>
         <div aria-label="Media tools" className="tool-hud content-tool-hud" role="group">
           <button
           aria-label={photoCount >= MAX_PHOTOS_PER_PAGE ? "Image limit reached" : "Image"}
@@ -1142,28 +1248,6 @@ export function PageWorkspace({
           {recording?.state === "recording" ? (
             <small>{Math.floor(recording.elapsedMs / 60_000)}:{String(Math.floor(recording.elapsedMs / 1_000) % 60).padStart(2, "0")}</small>
           ) : null}
-          </button>
-        </div>
-        <div aria-label="History tools" className="tool-hud" role="group">
-          <button
-            className="tool"
-            data-help-topic="undo"
-            disabled={tool !== "pen" && tool !== "eraser" && tool !== "arrange"}
-            onClick={undoLastAction}
-            type="button"
-          >
-            <Undo2 aria-hidden="true" />
-            <span>Undo</span>
-          </button>
-          <button
-            className="tool"
-            data-help-topic="redo"
-            disabled={tool !== "pen" && tool !== "eraser"}
-            onClick={redoDrawing}
-            type="button"
-          >
-            <Redo2 aria-hidden="true" />
-            <span>Redo</span>
           </button>
         </div>
         <div aria-label="Share tool" className="tool-hud" role="group">
@@ -1476,6 +1560,13 @@ export function PageWorkspace({
                 >
                   <TextCard
                     object={object}
+                    onEdit={
+                      textEditorPreference === "native" &&
+                      hasNativeTextEditor() &&
+                      !nativeTextEditorUnavailable
+                        ? () => void editTextObjectNative(object)
+                        : undefined
+                    }
                     onSave={updateObject}
                     readOnly={tool === "arrange"}
                   />

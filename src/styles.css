@@ -225,21 +225,20 @@ textarea:focus-visible {
 
 .help-mode-button {
   position: fixed;
-  top: max(20px, env(safe-area-inset-top));
+  top: max(28px, calc(env(safe-area-inset-top) + 8px));
   right: max(18px, env(safe-area-inset-right));
   z-index: 2002;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 56px;
-  min-height: 56px;
-  padding: 8px 14px;
-  gap: 8px;
-  border: 2px solid #59452f;
-  border-radius: 999px;
-  background: #fffaf0;
+  width: 64px;
+  height: 64px;
+  padding: 10px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  background: rgba(252, 249, 242, 0.96);
   color: #2c2115;
-  box-shadow: 0 5px 18px rgba(42, 29, 17, 0.22);
+  box-shadow: 0 5px 16px rgba(65, 49, 27, 0.12);
   font: inherit;
   font-size: 18px;
   font-weight: 850;
@@ -248,15 +247,14 @@ textarea:focus-visible {
 }
 
 .help-mode-button svg {
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   stroke-width: 2.3;
 }
 
 .help-mode-button.active {
-  border-color: #fff;
-  background: #172638;
-  color: #fff;
+  background: #f8d7d2;
+  color: #a32d27;
 }
 
 .help-mode-button:focus-visible {
@@ -803,7 +801,7 @@ textarea,
 .tool-palette {
   position: absolute;
   top: max(20px, env(safe-area-inset-top));
-  right: 92px;
+  right: 104px;
   left: var(--toolbar-leading-edge);
   z-index: 30;
   display: flex;
@@ -1825,6 +1823,18 @@ textarea,
   overflow: auto;
 }
 
+.native-text-edit-trigger {
+  display: block;
+  font: inherit;
+  cursor: text;
+  white-space: pre-wrap;
+}
+
+.native-text-edit-trigger:focus-visible {
+  outline: 4px solid #17120c;
+  outline-offset: 3px;
+}
+
 .text-composer-backdrop {
   position: fixed;
   top: 0;
@@ -2518,12 +2528,197 @@ textarea,
 .voice-tool small { font-variant-numeric: tabular-nums; }
 .live-recording-status { align-self: center; margin: 0; color: #7e2519; font-weight: 700; }
 
-.my-word-form { display: flex; align-items: end; gap: 10px; margin: 12px 0; }
-.my-word-form label { flex: 1; }
-.my-words-list { display: grid; gap: 8px; }
-.my-word-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; border: 1px solid rgba(83, 68, 45, 0.18); border-radius: 12px; }
-.my-word-row input { flex: 1 1 160px; }
-.my-word-row button { min-height: 42px; }
+.my-words-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.voice-setting-section .my-words-heading h3 {
+  margin: 0;
+}
+
+.my-words-heading > span {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #eadcc3;
+  color: #55412d;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.my-words-status,
+.my-words-limit {
+  margin: 0;
+  color: #6a3d21;
+  font-weight: 750;
+}
+
+.my-word-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  margin: 4px 0 8px;
+  padding: 16px;
+  gap: 12px;
+  border: 1px solid rgba(83, 68, 45, 0.18);
+  border-radius: 15px;
+  background: #f5efe2;
+}
+
+.my-word-add-field,
+.my-word-edit-field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  font-weight: 750;
+}
+
+.my-word-add-field input,
+.my-word-edit-field input {
+  width: 100%;
+  min-height: 52px;
+  padding: 10px 13px;
+  border: 1px solid #8f7758;
+  border-radius: 11px;
+  background: #fff;
+  color: #211b14;
+  font: inherit;
+  font-size: 1.05rem;
+}
+
+.my-word-add-button,
+.my-word-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: 9px 14px;
+  gap: 8px;
+  border: 1px solid #796247;
+  border-radius: 12px;
+  background: #fffaf0;
+  color: #30271e;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.my-word-add-button {
+  background: #eadcc3;
+}
+
+.my-word-add-button svg,
+.my-word-actions svg {
+  width: 22px;
+  height: 22px;
+}
+
+.my-word-add-button:disabled,
+.my-word-actions button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.my-words-empty {
+  display: grid;
+  min-height: 112px;
+  place-content: center;
+  padding: 22px;
+  gap: 5px;
+  border: 2px dashed rgba(83, 68, 45, 0.22);
+  border-radius: 15px;
+  background: #fffdf8;
+  color: #665d51;
+  text-align: center;
+}
+
+.my-words-empty strong {
+  color: #30271e;
+}
+
+.my-words-list {
+  display: grid;
+  gap: 12px;
+}
+
+.my-word-row {
+  display: grid;
+  padding: 16px;
+  gap: 14px;
+  border: 1px solid rgba(83, 68, 45, 0.22);
+  border-radius: 15px;
+  background: #fffdf8;
+}
+
+.my-word-main-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.72fr);
+  align-items: end;
+  gap: 18px;
+}
+
+.my-word-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding-left: 18px;
+  gap: 14px;
+  border-left: 1px solid rgba(83, 68, 45, 0.16);
+  cursor: pointer;
+}
+
+.my-word-toggle-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.my-word-toggle-copy small {
+  color: #6c6256;
+}
+
+.my-word-actions {
+  display: flex;
+  align-items: center;
+  padding-top: 13px;
+  gap: 9px;
+  border-top: 1px solid rgba(83, 68, 45, 0.14);
+}
+
+.my-word-sample-action {
+  border-color: #317446 !important;
+  background: #f1f8f2 !important;
+  color: #245d36 !important;
+}
+
+.my-word-sample-action.recording {
+  border-color: #9f281f !important;
+  background: #f2cbc2 !important;
+  color: #7e2519 !important;
+}
+
+.my-word-icon-action,
+.my-word-delete-action {
+  width: 52px;
+  padding: 8px !important;
+}
+
+.my-word-delete-action {
+  margin-left: auto;
+  border-color: rgba(126, 37, 25, 0.38) !important;
+  background: #fff1ed !important;
+  color: #7e2519 !important;
+}
+
+.my-word-add-field input:focus-visible,
+.my-word-edit-field input:focus-visible {
+  outline: 4px solid #17120c;
+  outline-offset: 3px;
+}
 .transcript-editor-wrap { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
 .uncertain-words { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14px; }
 .uncertain-words button { min-height: 36px; }
@@ -3888,20 +4083,12 @@ textarea,
 }
 
 .setting-switch { position: relative; flex: 0 0 auto; }
-.setting-switch input,
-.my-word-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.setting-switch input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .setting-switch-track { display: block; width: 52px; height: 32px; padding: 3px; border: 2px solid #928575; border-radius: 999px; background: #e5ded2; transition: background 160ms ease, border-color 160ms ease; }
 .setting-switch-track > span { display: block; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(45, 34, 23, 0.3); transition: transform 180ms ease; }
-.setting-switch input:checked + .setting-switch-track,
-.my-word-toggle input:checked + .setting-switch-track { border-color: #59683e; background: #6d7650; }
-.setting-switch input:checked + .setting-switch-track > span,
-.my-word-toggle input:checked + .setting-switch-track > span { transform: translateX(20px); }
-.setting-switch input:focus-visible + .setting-switch-track,
-.my-word-toggle input:focus-visible + .setting-switch-track { outline: 3px solid #b97435; outline-offset: 2px; }
-.my-word-toggle { position: relative; display: inline-flex; align-items: center; gap: 8px; font-weight: 700; cursor: pointer; }
-.my-word-toggle .setting-switch-track { width: 46px; height: 28px; padding: 2px; }
-.my-word-toggle .setting-switch-track > span { width: 20px; height: 20px; }
-.my-word-toggle input:checked + .setting-switch-track > span { transform: translateX(18px); }
+.setting-switch input:checked + .setting-switch-track { border-color: #59683e; background: #6d7650; }
+.setting-switch input:checked + .setting-switch-track > span { transform: translateX(20px); }
+.setting-switch input:focus-visible + .setting-switch-track { outline: 3px solid #b97435; outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .setting-switch-track,
@@ -4004,6 +4191,27 @@ textarea,
   color: #fff;
 }
 
+.app-shell[data-contrast="high"] .my-word-form,
+.app-shell[data-contrast="high"] .my-word-row,
+.app-shell[data-contrast="high"] .my-words-empty {
+  border-color: #000;
+  background: #fff;
+}
+
+.app-shell[data-contrast="high"] .my-word-add-field input,
+.app-shell[data-contrast="high"] .my-word-edit-field input,
+.app-shell[data-contrast="high"] .my-word-actions button {
+  border-color: #000 !important;
+  background: #fff !important;
+  color: #000 !important;
+}
+
+.app-shell[data-contrast="high"] .my-word-sample-action.recording,
+.app-shell[data-contrast="high"] .my-word-delete-action {
+  background: #7f1d1d !important;
+  color: #fff !important;
+}
+
 .app-shell[data-reduced-motion="true"] *,
 .app-shell[data-reduced-motion="true"] *::before,
 .app-shell[data-reduced-motion="true"] *::after {
@@ -4027,6 +4235,10 @@ textarea,
 }
 
 @media (max-width: 760px) {
+  .help-mode-button {
+    top: max(11px, calc(env(safe-area-inset-top) + 1px));
+  }
+
   .profile-navigation {
     top: max(10px, env(safe-area-inset-top));
     left: max(10px, env(safe-area-inset-left));
@@ -4065,7 +4277,7 @@ textarea,
 
   .tool-palette {
     top: 10px;
-    right: 76px;
+    right: 88px;
     left: var(--toolbar-leading-edge);
     width: auto;
     overflow-x: auto;
@@ -4192,6 +4404,22 @@ textarea,
     grid-template-columns: 1fr;
   }
 
+  .my-word-form,
+  .my-word-main-row {
+    grid-template-columns: 1fr;
+  }
+
+  .my-word-toggle {
+    padding-top: 12px;
+    padding-left: 0;
+    border-top: 1px solid rgba(83, 68, 45, 0.16);
+    border-left: 0;
+  }
+
+  .my-word-actions {
+    flex-wrap: wrap;
+  }
+
   .settings-tabs {
     margin-top: -4px;
   }
@@ -4215,6 +4443,18 @@ textarea,
 }
 
 @media (orientation: portrait) {
+  .help-mode-button {
+    top: max(16px, calc(env(safe-area-inset-top) + 4px));
+    width: 56px;
+    height: 56px;
+    padding: 8px;
+  }
+
+  .help-mode-button svg {
+    width: 28px;
+    height: 28px;
+  }
+
   .profile-navigation {
     top: max(12px, env(safe-area-inset-top));
     left: max(10px, env(safe-area-inset-left));
@@ -4251,7 +4491,7 @@ textarea,
 
   .tool-palette {
     top: max(12px, env(safe-area-inset-top));
-    right: 76px;
+    right: 88px;
     gap: 6px;
   }
 

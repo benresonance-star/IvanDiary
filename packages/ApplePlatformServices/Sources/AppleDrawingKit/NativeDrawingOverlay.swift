@@ -314,7 +314,8 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate {
     private func updateGridInput() {
         gridGuideView.grid = grid
         gridInputView.grid = DrawingGridSettings(
-            enabled: grid.enabled && selectedTool == .pen,
+            enabled: grid.enabled && grid.snapToGrid && selectedTool == .pen,
+            snapToGrid: grid.snapToGrid,
             spacing: grid.spacing,
             rotationDegrees: grid.rotationDegrees,
             origin: grid.origin,

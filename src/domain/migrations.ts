@@ -36,6 +36,7 @@ const DEFAULT_SETTINGS: JournalSettings = {
   welcomeGreeting: "Welcome back Ivan!",
   welcomeTagline: "It's a Wonderful World!",
   welcomeMessage: "",
+  textEditorPreference: "native",
   recordingLimitMinutes: 5,
   automaticBackup: true,
   backupOnWifiOnly: true,
@@ -174,6 +175,8 @@ function migrateSettings(value: unknown): JournalSettings {
     typeof value.welcomeMessage === "string"
       ? value.welcomeMessage.trim().slice(0, 500)
       : DEFAULT_SETTINGS.welcomeMessage;
+  const textEditorPreference =
+    value.textEditorPreference === "standard" ? "standard" : "native";
   const recordingLimitMinutes =
     value.recordingLimitMinutes === null ||
     value.recordingLimitMinutes === 2 ||
@@ -226,6 +229,7 @@ function migrateSettings(value: unknown): JournalSettings {
     welcomeGreeting,
     welcomeTagline,
     welcomeMessage,
+    textEditorPreference,
     recordingLimitMinutes,
     automaticBackup,
     backupOnWifiOnly,
@@ -270,6 +274,7 @@ function migratePageFrames(
     const drawingGrid = grid
       ? {
           enabled: grid.enabled === true,
+          snapToGrid: grid.snapToGrid !== false,
           spacing,
           rotationDegrees,
           type: grid.type === "dots" ? "dots" as const : "lines" as const,

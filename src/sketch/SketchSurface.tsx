@@ -486,7 +486,7 @@ function SketchSurfaceComponent(
       for (const sampleEvent of events) {
         let sample = sampleFromEvent(sampleEvent, canvas, document);
         const start = active.points[0];
-        if (grid?.enabled && start) {
+        if (grid?.enabled && grid.snapToGrid && start) {
           if (!activeGridAxisRef.current && distance(start, sample) >= 8) {
             activeGridAxisRef.current = gridAxisForSample(
               sample,

@@ -2,7 +2,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createInitialJournalSnapshot } from "../domain/initialState";
-import type { DocumentOperationInput, Page, SaveHealth } from "../domain/models";
+import type {
+  DocumentOperationInput,
+  Page,
+  SaveHealth,
+  TextObject,
+} from "../domain/models";
 import {
   BrowserAppleTranscriptionMock,
   BrowserJournalAudioMock,
@@ -33,6 +38,16 @@ vi.mock("../native/pencilKit", async (importOriginal) => {
     hasNativePencilKit: () => false,
   };
 });
+
+const nativeTextEditor = vi.hoisted(() => ({
+  available: false,
+  open: vi.fn(),
+}));
+
+vi.mock("../native/textEditor", () => ({
+  hasNativeTextEditor: () => nativeTextEditor.available,
+  openNativeTextEditor: nativeTextEditor.open,
+}));
 
 vi.mock("../utils/openExternalUrl", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../utils/openExternalUrl")>();
@@ -85,6 +100,7 @@ function renderWorkspace({
   commit = vi.fn(async () => true),
   favourite = false,
   isFirstPage = true,
+  textEditorPreference = "native",
 }: {
   page?: Page;
   pages?: Page[];
@@ -93,6 +109,7 @@ function renderWorkspace({
   commit?: (operation: DocumentOperationInput) => Promise<boolean>;
   favourite?: boolean;
   isFirstPage?: boolean;
+  textEditorPreference?: "native" | "standard";
 } = {}) {
   const snapshot = createInitialJournalSnapshot(
     new Date("2026-08-14T09:00:00.000Z"),
@@ -135,17 +152,20 @@ function renderWorkspace({
       penWidth={4.2}
       myWords={[]}
       recordingLimitMinutes={5}
+      textEditorPreference={textEditorPreference}
       share={share}
       sketchRepository={sketchRepository}
       tool="view"
       transcription={new BrowserAppleTranscriptionMock()}
     />,
   );
-  return { share, audio };
+  return { share, audio, commit };
 }
 
 describe("PageWorkspace share", () => {
   beforeEach(() => {
+    nativeTextEditor.available = false;
+    nativeTextEditor.open.mockReset();
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -166,6 +186,14 @@ describe("PageWorkspace share", () => {
     expect(tools.contains(share)).toBe(true);
     const toolbarTools = tools.querySelectorAll(".tool");
     expect(toolbarTools[toolbarTools.length - 1]).toBe(share);
+    const toolLabels = Array.from(toolbarTools, (tool) => tool.textContent?.trim());
+    const drawIndex = toolLabels.findIndex((label) => label?.startsWith("Draw"));
+    expect(toolLabels.slice(drawIndex, drawIndex + 4)).toEqual([
+      expect.stringMatching(/^Draw/),
+      "Erase",
+      "Undo",
+      "Redo",
+    ]);
     const favourite = screen.getByRole("button", {
       name: "Add this page to favourites",
     });
@@ -447,6 +475,132 @@ describe("PageWorkspace favourites", () => {
     });
     expect(commit).not.toHaveBeenCalledWith(
       expect.objectContaining({ targetType: "journal-day" }),
+    );
+  });
+
+  it("adds native text through the existing page operation", async () => {
+    nativeTextEditor.available = true;
+    nativeTextEditor.open.mockResolvedValue({
+      cancelled: false,
+      text: "Native words",
+    });
+    const commit = vi.fn(async () => true);
+    const page = diaryPage();
+    renderWorkspace({ commit, page });
+
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+
+    await waitFor(() =>
+      expect(nativeTextEditor.open).toHaveBeenCalledWith(
+        expect.objectContaining({
+          initialText: "",
+          mode: "add",
+          localeIdentifier: "en-AU",
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(commit).toHaveBeenCalledWith({
+        type: "page-object-add",
+        pageId: page.id,
+        object: expect.objectContaining({
+          type: "text",
+          text: "Native words",
+        }),
+      }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Add text" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses the standard editor when selected in settings", async () => {
+    nativeTextEditor.available = true;
+    nativeTextEditor.open.mockImplementation(() => new Promise(() => undefined));
+    renderWorkspace({ textEditorPreference: "standard" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Add text" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not create text when the native editor is cancelled", async () => {
+    nativeTextEditor.available = true;
+    nativeTextEditor.open.mockResolvedValue({
+      cancelled: true,
+      text: "Unsaved words",
+    });
+    const commit = vi.fn(async () => true);
+    renderWorkspace({ commit });
+
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+
+    await waitFor(() => expect(nativeTextEditor.open).toHaveBeenCalled());
+    expect(commit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "page-object-add" }),
+    );
+  });
+
+  it("opens the standard editor when the native bridge fails", async () => {
+    nativeTextEditor.available = true;
+    nativeTextEditor.open.mockRejectedValue(new Error("Bridge unavailable"));
+    renderWorkspace();
+
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Add text" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The native editor was unavailable. The standard editor is open.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("edits an existing text block natively with one revision", async () => {
+    nativeTextEditor.available = true;
+    nativeTextEditor.open.mockResolvedValue({
+      cancelled: false,
+      text: "Edited words",
+    });
+    const textObject: TextObject = {
+      id: "text-1",
+      type: "text",
+      pageId: "page-1",
+      position: { x: 0.2, y: 0.3 },
+      frame: { width: 0.42, height: 0.24 },
+      createdAt: "2026-08-14T09:00:00.000Z",
+      revision: 3,
+      text: "Original words",
+      textScale: 1,
+      textAlign: "left",
+      layer: "above-sketch",
+    };
+    const page = {
+      ...diaryPage(),
+      id: "page-1",
+      objects: [textObject],
+    };
+    const commit = vi.fn(async () => true);
+    renderWorkspace({ commit, page });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit journal text" }),
+    );
+
+    await waitFor(() =>
+      expect(commit).toHaveBeenCalledWith({
+        type: "page-object-update",
+        pageId: page.id,
+        object: {
+          ...textObject,
+          text: "Edited words",
+          revision: 4,
+        },
+      }),
     );
   });
 });

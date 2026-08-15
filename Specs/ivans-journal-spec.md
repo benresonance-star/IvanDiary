@@ -189,6 +189,15 @@ Requirements:
 -   allow transcript correction
 -   do not force transcript review after every recording
 -   transcription failure must never prevent the recording being saved
+-   use `SFSpeechRecognizer` as the compatibility path on iPadOS 15 and 16,
+    including first-generation iPad Pro
+-   prefer on-device recognition when the device and locale support it
+-   use newer Apple speech APIs only after runtime capability checks and only
+    when My Words recognition context is preserved
+-   native text entry keeps Voice and Keyboard modes, inserts recognised speech
+    at the current selection, and never discards typed text after an error
+-   temporary audio created for text entry is deleted after success, failure,
+    cancellation, interruption, or dismissal
 
 The architecture should allow alternative transcription engines to be
 added later without changing the stored original audio.

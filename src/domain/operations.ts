@@ -526,6 +526,10 @@ export function applyDocumentOperation(
       break;
     case "page-drawing-grid-update": {
       if (
+        (
+          operation.grid.snapToGrid !== undefined &&
+          typeof operation.grid.snapToGrid !== "boolean"
+        ) ||
         ![36, 60, 96].includes(operation.grid.spacing) ||
         !Number.isInteger(operation.grid.rotationDegrees / 15) ||
         Math.abs(operation.grid.rotationDegrees) > GRID_ROTATION_MAX ||
@@ -536,7 +540,10 @@ export function applyDocumentOperation(
       }
       next = updatePage(snapshot, operation.pageId, (page) => ({
         ...page,
-        drawingGrid: operation.grid,
+        drawingGrid: {
+          ...operation.grid,
+          snapToGrid: operation.grid.snapToGrid !== false,
+        },
         revision: page.revision + 1,
         updatedAt: operation.createdAt,
       }));

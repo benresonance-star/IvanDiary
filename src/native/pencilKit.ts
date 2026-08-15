@@ -119,6 +119,7 @@ export async function updateNativeDrawingOverlay(options: {
     options.tool ?? "",
     options.clipShape ?? "",
     options.grid?.enabled ?? "",
+    options.grid?.snapToGrid ?? "",
     options.grid?.spacing ?? "",
     options.grid?.rotationDegrees ?? "",
     options.grid?.type ?? "",

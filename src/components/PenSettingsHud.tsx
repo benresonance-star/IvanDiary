@@ -66,7 +66,6 @@ export function PenSettingsHud({
     undefined,
   );
   const longPressedIndexRef = useRef<number | undefined>(undefined);
-  const colourPickerOpenedRef = useRef(false);
   const opacityPercent = Math.round(clampOpacity(settings.opacity) * 100);
   const sampleStyle = {
     "--sample-colour": colourWithOpacity(settings.color, settings.opacity),
@@ -97,18 +96,9 @@ export function PenSettingsHud({
     if (!favouriteColourLongPressEnabled) return;
     clearLongPressTimer();
     longPressedIndexRef.current = undefined;
-    colourPickerOpenedRef.current = false;
     longPressTimerRef.current = setTimeout(() => {
       longPressTimerRef.current = undefined;
       longPressedIndexRef.current = index;
-      const picker = colourPickerRefs.current[index];
-      if (!picker) return;
-      try {
-        picker.showPicker();
-        colourPickerOpenedRef.current = true;
-      } catch {
-        // Some WKWebView versions require the picker call on pointer release.
-      }
     }, Math.max(500, favouriteColourLongPressMs));
   }
 
@@ -245,16 +235,12 @@ export function PenSettingsHud({
                     onPointerCancel={() => {
                       clearLongPressTimer();
                       longPressedIndexRef.current = undefined;
-                      colourPickerOpenedRef.current = false;
                     }}
                     onPointerDown={() => startFavouriteColourLongPress(index)}
                     onPointerLeave={clearLongPressTimer}
                     onPointerUp={() => {
                       clearLongPressTimer();
-                      if (
-                        longPressedIndexRef.current === index &&
-                        !colourPickerOpenedRef.current
-                      ) {
+                      if (longPressedIndexRef.current === index) {
                         const picker = colourPickerRefs.current[index];
                         if (!picker) return;
                         try {
@@ -361,6 +347,22 @@ export function PenSettingsHud({
           </button>
           {grid.enabled ? (
             <div className="grid-detail-controls">
+              <button
+                aria-checked={grid.snapToGrid}
+                className={`grid-toggle grid-snap-toggle${grid.snapToGrid ? " selected" : ""}`}
+                onClick={() =>
+                  onGridChange({ ...grid, snapToGrid: !grid.snapToGrid })
+                }
+                role="switch"
+                type="button"
+              >
+                <Grid3X3 aria-hidden="true" />
+                <span>Snap pen to grid</span>
+                <span aria-hidden="true" className="grid-switch-track">
+                  <span />
+                </span>
+                <strong>{grid.snapToGrid ? "On" : "Off"}</strong>
+              </button>
               <div aria-label="Grid size" className="grid-segmented-control" role="group">
                 {GRID_SIZES.map((spacing, index) => (
                   <button

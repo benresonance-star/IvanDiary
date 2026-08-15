@@ -54,6 +54,7 @@ describe("journal migrations", () => {
       welcomeGreeting: "Welcome back Ivan!",
       welcomeTagline: "It's a Wonderful World!",
       welcomeMessage: "",
+      textEditorPreference: "native",
       recordingLimitMinutes: 5,
       automaticBackup: true,
       backupOnWifiOnly: true,
@@ -81,6 +82,19 @@ describe("journal migrations", () => {
     });
 
     expect(migrated.settings.lastSettingsTab).toBe("appearance");
+  });
+
+  it("preserves the standard text editor preference", () => {
+    const current = createInitialJournalSnapshot();
+    const migrated = migrateJournalSnapshot({
+      ...current,
+      settings: {
+        ...current.settings,
+        textEditorPreference: "standard",
+      },
+    });
+
+    expect(migrated.settings.textEditorPreference).toBe("standard");
   });
 
   it("preserves valid per-nib pen profile values", () => {
@@ -119,6 +133,7 @@ describe("journal migrations", () => {
 
     expect(migrated.pages[0]?.drawingGrid).toEqual({
       enabled: true,
+      snapToGrid: true,
       spacing: 96,
       rotationDegrees: 45,
       type: "lines",

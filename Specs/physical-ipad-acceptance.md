@@ -21,6 +21,10 @@ iPadOS release before a production build.
 - [ ] Keyboard mode opens the alphabetic iPad keyboard after switching from
       Voice mode; caret and selection are preserved.
 - [ ] Floating or split keyboard preferences do not obscure Add to canvas.
+- [ ] Native Add text and Edit text preserve the draft on Cancel, permission
+      denial, interruption, rotation, backgrounding, and native bridge failure.
+- [ ] Existing text saves exactly one revision only when its text changes;
+      Arrange mode never opens the editor.
 - [ ] In View mode, tapping a pasted web link on the page opens it in Safari.
 - [ ] A shared PDF opens pasted web links from the page cards or the Web links page.
 
@@ -46,6 +50,14 @@ iPadOS release before a production build.
       recording and offer a large retry action.
 - [ ] Temporary recordings used for names and text are removed after success
       and failure.
+- [ ] First-generation iPad Pro on the latest iPadOS 16 release uses the
+      `SFSpeechRecognizer` compatibility path, applies enabled My Words, and
+      remains responsive through repeated Voice/Keyboard switches.
+- [ ] A current iPad selects newer speech support only when its API, hardware,
+      locale, assets, and My Words behavior are available; failure returns to
+      the compatibility path without losing the draft.
+- [ ] Text-entry audio is also removed after cancellation, interruption,
+      background dismissal, and permission denial.
 
 ## Storage and backup
 

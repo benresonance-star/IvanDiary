@@ -104,3 +104,22 @@ describe("SettingsView name entry", () => {
     expect(commit).not.toHaveBeenCalled();
   });
 });
+
+describe("SettingsView text editor preference", () => {
+  it("switches between the native and standard text editors", () => {
+    const commit = vi.fn();
+    renderSettings({ commit });
+    fireEvent.click(screen.getByRole("tab", { name: "Voice" }));
+
+    const nativeEditor = screen.getByRole("checkbox", {
+      name: "Use native Apple text editor",
+    });
+    expect(nativeEditor).toBeChecked();
+    fireEvent.click(nativeEditor);
+
+    expect(commit).toHaveBeenCalledWith({
+      type: "settings-update",
+      settings: { textEditorPreference: "standard" },
+    });
+  });
+});

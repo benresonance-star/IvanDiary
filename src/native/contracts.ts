@@ -198,6 +198,23 @@ export type LegacyInkDocument = {
   strokes: LegacyInkStroke[];
 };
 
+export type NativeTextEditorOptions = {
+  initialText: string;
+  mode: "add" | "edit";
+  contextualStrings: string[];
+  recordingLimitMilliseconds?: number;
+  localeIdentifier?: string;
+};
+
+export type NativeTextEditorResult = {
+  cancelled: boolean;
+  text: string;
+};
+
+export interface NativeTextEditorPlugin {
+  open(options: NativeTextEditorOptions): Promise<NativeTextEditorResult>;
+}
+
 export interface PencilKitPlugin {
   addListener(
     eventName: "drawingChanged",

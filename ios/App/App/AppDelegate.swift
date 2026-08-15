@@ -1,6 +1,7 @@
 import UIKit
 @preconcurrency import Capacitor
 import AppleDrawingKit
+import AppleAudioServices
 
 @objc(PencilKitPlugin)
 @MainActor
@@ -191,6 +192,7 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
     private func drawingGrid(from call: CAPPluginCall) -> DrawingGridSettings {
         guard let value = call.getObject("grid") else { return .off }
         let enabled = value["enabled"] as? Bool ?? false
+        let snapToGrid = value["snapToGrid"] as? Bool ?? true
         let spacing = value["spacing"] as? Double ?? 60
         let rotation = value["rotationDegrees"] as? Double ?? 0
         let type = (value["type"] as? String)
@@ -203,6 +205,7 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         let pageHeight = call.getDouble("gridPageHeight") ?? 820
         return DrawingGridSettings(
             enabled: enabled,
+            snapToGrid: snapToGrid,
             spacing: CGFloat(max(36, min(spacing, 96))),
             rotationDegrees: DrawingGridSettings.clampedRotation(rotation),
             origin: CGPoint(x: originX, y: originY),
@@ -450,9 +453,65 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
     }
 }
 
+@objc(NativeTextEditorPlugin)
+@MainActor
+public final class NativeTextEditorPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin {
+    public let identifier = "NativeTextEditorPlugin"
+    public let jsName = "NativeTextEditor"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise)
+    ]
+
+    @objc public func open(_ call: CAPPluginCall) {
+        let initialText = call.getString("initialText") ?? ""
+        let mode = NativeTextEditorMode(
+            rawValue: call.getString("mode") ?? ""
+        ) ?? .add
+        let contextualStrings = Array(
+            (call.getArray("contextualStrings", String.self) ?? []).prefix(100)
+        )
+        let recordingLimitMilliseconds = call.getInt(
+            "recordingLimitMilliseconds"
+        )
+        let localeIdentifier = call.getString("localeIdentifier") ?? "en-AU"
+
+        DispatchQueue.main.async { [weak self] in
+            guard let host = self?.bridge?.viewController else {
+                call.reject("The native text editor host is unavailable.")
+                return
+            }
+            guard host.presentedViewController == nil else {
+                call.reject("Another native screen is already open.")
+                return
+            }
+
+            let editor = NativeTextEditorViewController(
+                text: initialText,
+                mode: mode,
+                contextualStrings: contextualStrings,
+                recordingLimitMilliseconds: recordingLimitMilliseconds,
+                localeIdentifier: localeIdentifier
+            )
+            editor.modalPresentationStyle = .overFullScreen
+            editor.modalTransitionStyle = .crossDissolve
+            editor.onComplete = { result in
+                call.resolve([
+                    "cancelled": result.cancelled,
+                    "text": result.text
+                ])
+            }
+            host.present(
+                editor,
+                animated: !UIAccessibility.isReduceMotionEnabled
+            )
+        }
+    }
+}
+
 final class AppViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(PencilKitPlugin())
+        bridge?.registerPluginInstance(NativeTextEditorPlugin())
         bridge?.registerPluginInstance(JournalAudioPlugin())
         bridge?.registerPluginInstance(AppleTranscriptionPlugin())
         bridge?.registerPluginInstance(JournalFilesPlugin())

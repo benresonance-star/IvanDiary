@@ -715,6 +715,7 @@ export default function App() {
               navigationMenuOpen || navigationMenuOpening || helpModeActive
             }
             recordingLimitMinutes={snapshot.settings.recordingLimitMinutes}
+            textEditorPreference={snapshot.settings.textEditorPreference}
             share={share}
             sketchRepository={sketchRepository}
             tool={activePageTool}
@@ -781,6 +782,7 @@ export default function App() {
               navigationMenuOpen || navigationMenuOpening || helpModeActive
             }
             recordingLimitMinutes={snapshot.settings.recordingLimitMinutes}
+            textEditorPreference={snapshot.settings.textEditorPreference}
             share={share}
             sketchRepository={sketchRepository}
             tool={activePageTool}

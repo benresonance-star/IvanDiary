@@ -41,6 +41,7 @@ export type PaperStyle =
 
 export type DrawingGridSettings = {
   enabled: boolean;
+  snapToGrid: boolean;
   spacing: 36 | 60 | 96;
   rotationDegrees: number;
   type: "lines" | "dots";
@@ -184,6 +185,7 @@ export type JournalSettings = {
   welcomeGreeting: string;
   welcomeTagline: string;
   welcomeMessage: string;
+  textEditorPreference: "native" | "standard";
   recordingLimitMinutes: 2 | 5 | 10 | 30 | null;
   automaticBackup: boolean;
   backupOnWifiOnly: boolean;

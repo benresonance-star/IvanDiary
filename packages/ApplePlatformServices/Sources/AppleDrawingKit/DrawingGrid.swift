@@ -12,6 +12,7 @@ public struct DrawingGridSettings: Sendable, Equatable {
     public static let defaultColorHex = "#435b70"
 
     public let enabled: Bool
+    public let snapToGrid: Bool
     public let spacing: CGFloat
     public let rotationDegrees: CGFloat
     public let origin: CGPoint
@@ -22,6 +23,7 @@ public struct DrawingGridSettings: Sendable, Equatable {
 
     public init(
         enabled: Bool,
+        snapToGrid: Bool = true,
         spacing: CGFloat,
         rotationDegrees: CGFloat,
         origin: CGPoint = .zero,
@@ -31,6 +33,7 @@ public struct DrawingGridSettings: Sendable, Equatable {
         colorHex: String = DrawingGridSettings.defaultColorHex
     ) {
         self.enabled = enabled
+        self.snapToGrid = snapToGrid
         self.spacing = spacing
         self.rotationDegrees = rotationDegrees
         self.origin = origin
@@ -44,6 +47,7 @@ public struct DrawingGridSettings: Sendable, Equatable {
 
     public static let off = DrawingGridSettings(
         enabled: false,
+        snapToGrid: true,
         spacing: 60,
         rotationDegrees: 0,
         origin: .zero,
@@ -261,7 +265,7 @@ final class DrawingGridGuideView: UIView {
 
 enum DrawingGridSnap {
     static func stroke(_ stroke: PKStroke, to grid: DrawingGridSettings) -> PKStroke {
-        guard grid.enabled, stroke.path.count > 1 else { return stroke }
+        guard grid.enabled, grid.snapToGrid, stroke.path.count > 1 else { return stroke }
         let points = (0..<stroke.path.count).map { stroke.path[$0] }
         guard let first = points.first, let last = points.last else { return stroke }
         let angle = grid.rotationDegrees * .pi / 180

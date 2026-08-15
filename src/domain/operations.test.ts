@@ -617,6 +617,7 @@ describe("document operations", () => {
       pageId: page.id,
       grid: {
         enabled: true,
+        snapToGrid: false,
         spacing: 96,
         rotationDegrees: 45,
         type: "dots",
@@ -625,11 +626,35 @@ describe("document operations", () => {
     });
     expect(updated.pages[0]?.drawingGrid).toEqual({
       enabled: true,
+      snapToGrid: false,
       spacing: 96,
       rotationDegrees: 45,
       type: "dots",
       color: "#884422",
     });
+  });
+
+  it("keeps snapping enabled for legacy grid operations", () => {
+    const page = initial.pages[0]!;
+    const legacyOperation = {
+      id: "legacy-page-grid",
+      type: "page-drawing-grid-update",
+      journalId: initial.id,
+      baseRevision: 0,
+      resultingRevision: 1,
+      createdAt: "2026-08-03T10:00:00.000Z",
+      pageId: page.id,
+      grid: {
+        enabled: true,
+        spacing: 60,
+        rotationDegrees: 0,
+        type: "lines",
+        color: "#435b70",
+      },
+    } as unknown as DocumentOperation;
+
+    const updated = applyDocumentOperation(initial, legacyOperation);
+    expect(updated.pages[0]?.drawingGrid?.snapToGrid).toBe(true);
   });
 
   it("accepts every 15 degree grid rotation the drawing tools offer", () => {
@@ -644,6 +669,7 @@ describe("document operations", () => {
       pageId: page.id,
       grid: {
         enabled: true,
+        snapToGrid: true,
         spacing: 60,
         rotationDegrees: 75,
         type: "lines",

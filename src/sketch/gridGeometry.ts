@@ -9,6 +9,7 @@ import type { PencilSample } from "./types";
 
 export const DEFAULT_DRAWING_GRID: DrawingGridSettings = {
   enabled: false,
+  snapToGrid: true,
   spacing: 60,
   rotationDegrees: 0,
   type: "lines",
@@ -27,7 +28,7 @@ export function snapSampleToGrid(
   axis?: "horizontal" | "vertical",
   center: { x: number; y: number } = { x: 0, y: 0 },
 ): PencilSample {
-  if (!grid.enabled) return sample;
+  if (!grid.enabled || !grid.snapToGrid) return sample;
   const angle = (grid.rotationDegrees * Math.PI) / 180;
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);

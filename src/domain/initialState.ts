@@ -188,6 +188,7 @@ export function createInitialJournalSnapshot(
       welcomeGreeting: "Welcome back Ivan!",
       welcomeTagline: "It's a Wonderful World!",
       welcomeMessage: "",
+      textEditorPreference: "native",
       recordingLimitMinutes: 5,
       automaticBackup: true,
       backupOnWifiOnly: true,

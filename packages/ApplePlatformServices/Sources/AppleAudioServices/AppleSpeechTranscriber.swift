@@ -14,6 +14,46 @@ final class RecognitionCompletionGate: @unchecked Sendable {
     }
 }
 
+final class RecognitionTaskBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: SFSpeechRecognitionTask?
+
+    func store(_ task: SFSpeechRecognitionTask) {
+        lock.lock()
+        self.task = task
+        lock.unlock()
+    }
+
+    func cancel() {
+        lock.lock()
+        let task = self.task
+        lock.unlock()
+        task?.cancel()
+    }
+}
+
+final class RecognitionResultBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: JournalTranscriptionResult?
+
+    func store(_ result: JournalTranscriptionResult) {
+        lock.lock()
+        self.result = result
+        lock.unlock()
+    }
+
+    func latest() -> JournalTranscriptionResult? {
+        lock.lock()
+        defer { lock.unlock() }
+        return result
+    }
+}
+
+public enum AppleSpeechRecognitionMode: Equatable, Sendable {
+    case service
+    case onDevice
+}
+
 public struct JournalTranscriptionSegment: Equatable, Sendable {
     public let text: String
     public let startMilliseconds: Int
@@ -47,6 +87,7 @@ public enum AppleSpeechTranscriptionError: LocalizedError, Equatable {
     case assetMissing
     case recognizerUnavailable
     case noSpeechRecognized
+    case timedOut
 
     public var errorDescription: String? {
         switch self {
@@ -54,6 +95,7 @@ public enum AppleSpeechTranscriptionError: LocalizedError, Equatable {
         case .assetMissing: "The saved recording could not be found."
         case .recognizerUnavailable: "Speech recognition is temporarily unavailable."
         case .noSpeechRecognized: "No speech was recognized in this recording."
+        case .timedOut: "Speech recognition took too long. Try again or use the keyboard."
         }
     }
 
@@ -63,6 +105,7 @@ public enum AppleSpeechTranscriptionError: LocalizedError, Equatable {
         case .assetMissing: "ASSET_MISSING"
         case .recognizerUnavailable: "UNAVAILABLE"
         case .noSpeechRecognized: "NO_SPEECH"
+        case .timedOut: "TIMEOUT"
         }
     }
 }
@@ -81,7 +124,12 @@ public final class AppleSpeechTranscriber {
         }
     }
 
-    public func transcribe(fileURL: URL, localeIdentifier: String, contextualStrings: [String] = []) async throws -> JournalTranscriptionResult {
+    public func transcribe(
+        fileURL: URL,
+        localeIdentifier: String,
+        contextualStrings: [String] = [],
+        onPartialResult: (@MainActor @Sendable (String) -> Void)? = nil
+    ) async throws -> JournalTranscriptionResult {
         guard fileURL.isFileURL, FileManager.default.fileExists(atPath: fileURL.path) else {
             throw AppleSpeechTranscriptionError.assetMissing
         }
@@ -93,42 +141,120 @@ public final class AppleSpeechTranscriber {
             throw AppleSpeechTranscriptionError.recognizerUnavailable
         }
 
+        let mode = Self.preferredRecognitionMode(
+            operatingSystemMajorVersion:
+                ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
+            supportsOnDeviceRecognition: recognizer.supportsOnDeviceRecognition
+        )
+        return try await recognize(
+            fileURL: fileURL,
+            localeIdentifier: localeIdentifier,
+            contextualStrings: contextualStrings,
+            recognizer: recognizer,
+            requiresOnDeviceRecognition: mode == .onDevice,
+            onPartialResult: onPartialResult
+        )
+    }
+
+    nonisolated public static func preferredRecognitionMode(
+        operatingSystemMajorVersion: Int,
+        supportsOnDeviceRecognition: Bool
+    ) -> AppleSpeechRecognitionMode {
+        operatingSystemMajorVersion >= 17 && supportsOnDeviceRecognition
+            ? .onDevice
+            : .service
+    }
+
+    private func recognize(
+        fileURL: URL,
+        localeIdentifier: String,
+        contextualStrings: [String],
+        recognizer: SFSpeechRecognizer,
+        requiresOnDeviceRecognition: Bool,
+        onPartialResult: (@MainActor @Sendable (String) -> Void)?
+    ) async throws -> JournalTranscriptionResult {
         let request = SFSpeechURLRecognitionRequest(url: fileURL)
-        request.shouldReportPartialResults = false
+        request.shouldReportPartialResults = true
         request.taskHint = .dictation
         request.contextualStrings = Array(contextualStrings.prefix(100))
+        request.requiresOnDeviceRecognition = requiresOnDeviceRecognition
         if #available(iOS 16.0, macOS 13.0, *) { request.addsPunctuation = true }
 
-        return try await withCheckedThrowingContinuation { continuation in
+        let taskBox = RecognitionTaskBox()
+        let resultBuffer = RecognitionResultBuffer()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
             let completionGate = RecognitionCompletionGate()
-            recognizer.recognitionTask(with: request) { result, error in
-                if let result, result.isFinal {
-                    guard completionGate.claim() else { return }
+            let timeout = DispatchWorkItem {
+                guard completionGate.claim() else { return }
+                taskBox.cancel()
+                if let result = resultBuffer.latest() {
+                    continuation.resume(returning: result)
+                } else {
+                    continuation.resume(
+                        throwing: AppleSpeechTranscriptionError.timedOut
+                    )
+                }
+            }
+            let task = recognizer.recognitionTask(with: request) { result, error in
+                if let result {
                     let transcription = result.bestTranscription
-                    let text = transcription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !text.isEmpty else {
+                    let text = transcription.formattedString
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !text.isEmpty {
+                        let segments = transcription.segments.map {
+                            JournalTranscriptionSegment(
+                                text: $0.substring,
+                                startMilliseconds: Int(
+                                    ($0.timestamp * 1_000).rounded()
+                                ),
+                                durationMilliseconds: Int(
+                                    ($0.duration * 1_000).rounded()
+                                ),
+                                confidence: $0.confidence,
+                                alternatives: Array(
+                                    $0.alternativeSubstrings.prefix(3)
+                                )
+                            )
+                        }
+                        resultBuffer.store(JournalTranscriptionResult(
+                            text: text,
+                            locale: localeIdentifier,
+                            segments: segments
+                        ))
+                        if let onPartialResult {
+                            Task { @MainActor in
+                                onPartialResult(text)
+                            }
+                        }
+                    }
+                }
+                if result?.isFinal == true {
+                    guard completionGate.claim() else { return }
+                    timeout.cancel()
+                    guard let bufferedResult = resultBuffer.latest() else {
                         continuation.resume(throwing: AppleSpeechTranscriptionError.noSpeechRecognized)
                         return
                     }
-                    let segments = transcription.segments.map {
-                        JournalTranscriptionSegment(
-                            text: $0.substring,
-                            startMilliseconds: Int(($0.timestamp * 1_000).rounded()),
-                            durationMilliseconds: Int(($0.duration * 1_000).rounded()),
-                            confidence: $0.confidence,
-                            alternatives: Array($0.alternativeSubstrings.prefix(3))
-                        )
-                    }
-                    continuation.resume(returning: JournalTranscriptionResult(
-                        text: text,
-                        locale: localeIdentifier,
-                        segments: segments
-                    ))
+                    continuation.resume(returning: bufferedResult)
                 } else if let error {
                     guard completionGate.claim() else { return }
-                    continuation.resume(throwing: error)
+                    timeout.cancel()
+                    if let bufferedResult = resultBuffer.latest() {
+                        continuation.resume(returning: bufferedResult)
+                    } else {
+                        continuation.resume(throwing: error)
+                    }
                 }
             }
+            taskBox.store(task)
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + 15,
+                execute: timeout
+            )
+            }
+        } onCancel: {
+            taskBox.cancel()
         }
     }
 }

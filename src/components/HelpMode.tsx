@@ -1,4 +1,4 @@
-import { CircleHelp } from "lucide-react";
+import { createLucideIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -8,6 +8,11 @@ import {
 } from "react";
 
 import { HELP_TIPS, isHelpTopic, type HelpTopic } from "./helpContent";
+
+const QuestionMark = createLucideIcon("QuestionMark", [
+  ["path", { d: "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", key: "help" }],
+  ["path", { d: "M12 17h.01", key: "dot" }],
+]);
 
 type TargetSelection = {
   body?: string;
@@ -207,8 +212,7 @@ export function HelpMode({
         ref={buttonRef}
         type="button"
       >
-        <CircleHelp aria-hidden="true" />
-        {active ? <span>Finish help</span> : null}
+        <QuestionMark aria-hidden="true" />
       </button>
     </>
   );

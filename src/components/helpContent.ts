@@ -9,12 +9,12 @@ export const HELP_TIPS = {
     body: "Tap a button or control to learn what it does. Nothing will change while Help is on.",
   },
   navigation: {
-    title: "Open the diary menu",
+    title: "Open the App menu",
     body: "Use this menu to move between your journal, sketchbooks, favourites, and settings.",
   },
   "nav-diary": {
     title: "My Journal",
-    body: "Open your dated diary pages.",
+    body: "Open your dated journal pages.",
   },
   "nav-sketchbooks": {
     title: "My Sketchbooks",
@@ -26,7 +26,7 @@ export const HELP_TIPS = {
   },
   "nav-settings": {
     title: "My Settings",
-    body: "Adjust the diary to make it comfortable for you.",
+    body: "Adjust the App to make it comfortable for you.",
   },
   view: {
     title: "View",
@@ -78,7 +78,7 @@ export const HELP_TIPS = {
   },
   calendar: {
     title: "Calendar",
-    body: "Choose another diary date to view.",
+    body: "Choose another journal date to view.",
   },
   "page-strip": {
     title: "Page",
@@ -86,7 +86,7 @@ export const HELP_TIPS = {
   },
   "add-page": {
     title: "Add a page",
-    body: "Create another page in this diary day or sketchbook.",
+    body: "Create another page for this date or sketchbook.",
   },
   "pen-tab": {
     title: "Pen settings",
@@ -188,13 +188,33 @@ export const HELP_TIPS = {
     title: "All sketchbooks",
     body: "Return to your list of sketchbooks.",
   },
-  "settings-tab": {
-    title: "Settings section",
-    body: "Open this group of diary settings.",
+  "settings-about": {
+    title: "About Me settings",
+    body: "Change your name or draw your profile picture.",
+  },
+  "settings-welcome": {
+    title: "Welcome settings",
+    body: "Change the greeting shown when the App opens and preview it.",
+  },
+  "settings-canvas": {
+    title: "Canvas settings",
+    body: "Choose drawing colours, pen behavior, and test your drawing tools.",
+  },
+  "settings-voice": {
+    title: "Voice settings",
+    body: "Choose recording limits and help the App recognise important words.",
+  },
+  "settings-appearance": {
+    title: "Appearance settings",
+    body: "Adjust text size, contrast, and movement to suit you.",
+  },
+  "settings-backup": {
+    title: "Backup settings",
+    body: "Check, create, or restore your iCloud backup.",
   },
   "welcome-continue": {
-    title: "Open diary",
-    body: "Continue from the welcome screen into your diary.",
+    title: "Open App",
+    body: "Continue from the welcome screen into the App.",
   },
   "return-settings": {
     title: "Return to Settings",

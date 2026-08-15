@@ -4,15 +4,12 @@ import {
   Eye,
   Mic,
   Palette,
-  Trash2,
-  Volume2,
 } from "lucide-react";
 
 import type {
   BackupStatus,
   DocumentOperationInput,
   JournalSettings,
-  MyWord,
   SettingsTabId,
 } from "../domain/models";
 import type {
@@ -21,21 +18,19 @@ import type {
   JournalFilesPlugin,
   RecordingSnapshot,
 } from "../native/contracts";
-import {
-  finalizeStoppedRecording,
-  recordingStorageAvailable,
-} from "../native/durableAudio";
+import { recordingStorageAvailable } from "../native/durableAudio";
 import {
   EphemeralTranscriptionError,
   transcribeEphemeralRecording,
 } from "../native/ephemeralTranscription";
-import { createId } from "../utils/id";
 import type { SketchRepository } from "../sketch/types";
 import type { WelcomeCopy } from "./WelcomeScreen";
 import { AboutSettingsPanel } from "./AboutSettingsPanel";
 import { AppearanceSettingsPanel } from "./AppearanceSettingsPanel";
 import { BackupSettingsPanel } from "./BackupSettingsPanel";
 import { CanvasSettingsPanel } from "./CanvasSettingsPanel";
+import { MyWordsSettingsPanel } from "./MyWordsSettingsPanel";
+import { SettingToggle } from "./SettingToggle";
 import {
   DEFAULT_GREETING,
   DEFAULT_TAGLINE,
@@ -91,13 +86,7 @@ export function SettingsView({
   const displayNameInputRef = useRef<HTMLInputElement>(null);
   const [nameRecording, setNameRecording] = useState<RecordingSnapshot>();
   const [nameStatus, setNameStatus] = useState<string>();
-  const [newWord, setNewWord] = useState("");
   const [activeTab, setActiveTab] = useState<SettingsTabId>(settings.lastSettingsTab);
-  const [sampleRecording, setSampleRecording] = useState<{ wordId: string; snapshot: RecordingSnapshot }>();
-  const [sampleStatus, setSampleStatus] = useState<string>();
-
-  const saveMyWords = (myWords: MyWord[]) =>
-    commit({ type: "settings-update", settings: { myWords } });
 
   const saveDisplayName = (name: string) => {
     const cleaned = name.trim() || "Ivan";
@@ -188,47 +177,6 @@ export function SettingsView({
     document.getElementById(`settings-tab-${next.id}`)?.focus();
   };
 
-  const addMyWord = () => {
-    const text = newWord.trim();
-    if (!text || settings.myWords.length >= 100) return;
-    const existing = settings.myWords.some((word) => word.text.toLocaleLowerCase() === text.toLocaleLowerCase());
-    if (!existing) {
-      saveMyWords([...settings.myWords, { id: createId(), text, enabled: true, correctionCount: 0 }]);
-    }
-    setNewWord("");
-  };
-
-  const toggleWordSample = async (word: MyWord) => {
-    if (sampleRecording?.wordId === word.id && sampleRecording.snapshot.state === "recording") {
-      try {
-        const saved = await finalizeStoppedRecording(audio, files);
-        if (!saved.asset) return;
-        if (word.sample) await files.removeToTrash({ assetId: word.sample.id });
-        saveMyWords(settings.myWords.map((candidate) =>
-          candidate.id === word.id ? { ...candidate, sample: saved.asset } : candidate));
-        setSampleStatus(`Voice sample saved for ${word.text}.`);
-      } catch {
-        setSampleStatus("The voice sample could not be saved.");
-      } finally {
-        setSampleRecording(undefined);
-      }
-      return;
-    }
-    try {
-      if (!await recordingStorageAvailable(files)) {
-        setSampleStatus(
-          "Storage is too low to record a voice sample safely.",
-        );
-        return;
-      }
-      const snapshot = await audio.start({ maximumDurationMs: 30_000 });
-      setSampleRecording({ wordId: word.id, snapshot });
-      setSampleStatus(`Recording a voice sample for ${word.text}.`);
-    } catch {
-      setSampleStatus("The microphone could not start.");
-    }
-  };
-
   const saveWelcomeText = (
     field: "welcomeGreeting" | "welcomeTagline" | "welcomeMessage",
     value: string,
@@ -265,7 +213,7 @@ export function SettingsView({
           <button
             aria-controls={`settings-panel-${tab.id}`}
             aria-selected={activeTab === tab.id}
-            data-help-topic="settings-tab"
+            data-help-topic={`settings-${tab.id}`}
             id={`settings-tab-${tab.id}`}
             key={tab.id}
             onClick={() => selectTab(tab.id)}
@@ -287,7 +235,10 @@ export function SettingsView({
         ))}
       </nav>
 
-      <div className="settings-panel">
+      <div
+        className="settings-panel"
+        data-help-topic={`settings-${activeTab}`}
+      >
         {activeTab === "about" ? (
           <AboutSettingsPanel
             displayName={displayName}
@@ -352,33 +303,31 @@ export function SettingsView({
                 </span>
               </label>
             </section>
-            <section className="voice-setting-section voice-words-section" aria-labelledby="voice-words-heading">
-              <h3 id="voice-words-heading">My Words</h3>
-              <p className="setting-description">Add short names or phrases. A voice sample is optional and stays with the diary on this device.</p>
-              <p aria-live="polite" role="status">{sampleStatus}</p>
-              <form className="my-word-form" onSubmit={(event) => { event.preventDefault(); addMyWord(); }}>
-                <label>
-                  Word or short phrase
-                  <input maxLength={80} onChange={(event) => setNewWord(event.target.value)} value={newWord} />
-                </label>
-                <button disabled={!newWord.trim() || settings.myWords.length >= 100} type="submit">Add word</button>
-              </form>
-              <div className="my-words-list">
-                {settings.myWords.map((word) => (
-                  <article key={word.id} className="my-word-row">
-                    <input aria-label={`Intended words for ${word.text}`} maxLength={80} onBlur={(event) => { const text = event.target.value.trim(); if (text) saveMyWords(settings.myWords.map((candidate) => candidate.id === word.id ? { ...candidate, text } : candidate)); }} defaultValue={word.text} />
-                    <label className="my-word-toggle">
-                      <input aria-label={`Use ${word.text} for voice recognition`} checked={word.enabled} onChange={(event) => saveMyWords(settings.myWords.map((candidate) => candidate.id === word.id ? { ...candidate, enabled: event.target.checked } : candidate))} type="checkbox" />
-                      <span aria-hidden="true" className="setting-switch-track"><span /></span>
-                      <span>{word.enabled ? "Used" : "Not used"}</span>
-                    </label>
-                    <button onClick={() => void toggleWordSample(word)} type="button"><Mic aria-hidden="true" />{sampleRecording?.wordId === word.id ? "Stop sample" : word.sample ? "Replace sample" : "Record sample"}</button>
-                    {word.sample ? <button aria-label={`Play sample for ${word.text}`} onClick={() => void audio.play({ assetUri: word.sample!.localUri })} type="button"><Volume2 aria-hidden="true" /></button> : null}
-                    <button aria-label={`Delete ${word.text}`} onClick={() => void (async () => { if (word.sample) await files.removeToTrash({ assetId: word.sample.id }); saveMyWords(settings.myWords.filter((candidate) => candidate.id !== word.id)); })()} type="button"><Trash2 aria-hidden="true" /></button>
-                  </article>
-                ))}
-              </div>
+            <section
+              aria-labelledby="voice-text-editor-heading"
+              className="voice-setting-section"
+            >
+              <h3 id="voice-text-editor-heading">Text entry</h3>
+              <SettingToggle
+                checked={settings.textEditorPreference === "native"}
+                description="Turn this off to use the standard editor. Both editors use Apple speech recognition."
+                label="Use native Apple text editor"
+                onChange={(enabled) =>
+                  commit({
+                    type: "settings-update",
+                    settings: {
+                      textEditorPreference: enabled ? "native" : "standard",
+                    },
+                  })
+                }
+              />
             </section>
+            <MyWordsSettingsPanel
+              audio={audio}
+              commit={commit}
+              files={files}
+              settings={settings}
+            />
           </div>
         </div>
         ) : null}
