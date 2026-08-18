@@ -9,10 +9,12 @@ import {
 } from "../native/browserMocks";
 import { BrowserSketchRepository } from "../repository/browserSketchRepository";
 import { SettingsView } from "./SettingsView";
+import { BackupSettingsPanel } from "./BackupSettingsPanel";
 
 function renderSettings({
   commit = vi.fn(),
   files = new BrowserJournalFilesMock(),
+  onDeleteCloudData = vi.fn(),
   transcription = new BrowserAppleTranscriptionMock(),
 } = {}) {
   const settings = {
@@ -31,17 +33,25 @@ function renderSettings({
       }}
       commit={commit}
       files={files}
+      historyStatus={{ state: "idle", entries: [] }}
       onBackupNow={vi.fn()}
       onCheckBackup={vi.fn()}
+      onKeepThisIPad={vi.fn()}
+      onSaveLocalCopy={vi.fn()}
+      onUseICloud={vi.fn()}
+      onCreateHistory={vi.fn()}
+      onDeleteHistory={vi.fn()}
+      onDeleteCloudData={onDeleteCloudData}
       onEditPortrait={vi.fn()}
       onPreviewWelcome={vi.fn()}
-      onRestore={vi.fn()}
+      onRefreshHistory={vi.fn()}
+      onRestoreHistory={vi.fn()}
       settings={settings}
       sketchRepository={new BrowserSketchRepository()}
       transcription={transcription}
     />,
   );
-  return { commit, files, settings };
+  return { commit, files, onDeleteCloudData, settings };
 }
 
 describe("SettingsView name entry", () => {
@@ -121,6 +131,82 @@ describe("SettingsView text editor preference", () => {
       type: "settings-update",
       settings: { textEditorPreference: "standard" },
     });
+  });
+});
+
+describe("SettingsView backup history", () => {
+  it("keeps recovery points separate from iCloud Sync", () => {
+    renderSettings();
+
+    expect(screen.getByRole("tab", { name: "iCloud Sync" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+
+    expect(screen.getByRole("heading", { name: "Backup history" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create recovery point" })).toBeInTheDocument();
+    expect(screen.getByText(/last 5 entry days/)).toBeInTheDocument();
+  });
+});
+
+describe("iCloud conflict choices", () => {
+  it("does not choose between two iPads without the user", () => {
+    const onKeepThisIPad = vi.fn();
+    const onSaveLocalCopy = vi.fn();
+    const onUseICloud = vi.fn();
+    render(
+      <BackupSettingsPanel
+        backupStatus={{
+          state: "available",
+          pendingItemCount: 0,
+          message: "Nothing was overwritten.",
+          conflictDetected: true,
+          backupDeviceName: "Kitchen iPad",
+        }}
+        commit={vi.fn()}
+        onBackupNow={vi.fn()}
+        onCheckBackup={vi.fn()}
+        onKeepThisIPad={onKeepThisIPad}
+        onSaveLocalCopy={onSaveLocalCopy}
+        onUseICloud={onUseICloud}
+        settings={createInitialJournalSnapshot().settings}
+      />,
+    );
+
+    expect(screen.getByText(/last saved by Kitchen iPad/)).toBeInTheDocument();
+    expect(onKeepThisIPad).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Use the iCloud diary" }));
+    expect(onUseICloud).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Keep this iPad’s diary" }));
+    expect(onKeepThisIPad).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Save this iPad as a recovery point" }));
+    expect(onSaveLocalCopy).toHaveBeenCalledOnce();
+  });
+});
+
+describe("SettingsView privacy", () => {
+  it("explains private iCloud storage and exposes cloud deletion", () => {
+    const { onDeleteCloudData } = renderSettings();
+    fireEvent.click(screen.getByRole("tab", { name: "Privacy" }));
+
+    expect(screen.getByRole("heading", { name: "Privacy" })).toBeInTheDocument();
+    expect(screen.getByText(/private iCloud database/i)).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Delete my iCloud diary and history",
+      }),
+    );
+    expect(onDeleteCloudData).toHaveBeenCalledOnce();
+  });
+
+  it("provides a dedicated privacy help topic", () => {
+    renderSettings();
+    const privacyTab = screen.getByRole("tab", { name: "Privacy" });
+
+    expect(privacyTab).toHaveAttribute("data-help-topic", "settings-privacy");
+    fireEvent.click(privacyTab);
+    expect(document.querySelector(".settings-panel")).toHaveAttribute(
+      "data-help-topic",
+      "settings-privacy",
+    );
   });
 });
 

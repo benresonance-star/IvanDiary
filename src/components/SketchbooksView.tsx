@@ -8,7 +8,7 @@ import {
   ThumbsUp,
   Trash2,
 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type {
   DocumentOperationInput,
@@ -75,9 +75,16 @@ export function SketchbooksView({
     useState<Sketchbook>();
   const [recording, setRecording] = useState<RecordingSnapshot>();
   const [speechMessage, setSpeechMessage] = useState<string>();
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const sketchbookIds = snapshot.sketchbooks.map(
     (sketchbook) => sketchbook.id,
   );
+
+  useEffect(() => {
+    if (nameDialogOpen) {
+      nameInputRef.current?.focus({ preventScroll: true });
+    }
+  }, [nameDialogOpen]);
 
   const saveSketchbookName = async (event: FormEvent) => {
     event.preventDefault();
@@ -356,11 +363,11 @@ export function SketchbooksView({
             </h2>
             <label htmlFor="sketchbook-name">Sketchbook name</label>
             <input
-              autoFocus
               id="sketchbook-name"
               maxLength={80}
               onChange={(event) => setName(event.target.value)}
               placeholder="For example, Animals"
+              ref={nameInputRef}
               value={name}
             />
             <button

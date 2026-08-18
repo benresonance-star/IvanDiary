@@ -44,7 +44,9 @@ export function ProfilePortraitEditor({
     nib: penSettings.nib,
     width: penSettings.width,
     opacity: penSettings.opacity,
-    fingerDrawing: penSettings.fingerDrawing !== false,
+    fingerDrawing: tool === "eraser"
+      ? penSettings.fingerErasing === true
+      : penSettings.fingerDrawing !== false,
     paperRef: canvasRef,
     toolPaletteRef: toolsRef,
     sketchRepository,
@@ -84,7 +86,7 @@ export function ProfilePortraitEditor({
         <button
           aria-pressed={tool === "eraser"}
           data-help-topic="erase"
-          onClick={() => setTool("eraser")}
+          onClick={() => tool === "eraser" ? setPenHudOpen(true) : setTool("eraser")}
           type="button"
         >
           <Eraser aria-hidden="true" />Erase
@@ -105,7 +107,9 @@ export function ProfilePortraitEditor({
               : {
                   kind: "ipad",
                   tools: ["pen", "eraser"],
-                  fingerDrawing: penSettings.fingerDrawing !== false,
+                  fingerDrawing: tool === "eraser"
+                    ? penSettings.fingerErasing === true
+                    : penSettings.fingerDrawing !== false,
                   pressure: true,
                 }
           }
@@ -133,6 +137,7 @@ export function ProfilePortraitEditor({
             onChange={setPenSettings}
             onDone={closePenSettings}
             settings={penSettings}
+            tool={tool === "eraser" ? "eraser" : "pen"}
           />
         </>
       ) : null}

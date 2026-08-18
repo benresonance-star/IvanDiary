@@ -18,6 +18,7 @@ import {
   type PaperStyle,
 } from "../domain/models";
 import type { SketchRepository } from "../sketch/types";
+import { displayAssetUri } from "../utils/displayAssetUri";
 import { defaultObjectFrame } from "./arrangeGeometry";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SketchThumbnail } from "./SketchThumbnail";
@@ -66,7 +67,7 @@ export function PagePreview({
                 alt=""
                 className="page-preview-object preview-photo"
                 key={object.id}
-                src={object.asset.localUri}
+                src={displayAssetUri(object.asset.localUri)}
                 style={previewStyle(object)}
               />
             );
@@ -177,6 +178,13 @@ export function DiaryPageStrip({
   const suppressClickRef = useRef(false);
   const [draggedPageId, setDraggedPageId] = useState<string>();
   const [pageLimitWarningOpen, setPageLimitWarningOpen] = useState(false);
+  const pageLimitButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (pageLimitWarningOpen) {
+      pageLimitButtonRef.current?.focus({ preventScroll: true });
+    }
+  }, [pageLimitWarningOpen]);
   const [pagePendingDelete, setPagePendingDelete] =
     useState<PageStripPage>();
   const [orderedPageIds, setOrderedPageIds] = useState(initialOrder);
@@ -579,7 +587,7 @@ export function DiaryPageStrip({
                   Hey {displayName.trim() || "there"} this is the last page we can fit on this {collectionType}
                 </p>
                 <div className="delete-dialog-actions">
-                  <button autoFocus onClick={() => setPageLimitWarningOpen(false)} type="button">
+                  <button ref={pageLimitButtonRef} onClick={() => setPageLimitWarningOpen(false)} type="button">
                     OK
                   </button>
                 </div>

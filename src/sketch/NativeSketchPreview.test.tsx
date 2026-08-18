@@ -81,4 +81,25 @@ describe("NativeSketchPreview", () => {
       height: "calc(100% - 64px)",
     });
   });
+
+  it("renders thumbnails from source canvas coordinates", async () => {
+    vi.spyOn(pencilKit, "hasNativePencilKit").mockReturnValue(true);
+    const getPreview = vi
+      .spyOn(pencilKit, "getNativeDrawingPreview")
+      .mockResolvedValue({ saved: true, available: false });
+
+    render(
+      <NativeSketchPreview
+        documentId="drawing-one"
+        renderSize={{ width: 1200, height: 820 }}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(getPreview).toHaveBeenCalledWith("drawing-one", {
+        width: 1200,
+        height: 820,
+      }),
+    );
+  });
 });

@@ -238,6 +238,7 @@ export type JournalSettings = {
   penWidth: number;
   penOpacity: number;
   fingerDrawingEnabled: boolean;
+  fingerErasingEnabled: boolean;
   favouritePenColours: string[];
   favouriteColourLongPressEnabled: boolean;
   favouriteColourLongPressSeconds: number;
@@ -257,7 +258,27 @@ export type JournalSettings = {
   myWords: MyWord[];
 };
 
-export type SettingsTabId = "about" | "welcome" | "canvas" | "voice" | "appearance" | "backup";
+export type SettingsTabId = "about" | "welcome" | "canvas" | "voice" | "appearance" | "backup" | "history" | "privacy";
+
+export type BackupHistoryReason = "automatic" | "manual" | "before-restore";
+
+export type BackupHistoryEntry = {
+  id: EntityId;
+  capturedAt: IsoDateTime;
+  entryDay: IsoDate;
+  reason: BackupHistoryReason;
+  deviceName: string;
+  revision: number;
+  assetCount: number;
+  byteLength: number;
+  protected: boolean;
+};
+
+export type BackupHistoryStatus = {
+  state: "idle" | "loading" | "creating" | "restoring" | "error";
+  entries: BackupHistoryEntry[];
+  message?: string;
+};
 
 export type BackupStatus = {
   state: "not-configured" | "available" | "waiting" | "syncing" | "synced" | "error";
@@ -270,6 +291,12 @@ export type BackupStatus = {
   recordIdentifier?: string;
   failedItems?: BackupFailedItem[];
   backedUpRevision?: number;
+  backupDeviceName?: string;
+  backupDeviceIdentifier?: string;
+  currentDeviceName?: string;
+  currentDeviceIdentifier?: string;
+  contentFingerprint?: string;
+  conflictDetected?: boolean;
 };
 
 export type BackupFailedItem = {

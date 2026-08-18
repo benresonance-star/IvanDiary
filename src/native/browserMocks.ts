@@ -139,6 +139,26 @@ export class BrowserCloudBackupMock implements CloudBackupPlugin {
   async restore(): Promise<never> {
     throw new Error("iCloud restore is only available in the iPad app.");
   }
+
+  async listHistory() {
+    return { entries: [] };
+  }
+
+  async createHistory(): Promise<never> {
+    throw new Error("iCloud backup history is only available in the iPad app.");
+  }
+
+  async restoreHistory(): Promise<never> {
+    throw new Error("iCloud backup history is only available in the iPad app.");
+  }
+
+  async deleteHistory(): Promise<void> {
+    throw new Error("iCloud backup history is only available in the iPad app.");
+  }
+
+  async deleteCloudData(): Promise<void> {
+    throw new Error("iCloud backup is only available in the iPad app.");
+  }
 }
 
 export class BrowserNativeShareMock implements NativeSharePlugin {

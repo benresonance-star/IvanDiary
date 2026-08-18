@@ -119,6 +119,7 @@ function renderStory(
         favouritePenColours={["#171410", "#245b8a"]}
         files={files}
         fingerDrawingEnabled
+        fingerErasingEnabled={false}
         health={HEALTH}
         myWords={[]}
         navigationObscured={false}

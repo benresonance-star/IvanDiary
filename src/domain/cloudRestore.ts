@@ -17,15 +17,36 @@ export function reconcileCloudRestore(
     }
     return asset;
   };
+  const updateOptionalAsset = (asset: AssetRef): AssetRef | undefined => {
+    const restoredUri = restoredAssetUris[asset.id];
+    if (restoredUri) return { ...asset, localUri: restoredUri };
+    return asset.localUri.startsWith("demo://") ? asset : undefined;
+  };
 
   const reconciled: JournalSnapshot = {
     ...snapshot,
+    days: snapshot.days.map((day) => ({
+      ...day,
+      ...(day.thumbnailAsset
+        ? (() => {
+            const thumbnailAsset = updateOptionalAsset(day.thumbnailAsset);
+            return thumbnailAsset ? { thumbnailAsset } : {};
+          })()
+        : {}),
+    })),
     pages: snapshot.pages.map((page) => ({
       ...page,
       objects: page.objects.map((object) =>
         object.type === "voice" || object.type === "photo"
           ? { ...object, asset: updateAsset(object.asset) }
-          : object,
+          : object.type === "link" && object.previewAsset
+            ? (() => {
+                const previewAsset = updateOptionalAsset(object.previewAsset);
+                const link = { ...object };
+                delete link.previewAsset;
+                return previewAsset ? { ...link, previewAsset } : link;
+              })()
+            : object,
       ),
     })),
     myStory: snapshot.myStory

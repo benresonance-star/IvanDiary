@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { TextObject } from "../domain/models";
 
@@ -14,6 +14,13 @@ export function TextCard({
   onSave: (next: TextObject) => void;
 }) {
   const [text, setText] = useState(object.text);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!readOnly && object.text.length === 0) {
+      editorRef.current?.focus({ preventScroll: true });
+    }
+  }, [object.text.length, readOnly]);
 
   if (onEdit && !readOnly) {
     return (
@@ -32,7 +39,6 @@ export function TextCard({
   return (
     <textarea
       aria-label="Journal text"
-      autoFocus={object.text.length === 0}
       className="page-text-card"
       onBlur={() => {
         if (text !== object.text) {
@@ -42,6 +48,7 @@ export function TextCard({
       onChange={(event) => setText(event.target.value)}
       placeholder="Write here, or use Apple dictation…"
       readOnly={readOnly}
+      ref={editorRef}
       style={{ textAlign: object.textAlign ?? "left" }}
       value={text}
     />

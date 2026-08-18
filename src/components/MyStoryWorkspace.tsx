@@ -32,6 +32,7 @@ import type {
   SaveHealth,
 } from "../domain/models";
 import { useNativeDrawingOverlay } from "../hooks/useNativeDrawingOverlay";
+import { displayAssetUri } from "../utils/displayAssetUri";
 import {
   hasNativePencilKit,
   NATIVE_DRAWING_TAPPED_EVENT,
@@ -198,6 +199,7 @@ export function MyStoryWorkspace({
   penOpacity,
   penWidth,
   fingerDrawingEnabled,
+  fingerErasingEnabled,
   recordingLimitMinutes,
   share,
   sketchRepository,
@@ -230,6 +232,7 @@ export function MyStoryWorkspace({
   penOpacity: number;
   penWidth: number;
   fingerDrawingEnabled: boolean;
+  fingerErasingEnabled: boolean;
   recordingLimitMinutes: 2 | 5 | 10 | 30 | null;
   share: NativeSharePlugin;
   sketchRepository: BrowserSketchRepository;
@@ -273,6 +276,7 @@ export function MyStoryWorkspace({
     width: penWidth,
     opacity: penOpacity,
     fingerDrawing: fingerDrawingEnabled,
+    fingerErasing: fingerErasingEnabled,
     favouriteColours: favouritePenColours,
   });
   const [textEditing, setTextEditing] = useState<MyStoryTextBlock | null>();
@@ -378,7 +382,9 @@ export function MyStoryWorkspace({
       nib: penSettings.nib,
       width: penSettings.width,
       opacity: penSettings.opacity,
-      fingerDrawing: penSettings.fingerDrawing,
+    fingerDrawing: tool === "eraser"
+      ? penSettings.fingerErasing === true
+      : penSettings.fingerDrawing !== false,
       paperRef,
       protectedHeaderRef: headerRef,
       toolPaletteRef,
@@ -875,6 +881,7 @@ export function MyStoryWorkspace({
       Math.abs(penSettings.width - penWidth) > 0.001 ||
       Math.abs(penSettings.opacity - penOpacity) > 0.001 ||
       penSettings.fingerDrawing !== fingerDrawingEnabled
+      || penSettings.fingerErasing !== fingerErasingEnabled
     ) {
       void commit({
         type: "settings-update",
@@ -890,6 +897,7 @@ export function MyStoryWorkspace({
           penWidth: penSettings.width,
           penOpacity: penSettings.opacity,
           fingerDrawingEnabled: penSettings.fingerDrawing !== false,
+          fingerErasingEnabled: penSettings.fingerErasing === true,
         },
       });
     }
@@ -1276,6 +1284,10 @@ export function MyStoryWorkspace({
             aria-pressed={tool === "eraser"}
             className={tool === "eraser" ? "tool selected" : "tool"}
             onClick={() => {
+              if (tool === "eraser") {
+                setPenHudOpen(true);
+                return;
+              }
               onToolChange("eraser");
               setPenHudOpen(false);
               setSelectedRecordingId(undefined);
@@ -1340,6 +1352,7 @@ export function MyStoryWorkspace({
             onChange={setPenSettings}
             onDone={closePenSettings}
             settings={penSettings}
+            tool={tool === "eraser" ? "eraser" : "pen"}
           />
         </>
       ) : null}
@@ -1388,7 +1401,9 @@ export function MyStoryWorkspace({
               : {
                   kind: "ipad",
                   tools: ["pen", "eraser"],
-                  fingerDrawing: penSettings.fingerDrawing !== false,
+                  fingerDrawing: tool === "eraser"
+                    ? penSettings.fingerErasing === true
+                    : penSettings.fingerDrawing !== false,
                   pressure: true,
                 }
           }
@@ -1591,7 +1606,7 @@ export function MyStoryWorkspace({
               >
                 <img
                   alt={photo.altText ?? `Story image ${index + 1}`}
-                  src={photo.asset.localUri}
+                  src={displayAssetUri(photo.asset.localUri)}
                 />
               </button>
             ) : (
@@ -1602,7 +1617,7 @@ export function MyStoryWorkspace({
               >
                 <img
                   alt={photo.altText ?? `Story image ${index + 1}`}
-                  src={photo.asset.localUri}
+                  src={displayAssetUri(photo.asset.localUri)}
                 />
               </div>
             ),

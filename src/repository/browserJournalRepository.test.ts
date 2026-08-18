@@ -23,6 +23,7 @@ describe("BrowserJournalRepository", () => {
     });
     const repository = new BrowserJournalRepository(journalId, seedFactory);
     const loaded = await repository.load();
+    expect(loaded.isNewJournal).toBe(true);
     const page = loaded.snapshot.pages[0]!;
     const object: TextObject = {
       id: "repository-text",

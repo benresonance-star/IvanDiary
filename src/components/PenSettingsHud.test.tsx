@@ -4,6 +4,35 @@ import { describe, expect, it, vi } from "vitest";
 import { PenSettingsHud } from "./PenSettingsHud";
 
 describe("PenSettingsHud", () => {
+  it("keeps finger erasing off by default and changes it independently", () => {
+    const onChange = vi.fn();
+    render(
+      <PenSettingsHud
+        onChange={onChange}
+        onDone={vi.fn()}
+        settings={{
+          color: "#171410",
+          width: 8,
+          opacity: 0.6,
+          fingerDrawing: true,
+        }}
+        tool="eraser"
+      />,
+    );
+
+    const toggle = screen.getByRole("switch", { name: "Erase with finger" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByRole("switch", { name: "Draw with finger" }))
+      .not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      fingerDrawing: true,
+      fingerErasing: true,
+    }));
+  });
+
   it("turns finger drawing off without changing the pen style", () => {
     const onChange = vi.fn();
     render(

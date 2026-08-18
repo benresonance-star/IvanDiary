@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 
 export function LinkComposer({
@@ -15,7 +15,12 @@ export function LinkComposer({
   const [url, setUrl] = useState(initialUrl);
   const [title, setTitle] = useState(initialTitle);
   const [error, setError] = useState<string>();
+  const urlInputRef = useRef<HTMLInputElement>(null);
   const editing = initialUrl.length > 0;
+
+  useEffect(() => {
+    urlInputRef.current?.focus({ preventScroll: true });
+  }, []);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -31,12 +36,19 @@ export function LinkComposer({
   };
 
   return createPortal(
-    <div className="link-composer-backdrop" onClick={onClose}>
+    // The backdrop is pointer-only; the dialog includes a keyboard-accessible
+    // Cancel button and focus remains inside the dialog form.
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+    <div
+      className="link-composer-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <form
         aria-labelledby="link-composer-title"
         aria-modal="true"
         className="link-composer"
-        onClick={(event) => event.stopPropagation()}
         onSubmit={submit}
         role="dialog"
       >
@@ -46,10 +58,10 @@ export function LinkComposer({
         <label>
           Web address
           <input
-            autoFocus
             inputMode="url"
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://"
+            ref={urlInputRef}
             value={url}
           />
         </label>

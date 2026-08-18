@@ -21,6 +21,7 @@ export type PenSettings = {
   width: number;
   opacity: number;
   fingerDrawing?: boolean;
+  fingerErasing?: boolean;
   nib?: PenNib;
   profiles?: Record<PenNib, { color: string; width: number; opacity: number }>;
   favouriteColours?: readonly string[];
@@ -48,6 +49,7 @@ export function PenSettingsHud({
   onDone,
   onGridChange,
   settings,
+  tool = "pen",
 }: {
   favouriteColourLongPressEnabled?: boolean;
   favouriteColourLongPressMs?: number;
@@ -56,6 +58,7 @@ export function PenSettingsHud({
   onDone: () => void;
   onGridChange?: (grid: DrawingGridSettings) => void;
   settings: PenSettings;
+  tool?: "pen" | "eraser";
 }) {
   const inkColours = settings.favouriteColours ?? DEFAULT_FAVOURITE_PEN_COLOURS;
   const swatchSelected = inkColours.includes(settings.color);
@@ -72,6 +75,7 @@ export function PenSettingsHud({
     "--sample-width": `${Math.max(2, Math.min(settings.width, 28))}px`,
   } as CSSProperties;
   const fingerDrawingActive = settings.fingerDrawing !== false;
+  const fingerErasingActive = settings.fingerErasing === true;
 
   function changeSettings(next: PenSettings) {
     const nib = next.nib ?? activeNib;
@@ -106,21 +110,21 @@ export function PenSettingsHud({
 
   return (
     <div
-      aria-label="Draw settings"
+      aria-label={tool === "eraser" ? "Erase settings" : "Draw settings"}
       aria-modal="true"
       className="pen-settings-hud"
       role="dialog"
     >
       <div className="pen-hud-heading">
         <div className="pen-hud-title">
-          <PenLine aria-hidden="true" />
-          <strong>Draw</strong>
+          {tool === "eraser" ? null : <PenLine aria-hidden="true" />}
+          <strong>{tool === "eraser" ? "Erase" : "Draw"}</strong>
         </div>
         <button onClick={onDone} type="button">
           Done
         </button>
       </div>
-      {grid && onGridChange ? (
+      {tool === "pen" && grid && onGridChange ? (
         <div aria-label="Draw settings section" className="pen-panel-tabs" role="tablist">
           <button
             aria-controls="pen-settings-panel"
@@ -147,7 +151,24 @@ export function PenSettingsHud({
         </div>
       ) : null}
 
-      {activePanel === "pen" || !grid || !onGridChange ? (
+      {tool === "eraser" ? (
+        <div className="pen-settings-panel">
+          <button
+            aria-checked={fingerErasingActive}
+            className={`finger-toggle${fingerErasingActive ? " selected" : ""}`}
+            data-help-topic="finger-erasing"
+            onClick={() => changeSettings({
+              ...settings,
+              fingerErasing: !fingerErasingActive,
+            })}
+            role="switch"
+            type="button"
+          >
+            <span aria-hidden="true" className="grid-switch-track"><span /></span>
+            <span>Erase with finger</span>
+          </button>
+        </div>
+      ) : activePanel === "pen" || !grid || !onGridChange ? (
         <div
           aria-labelledby={grid ? "pen-settings-tab" : undefined}
           className="pen-settings-panel"

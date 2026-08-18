@@ -52,7 +52,9 @@ export function CanvasSettingsPanel({
     nib,
     width: penWidth,
     opacity: penOpacity,
-    fingerDrawing: settings.fingerDrawingEnabled,
+    fingerDrawing: tool === "eraser"
+      ? settings.fingerErasingEnabled
+      : settings.fingerDrawingEnabled,
     paperRef: canvasRef,
     toolPaletteRef: toolsRef,
     sketchRepository,
@@ -211,6 +213,22 @@ export function CanvasSettingsPanel({
           <button aria-pressed={tool === "eraser"} onClick={() => setTool("eraser")} type="button"><Eraser aria-hidden="true" />Erase</button>
         </div>
         <div className="canvas-test-ink-controls">
+          <button
+            aria-checked={tool === "eraser" ? settings.fingerErasingEnabled : settings.fingerDrawingEnabled}
+            className={`finger-toggle${(tool === "eraser" ? settings.fingerErasingEnabled : settings.fingerDrawingEnabled) ? " selected" : ""}`}
+            data-help-topic={tool === "eraser" ? "finger-erasing" : "finger-drawing"}
+            onClick={() => commit({
+              type: "settings-update",
+              settings: tool === "eraser"
+                ? { fingerErasingEnabled: !settings.fingerErasingEnabled }
+                : { fingerDrawingEnabled: !settings.fingerDrawingEnabled },
+            })}
+            role="switch"
+            type="button"
+          >
+            <span aria-hidden="true" className="grid-switch-track"><span /></span>
+            <span>{tool === "eraser" ? "Erase with finger" : "Draw with finger"}</span>
+          </button>
           <label className="pen-width-control">
             <span>Thickness</span>
             <input
@@ -247,7 +265,7 @@ export function CanvasSettingsPanel({
           <SketchSurface
             capabilities={overlayReady
               ? { kind: "readonly", tools: [], fingerDrawing: false, pressure: false }
-              : { kind: "ipad", tools: ["pen", "eraser"], fingerDrawing: settings.fingerDrawingEnabled, pressure: true }}
+              : { kind: "ipad", tools: ["pen", "eraser"], fingerDrawing: tool === "eraser" ? settings.fingerErasingEnabled : settings.fingerDrawingEnabled, pressure: true }}
             documentId={CANVAS_TEST_DOCUMENT_ID}
             key={canvasVersion}
             penColor={colour}

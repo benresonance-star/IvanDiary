@@ -753,6 +753,7 @@ textarea,
 
 .native-sketch-preview.native-sketch-thumbnail {
   z-index: 0;
+  object-fit: contain;
 }
 
 .preview-photo {
@@ -3716,35 +3717,36 @@ textarea,
   position: absolute;
   top: 12px;
   right: 12px;
+  z-index: 3;
   display: grid;
   place-items: center;
   width: 48px;
   height: 48px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: 14px;
   background: transparent;
-  color: #8a672d;
+  color: #494136;
   line-height: 0;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .favourite-button svg {
   display: block;
   width: 24px;
   height: 24px;
-  transform: translateY(1px);
   fill: transparent;
 }
 
 .favourite-button[aria-pressed="true"] {
-  background: transparent;
-  color: #317446;
-  box-shadow: 0 0 0 2px #317446;
+  background: #cce8d2;
+  color: #246b3a;
 }
 
 .favourite-button[aria-pressed="true"] svg {
-  fill: currentColor;
+  fill: none;
+  stroke: currentColor;
 }
 
 .favourite-confirmation {
@@ -4152,7 +4154,7 @@ textarea,
 
 .settings-tabs {
   display: flex;
-  max-width: 850px;
+  max-width: 980px;
   margin: -8px auto 22px;
   padding: 5px;
   gap: 5px;
@@ -4251,6 +4253,41 @@ textarea,
 
 .backup-explanation {
   margin-top: 0;
+}
+
+.backup-conflict-card {
+  margin: 0 0 22px;
+  padding: 18px;
+  border: 3px solid #a45d22;
+  border-radius: 15px;
+  background: #fff5dc;
+  color: #4e3218;
+}
+
+.backup-conflict-card h3,
+.backup-conflict-card p {
+  margin-top: 0;
+}
+
+.backup-conflict-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.backup-conflict-actions button {
+  min-height: 56px;
+  padding: 10px 14px;
+  border: 2px solid #796247;
+  border-radius: 12px;
+  background: #fffdf8;
+  color: #30271e;
+  font: inherit;
+  font-weight: 750;
+}
+
+.backup-conflict-actions button:last-child {
+  grid-column: 1 / -1;
 }
 
 .backup-setup-action {
@@ -4429,6 +4466,244 @@ textarea,
 .backup-failed-items span {
   color: #665d51;
   line-height: 1.4;
+}
+
+.history-actions,
+.history-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.history-actions .backup-now-action {
+  margin-left: 0;
+}
+
+.history-empty {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px dashed rgba(83, 68, 45, 0.35);
+  border-radius: 14px;
+}
+
+.history-empty h3,
+.history-empty p {
+  margin: 0 0 8px;
+}
+
+.history-list {
+  display: grid;
+  margin: 22px 0 0;
+  padding: 0;
+  gap: 12px;
+  list-style: none;
+}
+
+.history-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  gap: 18px;
+  border: 1px solid rgba(83, 68, 45, 0.22);
+  border-radius: 14px;
+  background: #fffdf8;
+}
+
+.history-list > li > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.history-list span {
+  color: #665d51;
+  font-size: 14px;
+}
+
+.history-entry-actions button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  gap: 7px;
+  border: 1px solid #8f7758;
+  border-radius: 10px;
+  background: #fffaf0;
+  color: #4c3c2d;
+  font: inherit;
+  font-weight: 700;
+}
+
+.backup-delete-cloud-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 10px 16px;
+  gap: 9px;
+  border: 2px solid #a94936;
+  border-radius: 12px;
+  background: #fff1eb;
+  color: #702719;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.backup-delete-cloud-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.backup-delete-cloud-action svg {
+  width: 21px;
+  height: 21px;
+}
+
+.history-entry-actions svg {
+  width: 18px;
+}
+
+.new-device-recovery-backdrop {
+  z-index: 1600;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.new-device-recovery-dialog {
+  width: min(680px, 100%);
+  max-height: min(780px, calc(100vh - 48px));
+  padding: 28px;
+  overflow-y: auto;
+  border: 2px solid #796247;
+  border-radius: 20px;
+  background: #fffaf0;
+  box-shadow: 0 22px 70px rgba(48, 39, 30, 0.3);
+}
+
+.new-device-recovery-dialog > svg {
+  width: 42px;
+  height: 42px;
+  color: #668052;
+}
+
+.new-device-recovery-dialog h2 {
+  margin: 12px 0 8px;
+}
+
+.new-device-recovery-dialog > p {
+  color: #665d51;
+  line-height: 1.5;
+}
+
+.new-device-recovery-message {
+  padding: 12px;
+  border-radius: 10px;
+  background: #fff1eb;
+  color: #702719 !important;
+}
+
+.new-device-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 22px 0;
+  gap: 10px;
+}
+
+.new-device-recovery-actions button,
+.new-device-history button {
+  min-height: 50px;
+  padding: 10px 16px;
+  border: 1px solid #8f7758;
+  border-radius: 12px;
+  background: #fffdf8;
+  color: #4c3c2d;
+  font: inherit;
+  font-weight: 700;
+}
+
+.new-device-recovery-actions .primary-dialog-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #668052;
+  color: white;
+}
+
+.new-device-recovery-actions svg,
+.new-device-history h3 svg {
+  width: 20px;
+  vertical-align: middle;
+}
+
+.new-device-history ul {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  gap: 9px;
+  list-style: none;
+}
+
+.new-device-history button {
+  display: grid;
+  width: 100%;
+  text-align: left;
+}
+
+.new-device-history span {
+  margin-top: 3px;
+  color: #665d51;
+  font-size: 14px;
+}
+
+.restore-complete-backdrop {
+  z-index: 1700;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.restore-complete-dialog {
+  width: min(480px, 100%);
+  padding: 30px;
+  border: 2px solid #668052;
+  border-radius: 20px;
+  background: #fffaf0;
+  box-shadow: 0 22px 70px rgba(48, 39, 30, 0.3);
+  text-align: center;
+}
+
+.restore-complete-dialog > svg {
+  width: 48px;
+  height: 48px;
+  color: #668052;
+}
+
+.restore-complete-dialog h2 {
+  margin: 12px 0 8px;
+}
+
+.restore-complete-dialog p {
+  color: #665d51;
+  line-height: 1.5;
+}
+
+.restore-complete-dialog button {
+  min-width: 120px;
+  min-height: 50px;
+  margin-top: 12px;
+  border: 0;
+  border-radius: 12px;
+  background: #668052;
+  color: white;
+  font: inherit;
+  font-weight: 800;
+}
+
+@media (max-width: 700px) {
+  .history-list > li {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 .recording-limit-setting {

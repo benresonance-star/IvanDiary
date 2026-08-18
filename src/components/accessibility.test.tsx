@@ -87,11 +87,19 @@ describe("accessible navigation and settings", () => {
         }}
         commit={commit}
         files={new BrowserJournalFilesMock()}
+        historyStatus={{ state: "idle", entries: [] }}
         onPreviewWelcome={onPreviewWelcome}
         onEditPortrait={vi.fn()}
         onBackupNow={vi.fn()}
         onCheckBackup={vi.fn()}
-        onRestore={vi.fn()}
+        onKeepThisIPad={vi.fn()}
+        onSaveLocalCopy={vi.fn()}
+        onUseICloud={vi.fn()}
+        onCreateHistory={vi.fn()}
+          onDeleteHistory={vi.fn()}
+          onDeleteCloudData={vi.fn()}
+        onRefreshHistory={vi.fn()}
+        onRestoreHistory={vi.fn()}
         sketchRepository={sketchRepository}
         settings={{
           displayName: "Ivan",
@@ -103,6 +111,7 @@ describe("accessible navigation and settings", () => {
           penWidth: 4.2,
           penOpacity: 1,
           fingerDrawingEnabled: true,
+          fingerErasingEnabled: false,
           favouritePenColours: [
             "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
             "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
@@ -215,7 +224,7 @@ describe("accessible navigation and settings", () => {
       settings: { contrast: "high" },
     });
 
-    fireEvent.click(screen.getByRole("tab", { name: "Backup" }));
+    fireEvent.click(screen.getByRole("tab", { name: "iCloud Sync" }));
     expect(screen.getByRole("status")).toHaveTextContent("Backup is not connected");
     expect(screen.getByRole("button", { name: "Check iCloud connection" })).toBeEnabled();
 

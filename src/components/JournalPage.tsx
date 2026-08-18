@@ -68,6 +68,7 @@ import type { SketchTool } from "../sketch/types";
 import { browserFileToAsset, readImageSize } from "../utils/assets";
 import { localDateKey } from "../utils/date";
 import { createId } from "../utils/id";
+import { displayAssetUri } from "../utils/displayAssetUri";
 import { openExternalUrl } from "../utils/openExternalUrl";
 import { AudioCard } from "./AudioCard";
 import {
@@ -197,6 +198,7 @@ export function PageWorkspace({
   pages,
   penColor,
   fingerDrawingEnabled,
+  fingerErasingEnabled,
   favouriteColourLongPressEnabled,
   favouriteColourLongPressSeconds,
   favouritePenColours,
@@ -232,6 +234,7 @@ export function PageWorkspace({
   pages: Page[];
   penColor: string;
   fingerDrawingEnabled: boolean;
+  fingerErasingEnabled: boolean;
   favouriteColourLongPressEnabled: boolean;
   favouriteColourLongPressSeconds: number;
   favouritePenColours: string[];
@@ -266,6 +269,7 @@ export function PageWorkspace({
     width: penWidth,
     opacity: penOpacity,
     fingerDrawing: fingerDrawingEnabled,
+    fingerErasing: fingerErasingEnabled,
     favouriteColours: favouritePenColours,
   });
   const drawingGrid = page.drawingGrid ?? DEFAULT_DRAWING_GRID;
@@ -325,7 +329,9 @@ export function PageWorkspace({
     nib: penSettings.nib,
     width: penSettings.width,
     opacity: penSettings.opacity,
-    fingerDrawing: penSettings.fingerDrawing !== false,
+    fingerDrawing: tool === "eraser"
+      ? penSettings.fingerErasing === true
+      : penSettings.fingerDrawing !== false,
     grid: drawingGrid,
     paperRef,
     protectedHeaderRef: pageHeaderRef,
@@ -1067,7 +1073,9 @@ export function PageWorkspace({
       penSettings.profiles !== penNibProfiles ||
       penSettings.favouriteColours !== favouritePenColours ||
       Math.abs(penSettings.width - penWidth) > 0.001 ||
-      Math.abs(penSettings.opacity - penOpacity) > 0.001
+      Math.abs(penSettings.opacity - penOpacity) > 0.001 ||
+      penSettings.fingerDrawing !== fingerDrawingEnabled ||
+      penSettings.fingerErasing !== fingerErasingEnabled
     ) {
       void commit({
         type: "settings-update",
@@ -1081,6 +1089,7 @@ export function PageWorkspace({
           penWidth: penSettings.width,
           penOpacity: penSettings.opacity,
           fingerDrawingEnabled: penSettings.fingerDrawing !== false,
+          fingerErasingEnabled: penSettings.fingerErasing === true,
         },
       });
     }
@@ -1214,6 +1223,10 @@ export function PageWorkspace({
           className={tool === "eraser" ? "tool selected" : "tool"}
           data-help-topic="erase"
           onClick={() => {
+            if (tool === "eraser") {
+              setPenHudOpen(true);
+              return;
+            }
             setTool("eraser");
             setSelectedObjectId(undefined);
             if (document.activeElement instanceof HTMLElement) {
@@ -1290,6 +1303,7 @@ export function PageWorkspace({
               });
             }}
             settings={penSettings}
+            tool={tool === "eraser" ? "eraser" : "pen"}
           />
         </>
       ) : null}
@@ -1379,6 +1393,9 @@ export function PageWorkspace({
         </button>
       </header>
 
+      {/* Canvas taps finish pointer-based text placement; the text object and
+          toolbar retain their own keyboard-accessible controls. */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div
         className={`paper-page paper-${page.paperStyle}${
           tool === "pen" || tool === "eraser" ? " drawing-active" : ""
@@ -1409,7 +1426,9 @@ export function PageWorkspace({
               : {
                   kind: "ipad",
                   tools: ["pen", "eraser"],
-                  fingerDrawing: penSettings.fingerDrawing !== false,
+                  fingerDrawing: tool === "eraser"
+                    ? penSettings.fingerErasing === true
+                    : penSettings.fingerDrawing !== false,
                   pressure: true,
                 }
           }
@@ -1528,7 +1547,7 @@ export function PageWorkspace({
                   ) : (
                     <img
                       alt={object.altText ?? "Journal photograph"}
-                      src={object.asset.localUri}
+                      src={displayAssetUri(object.asset.localUri)}
                     />
                   )}
                 </ArrangeablePageObject>

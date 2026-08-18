@@ -60,6 +60,7 @@ export function ProfilePortrait({
       {hasPortrait ? null : <UserRound className="profile-portrait-fallback" />}
       <SketchThumbnail
         documentId={PROFILE_PORTRAIT_DOCUMENT_ID}
+        nativePreviewSize={{ width: 700, height: 700 }}
         repository={sketchRepository}
       />
     </span>

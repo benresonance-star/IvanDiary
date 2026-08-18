@@ -90,6 +90,11 @@ export type CloudBackupResult = {
     reason: string;
   }>;
   backedUpRevision?: number;
+  backupDeviceName?: string;
+  backupDeviceIdentifier?: string;
+  currentDeviceName?: string;
+  currentDeviceIdentifier?: string;
+  contentFingerprint?: string;
 };
 
 export type CloudBackupAsset = {
@@ -101,11 +106,27 @@ export type CloudBackupAsset = {
   checksum?: string;
 };
 
+export type CloudBackupHistoryReason = "automatic" | "manual" | "before-restore";
+
+export type CloudBackupHistoryEntry = {
+  id: string;
+  capturedAt: string;
+  entryDay: string;
+  reason: CloudBackupHistoryReason;
+  deviceName: string;
+  revision: number;
+  assetCount: number;
+  byteLength: number;
+  protected: boolean;
+};
+
 export interface CloudBackupPlugin {
   status(): Promise<CloudBackupResult>;
   backupSnapshot(options: {
     snapshotJson: string;
     revision: number;
+    contentFingerprint: string;
+    expectedCloudFingerprint?: string;
   }): Promise<CloudBackupResult>;
   backupAssets(options: { assets: CloudBackupAsset[] }): Promise<CloudBackupResult>;
   restore(): Promise<{
@@ -113,6 +134,22 @@ export interface CloudBackupPlugin {
     backedUpAt?: string;
     restoredAssetUris: Record<string, string>;
   }>;
+  listHistory(): Promise<{ entries: CloudBackupHistoryEntry[] }>;
+  createHistory(options: {
+    snapshotJson: string;
+    revision: number;
+    entryDay: string;
+    timeZoneIdentifier: string;
+    reason: CloudBackupHistoryReason;
+    assets: CloudBackupAsset[];
+  }): Promise<{ entry: CloudBackupHistoryEntry }>;
+  restoreHistory(options: { id: string }): Promise<{
+    snapshotJson: string;
+    backedUpAt: string;
+    restoredAssetUris: Record<string, string>;
+  }>;
+  deleteHistory(options: { id: string }): Promise<void>;
+  deleteCloudData(): Promise<void>;
 }
 
 export type JournalServiceErrorCode =
@@ -286,7 +323,11 @@ export interface PencilKitPlugin {
   }): Promise<{ deleted: boolean }>;
   undoOverlay(): Promise<{ undone: boolean }>;
   redoOverlay(): Promise<{ redone: boolean }>;
-  getPreview(options: { documentId: EntityId }): Promise<PencilKitPreview>;
+  getPreview(options: {
+    documentId: EntityId;
+    width?: number;
+    height?: number;
+  }): Promise<PencilKitPreview>;
 }
 
 export type PencilKitPreview = {

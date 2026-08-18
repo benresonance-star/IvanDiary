@@ -8,6 +8,8 @@ import {
 
 import type {
   BackupStatus,
+  BackupHistoryEntry,
+  BackupHistoryStatus,
   DocumentOperationInput,
   JournalSettings,
   SettingsTabId,
@@ -28,8 +30,10 @@ import type { WelcomeCopy } from "./WelcomeScreen";
 import { AboutSettingsPanel } from "./AboutSettingsPanel";
 import { AppearanceSettingsPanel } from "./AppearanceSettingsPanel";
 import { BackupSettingsPanel } from "./BackupSettingsPanel";
+import { BackupHistorySettingsPanel } from "./BackupHistorySettingsPanel";
 import { CanvasSettingsPanel } from "./CanvasSettingsPanel";
 import { MyWordsSettingsPanel } from "./MyWordsSettingsPanel";
+import { PrivacySettingsPanel } from "./PrivacySettingsPanel";
 import { SettingToggle } from "./SettingToggle";
 import {
   DEFAULT_GREETING,
@@ -43,7 +47,9 @@ const SETTINGS_TABS = [
   { id: "canvas", label: "Canvas" },
   { id: "voice", label: "Voice" },
   { id: "appearance", label: "Appearance" },
-  { id: "backup", label: "Backup" },
+  { id: "backup", label: "iCloud Sync" },
+  { id: "history", label: "History" },
+  { id: "privacy", label: "Privacy" },
 ] as const;
 
 export function SettingsView({
@@ -54,7 +60,15 @@ export function SettingsView({
   onEditPortrait,
   onBackupNow,
   onCheckBackup,
-  onRestore,
+  onKeepThisIPad,
+  onSaveLocalCopy,
+  onUseICloud,
+  historyStatus,
+  onCreateHistory,
+  onDeleteHistory,
+  onDeleteCloudData,
+  onRefreshHistory,
+  onRestoreHistory,
   onPreviewWelcome,
   sketchRepository,
   backupStatus,
@@ -67,7 +81,15 @@ export function SettingsView({
   onEditPortrait: () => void;
   onBackupNow: () => void;
   onCheckBackup: () => void;
-  onRestore: () => void;
+  onKeepThisIPad: () => void;
+  onSaveLocalCopy: () => void;
+  onUseICloud: () => void;
+  historyStatus: BackupHistoryStatus;
+  onCreateHistory: () => void;
+  onDeleteHistory: (entry: BackupHistoryEntry) => void;
+  onDeleteCloudData: () => void;
+  onRefreshHistory: () => void;
+  onRestoreHistory: (entry: BackupHistoryEntry) => void;
   onPreviewWelcome: (copy: WelcomeCopy) => void;
   sketchRepository: SketchRepository;
   backupStatus: BackupStatus;
@@ -208,7 +230,7 @@ export function SettingsView({
         <Eye aria-hidden="true" />
       </header>
 
-      <nav className="settings-tabs" aria-label="Settings sections" role="tablist">
+      <div className="settings-tabs" aria-label="Settings sections" role="tablist">
         {SETTINGS_TABS.map((tab) => (
           <button
             aria-controls={`settings-panel-${tab.id}`}
@@ -233,7 +255,7 @@ export function SettingsView({
             {tab.label}
           </button>
         ))}
-      </nav>
+      </div>
 
       <div
         className="settings-panel"
@@ -342,8 +364,30 @@ export function SettingsView({
             commit={commit}
             onBackupNow={onBackupNow}
             onCheckBackup={onCheckBackup}
-            onRestore={onRestore}
+            onKeepThisIPad={onKeepThisIPad}
+            onSaveLocalCopy={onSaveLocalCopy}
+            onUseICloud={onUseICloud}
             settings={settings}
+          />
+        ) : null}
+
+        {activeTab === "history" ? (
+          <BackupHistorySettingsPanel
+            historyStatus={historyStatus}
+            onCreate={onCreateHistory}
+            onDelete={onDeleteHistory}
+            onRefresh={onRefreshHistory}
+            onRestore={onRestoreHistory}
+          />
+        ) : null}
+
+        {activeTab === "privacy" ? (
+          <PrivacySettingsPanel
+            deletingCloudData={
+              backupStatus.state === "syncing" &&
+              backupStatus.message.startsWith("Deleting")
+            }
+            onDeleteCloudData={onDeleteCloudData}
           />
         ) : null}
       </div>

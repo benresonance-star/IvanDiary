@@ -27,6 +27,7 @@ export function useJournal(repository: JournalRepository) {
   const [snapshot, setSnapshot] = useState<JournalSnapshot>();
   const [health, setHealth] = useState<SaveHealth>(INITIAL_HEALTH);
   const [message, setMessage] = useState<string>();
+  const [isNewJournal, setIsNewJournal] = useState<boolean>();
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +39,7 @@ export function useJournal(repository: JournalRepository) {
         }
         snapshotRef.current = result.snapshot;
         setSnapshot(result.snapshot);
+        setIsNewJournal(result.isNewJournal);
         setHealth({
           localDurability: "saved",
           remoteSync: "offline",
@@ -115,12 +117,18 @@ export function useJournal(repository: JournalRepository) {
     const result = await repository.replace(restored);
     snapshotRef.current = result.snapshot;
     setSnapshot(result.snapshot);
+    setIsNewJournal(false);
     setHealth(result.health);
   }, [repository]);
   const flush = useCallback(() => queueRef.current, []);
 
   return {
+    acknowledgeNewJournal: () => {
+      repository.acknowledgeNewJournal();
+      setIsNewJournal(false);
+    },
     snapshot,
+    isNewJournal,
     health,
     message,
     clearMessage: () => setMessage(undefined),

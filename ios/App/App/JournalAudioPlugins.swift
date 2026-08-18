@@ -29,12 +29,18 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
         CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "backupSnapshot", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "backupAssets", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "restore", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "restore", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "listHistory", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "createHistory", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "restoreHistory", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "deleteHistory", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "deleteCloudData", returnType: CAPPluginReturnPromise)
     ]
 
     private let container = CKContainer.default()
     private var database: CKDatabase { container.privateCloudDatabase }
     private let snapshotRecordID = CKRecord.ID(recordName: "primary-journal-snapshot")
+    private let historyIndexRecordID = CKRecord.ID(recordName: "history-index")
     private let containerIdentifier = "iCloud.au.com.myjournal.ivansdiary"
 
     private var locationPayload: JSObject {
@@ -42,7 +48,9 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
             "accountDescription": "Signed in to iCloud (Apple keeps the account name private)",
             "containerIdentifier": containerIdentifier,
             "databaseDescription": "Private CloudKit database",
-            "recordIdentifier": snapshotRecordID.recordName
+            "recordIdentifier": snapshotRecordID.recordName,
+            "currentDeviceName": UIDevice.current.name,
+            "currentDeviceIdentifier": UIDevice.current.identifierForVendor?.uuidString ?? UIDevice.current.name
         ]
     }
 
@@ -66,6 +74,9 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
                     payload["uploadedItemCount"] = Int(uploaded)
                     payload["failedItemCount"] = Int(failed)
                     if let revision = record["revision"] as? Int64 { payload["backedUpRevision"] = Int(revision) }
+                    if let deviceName = record["deviceName"] as? String { payload["backupDeviceName"] = deviceName }
+                    if let deviceIdentifier = record["deviceIdentifier"] as? String { payload["backupDeviceIdentifier"] = deviceIdentifier }
+                    if let contentFingerprint = record["contentFingerprint"] as? String { payload["contentFingerprint"] = contentFingerprint }
                     if let modifiedAt = record.modificationDate {
                         payload["lastSuccessfulBackupAt"] = modifiedAt.iso8601String
                     }
@@ -84,11 +95,13 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
     @objc public func backupSnapshot(_ call: CAPPluginCall) {
         guard let snapshotJSON = call.getString("snapshotJson"),
               let snapshotData = snapshotJSON.data(using: .utf8),
-              let revision = call.getInt("revision") else {
+              let revision = call.getInt("revision"),
+              let contentFingerprint = call.getString("contentFingerprint") else {
             call.reject("A valid journal snapshot is required.", "INVALID_SNAPSHOT")
             return
         }
         Task { @MainActor in
+            let expectedCloudFingerprint = call.getString("expectedCloudFingerprint")
             let temporaryURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("journal-snapshot-\(UUID().uuidString)")
                 .appendingPathExtension("json")
@@ -99,9 +112,17 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
                     return
                 }
                 try snapshotData.write(to: temporaryURL, options: .atomic)
-                let record: CKRecord
+                var record: CKRecord
                 do {
                     record = try await database.record(for: snapshotRecordID)
+                    if let expectedCloudFingerprint,
+                       record["contentFingerprint"] as? String != expectedCloudFingerprint {
+                        throw NSError(
+                            domain: "IvanDiaryCloudBackup",
+                            code: 2,
+                            userInfo: [NSLocalizedDescriptionKey: "The iCloud diary changed on another iPad before this backup completed."]
+                        )
+                    }
                 } catch let error as CKError where error.code == .unknownItem {
                     record = CKRecord(recordType: "IvanDiarySnapshot", recordID: snapshotRecordID)
                 }
@@ -109,6 +130,8 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
                 record["schemaVersion"] = 1 as CKRecordValue
                 record["revision"] = revision as CKRecordValue
                 record["deviceName"] = UIDevice.current.name as CKRecordValue
+                record["deviceIdentifier"] = (UIDevice.current.identifierForVendor?.uuidString ?? UIDevice.current.name) as CKRecordValue
+                record["contentFingerprint"] = contentFingerprint as CKRecordValue
                 let saved = try await database.save(record)
                 var payload = locationPayload
                 payload.merge([
@@ -163,7 +186,16 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
                 : "\(uploaded) files were backed up. \(failed) files are still waiting."
             do {
                 let snapshot = try await database.record(for: snapshotRecordID)
+                let expectedAssetIDs = assets.compactMap { $0["id"] as? String }
+                var knownAssetRecordNames = Set(
+                    snapshot["knownAssetRecordNames"] as? [String] ?? []
+                )
+                knownAssetRecordNames.formUnion(expectedAssetIDs.map {
+                    "asset-\(safeFileName($0))"
+                })
                 snapshot["expectedAssetCount"] = assets.count as CKRecordValue
+                snapshot["expectedAssetIDs"] = expectedAssetIDs as CKRecordValue
+                snapshot["knownAssetRecordNames"] = knownAssetRecordNames.sorted() as CKRecordValue
                 snapshot["uploadedAssetCount"] = (uploaded + unchanged) as CKRecordValue
                 snapshot["failedAssetCount"] = failed as CKRecordValue
                 _ = try await database.save(snapshot)
@@ -182,8 +214,19 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
                 guard let snapshotAsset = snapshotRecord["snapshot"] as? CKAsset,
                       let snapshotURL = snapshotAsset.fileURL else { throw CocoaError(.fileNoSuchFile) }
                 let snapshotJSON = try String(contentsOf: snapshotURL, encoding: .utf8)
-                let query = CKQuery(recordType: "IvanDiaryAsset", predicate: NSPredicate(value: true))
-                let (matches, _) = try await database.records(matching: query, resultsLimit: CKQueryOperation.maximumResults)
+                let referencedAssetIDs = try requiredAssetIDs(in: snapshotJSON)
+                let expectedAssetIDs = snapshotRecord["expectedAssetIDs"] as? [String]
+                if let expectedAssetIDs {
+                    let failed = snapshotRecord["failedAssetCount"] as? Int64 ?? 0
+                    let uploaded = snapshotRecord["uploadedAssetCount"] as? Int64 ?? -1
+                    guard failed == 0, uploaded == Int64(expectedAssetIDs.count) else {
+                        throw NSError(
+                            domain: "IvanDiaryCloudRestore",
+                            code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: "The latest iCloud backup is incomplete."]
+                        )
+                    }
+                }
                 var restoredURIs: JSObject = [:]
                 let supportRoot = try FileManager.default.url(
                     for: .applicationSupportDirectory,
@@ -191,12 +234,49 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
                     appropriateFor: nil,
                     create: true
                 )
-                for (_, result) in matches {
-                    let record = try result.get()
+                let requestedAssetIDs: Set<String>
+                let exactAssetIDs: Set<String>
+                if let expectedAssetIDs {
+                    exactAssetIDs = Set(expectedAssetIDs)
+                    requestedAssetIDs = exactAssetIDs.union(
+                        referencedAssetIDs.filter { !$0.hasPrefix("drawing-") }
+                    )
+                } else {
+                    exactAssetIDs = []
+                    requestedAssetIDs = referencedAssetIDs.union([
+                        "drawing-profile-portrait-drawing",
+                        "drawing-welcome-screen-drawing"
+                    ])
+                }
+                for assetID in requestedAssetIDs {
+                    let safeRecordID = assetID.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "_" }
+                    let record: CKRecord
+                    do {
+                        record = try await database.record(
+                            for: CKRecord.ID(recordName: "asset-\(String(safeRecordID))")
+                        )
+                    } catch let error as CKError where error.code == .unknownItem {
+                        if exactAssetIDs.contains(assetID) {
+                            throw NSError(
+                                domain: "IvanDiaryCloudRestore",
+                                code: 2,
+                                userInfo: [NSLocalizedDescriptionKey: "The iCloud backup is missing \(assetID)."]
+                            )
+                        }
+                        // Older backups did not record an exact asset manifest.
+                        // Reconciliation below still rejects missing media.
+                        continue
+                    }
+                    guard let kind = record["kind"] as? String,
+                          record["assetID"] as? String == assetID else {
+                        if exactAssetIDs.contains(assetID) { throw CocoaError(.fileReadCorruptFile) }
+                        continue
+                    }
                     guard let cloudAsset = record["asset"] as? CKAsset,
-                          let source = cloudAsset.fileURL,
-                          let assetID = record["assetID"] as? String,
-                          let kind = record["kind"] as? String else { continue }
+                          let source = cloudAsset.fileURL else {
+                        if exactAssetIDs.contains(assetID) { throw CocoaError(.fileNoSuchFile) }
+                        continue
+                    }
                     let safeAssetID = safeFileName(assetID)
                     guard !safeAssetID.isEmpty else { continue }
                     if kind == "audio" {
@@ -228,6 +308,455 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
                 call.resolve(payload)
             } catch { reject(call, error: error) }
         }
+    }
+
+    @objc public func listHistory(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            do {
+                let records: [CKRecord]
+                do {
+                    let index = try await database.record(for: historyIndexRecordID)
+                    let recordNames = index["recordNames"] as? [String] ?? []
+                    records = await historyRecords(named: recordNames)
+                } catch let error as CKError where error.code == .unknownItem {
+                    // One-time migration path for history created before the
+                    // deterministic index existed. This requires the development
+                    // schema's recordName query index to be enabled.
+                    records = try await allRecords(recordType: "IvanDiaryHistory")
+                    try await saveHistoryIndex(recordNames: records.map(\.recordID.recordName))
+                }
+                let retainedRecords = retainedHistoryRecords(from: records)
+                let discardedNames = Set(records.map(\.recordID.recordName))
+                    .subtracting(retainedRecords.map(\.recordID.recordName))
+                if !discardedNames.isEmpty {
+                    await deleteHistoryRecords(named: discardedNames)
+                }
+                let entries = retainedRecords.compactMap(historyPayload).sorted {
+                    ($0["capturedAt"] as? String ?? "") > ($1["capturedAt"] as? String ?? "")
+                }
+                call.resolve(["entries": entries])
+            } catch { reject(call, error: error) }
+        }
+    }
+
+    @objc public func createHistory(_ call: CAPPluginCall) {
+        guard let snapshotJSON = call.getString("snapshotJson"),
+              let snapshotData = snapshotJSON.data(using: .utf8),
+              let revision = call.getInt("revision"),
+              let entryDay = call.getString("entryDay"),
+              let timeZoneIdentifier = call.getString("timeZoneIdentifier"),
+              let reason = call.getString("reason"),
+              let assets = call.getArray("assets", JSObject.self) else {
+            call.reject("A valid recovery point is required.", "INVALID_HISTORY")
+            return
+        }
+        Task { @MainActor in
+            let temporaryRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent("journal-history-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+            do {
+                guard try await container.accountStatus() == .available else {
+                    call.reject("Sign in to iCloud before creating history.", "ACCOUNT_UNAVAILABLE")
+                    return
+                }
+                try FileManager.default.createDirectory(at: temporaryRoot, withIntermediateDirectories: true)
+                let snapshotURL = temporaryRoot.appendingPathComponent("snapshot.json")
+                try snapshotData.write(to: snapshotURL, options: .atomic)
+                var manifest: [[String: Any]] = []
+                var totalBytes: Int64 = Int64(snapshotData.count)
+                for asset in assets {
+                    let saved = try await saveHistoryBlob(asset)
+                    manifest.append(saved.descriptor)
+                    totalBytes += saved.byteLength
+                }
+                let manifestURL = temporaryRoot.appendingPathComponent("manifest.json")
+                try JSONSerialization.data(withJSONObject: manifest).write(to: manifestURL, options: .atomic)
+                let recordID = CKRecord.ID(recordName: "history-\(UUID().uuidString.lowercased())")
+                let record = CKRecord(recordType: "IvanDiaryHistory", recordID: recordID)
+                let capturedAt = Date()
+                record["snapshot"] = CKAsset(fileURL: snapshotURL)
+                record["manifest"] = CKAsset(fileURL: manifestURL)
+                record["capturedAt"] = capturedAt as CKRecordValue
+                record["entryDay"] = entryDay as CKRecordValue
+                record["timeZoneIdentifier"] = timeZoneIdentifier as CKRecordValue
+                record["reason"] = reason as CKRecordValue
+                record["deviceName"] = UIDevice.current.name as CKRecordValue
+                record["revision"] = revision as CKRecordValue
+                record["assetCount"] = assets.count as CKRecordValue
+                record["byteLength"] = totalBytes as CKRecordValue
+                record["protected"] = 0 as CKRecordValue
+                let blobRecordNames = manifest.compactMap {
+                    $0["blobRecordName"] as? String
+                }
+                record["blobRecordNames"] = blobRecordNames as CKRecordValue
+                let saved = try await database.save(record)
+                try await addToHistoryIndex(
+                    saved.recordID.recordName,
+                    blobRecordNames: blobRecordNames
+                )
+                // Retention is maintenance: a temporary query/index failure must not
+                // turn an already completed recovery point into a reported failure.
+                // A before-restore point must coexist briefly with the selected
+                // same-day point. Pruning here could delete the restore target
+                // before restoreHistory has had a chance to read it.
+                if reason != "before-restore" {
+                    try? await pruneHistory()
+                }
+                guard let payload = historyPayload(saved) else { throw CocoaError(.fileReadCorruptFile) }
+                call.resolve(["entry": payload])
+            } catch { reject(call, error: error) }
+        }
+    }
+
+    @objc public func restoreHistory(_ call: CAPPluginCall) {
+        guard let id = call.getString("id"), id.hasPrefix("history-") else {
+            call.reject("A valid recovery point is required.", "INVALID_HISTORY")
+            return
+        }
+        Task { @MainActor in
+            let stagingRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent("journal-history-restore-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: stagingRoot) }
+            do {
+                try FileManager.default.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
+                let record = try await database.record(for: CKRecord.ID(recordName: id))
+                guard let snapshotAsset = record["snapshot"] as? CKAsset,
+                      let snapshotURL = snapshotAsset.fileURL,
+                      let manifestAsset = record["manifest"] as? CKAsset,
+                      let manifestURL = manifestAsset.fileURL,
+                      let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [[String: Any]] else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                let snapshotJSON = try String(contentsOf: snapshotURL, encoding: .utf8)
+                var restoredURIs: JSObject = [:]
+                var stagedAssets: [(URL, String, String, String?)] = []
+                for descriptor in manifest {
+                    guard let assetID = descriptor["id"] as? String,
+                          let kind = descriptor["kind"] as? String,
+                          let blobRecordName = descriptor["blobRecordName"] as? String else { throw CocoaError(.fileReadCorruptFile) }
+                    let blob = try await database.record(for: CKRecord.ID(recordName: blobRecordName))
+                    guard let cloudAsset = blob["asset"] as? CKAsset, let source = cloudAsset.fileURL else { throw CocoaError(.fileNoSuchFile) }
+                    let stagedURL = stagingRoot.appendingPathComponent(UUID().uuidString)
+                    try FileManager.default.copyItem(at: source, to: stagedURL)
+                    let stagedData = try Data(contentsOf: stagedURL, options: .mappedIfSafe)
+                    let checksum = SHA256.hash(data: stagedData).map { String(format: "%02x", $0) }.joined()
+                    guard checksum == descriptor["checksum"] as? String else { throw CocoaError(.fileReadCorruptFile) }
+                    stagedAssets.append((stagedURL, assetID, kind, descriptor["mimeType"] as? String))
+                }
+                for (source, assetID, kind, mimeType) in stagedAssets {
+                    try restoreHistoryAsset(from: source, assetID: assetID, kind: kind, mimeType: mimeType, restoredURIs: &restoredURIs)
+                }
+                call.resolve([
+                    "snapshotJson": snapshotJSON,
+                    "restoredAssetUris": restoredURIs,
+                    "backedUpAt": (record["capturedAt"] as? Date ?? record.creationDate ?? Date()).iso8601String
+                ])
+            } catch { reject(call, error: error) }
+        }
+    }
+
+    @objc public func deleteHistory(_ call: CAPPluginCall) {
+        guard let id = call.getString("id"), id.hasPrefix("history-") else {
+            call.reject("A valid recovery point is required.", "INVALID_HISTORY")
+            return
+        }
+        Task { @MainActor in
+            do {
+                _ = try await database.deleteRecord(withID: CKRecord.ID(recordName: id))
+                try await removeFromHistoryIndex([id])
+                try? await garbageCollectHistoryBlobs()
+                call.resolve()
+            } catch { reject(call, error: error) }
+        }
+    }
+
+    @objc public func deleteCloudData(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            do {
+                var recordNames = Set<String>([
+                    snapshotRecordID.recordName,
+                    historyIndexRecordID.recordName
+                ])
+                if let snapshot = try? await database.record(for: snapshotRecordID) {
+                    recordNames.formUnion(
+                        snapshot["knownAssetRecordNames"] as? [String] ?? []
+                    )
+                    let expectedIDs = snapshot["expectedAssetIDs"] as? [String] ?? []
+                    recordNames.formUnion(expectedIDs.map {
+                        "asset-\(safeFileName($0))"
+                    })
+                }
+                if let index = try? await database.record(for: historyIndexRecordID) {
+                    let historyNames = index["recordNames"] as? [String] ?? []
+                    let historyRecords = await historyRecords(named: historyNames)
+                    recordNames.formUnion(historyNames)
+                    recordNames.formUnion(index["blobRecordNames"] as? [String] ?? [])
+                    for record in historyRecords {
+                        recordNames.formUnion(historyBlobRecordNames(record))
+                    }
+                }
+                var failures: [String] = []
+                for name in recordNames {
+                    do {
+                        _ = try await database.deleteRecord(
+                            withID: CKRecord.ID(recordName: name)
+                        )
+                    } catch let error as CKError where error.code == .unknownItem {
+                        continue
+                    } catch {
+                        failures.append(name)
+                    }
+                }
+                guard failures.isEmpty else {
+                    throw NSError(
+                        domain: "IvanDiaryCloudDeletion",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Some iCloud records could not be deleted. Try again."]
+                    )
+                }
+                call.resolve()
+            } catch { reject(call, error: error) }
+        }
+    }
+
+    private func historyPayload(_ record: CKRecord) -> JSObject? {
+        guard let capturedAt = record["capturedAt"] as? Date,
+              let entryDay = record["entryDay"] as? String,
+              let reason = record["reason"] as? String else { return nil }
+        return [
+            "id": record.recordID.recordName,
+            "capturedAt": capturedAt.iso8601String,
+            "entryDay": entryDay,
+            "reason": reason,
+            "deviceName": record["deviceName"] as? String ?? "iPad",
+            "revision": Int(record["revision"] as? Int64 ?? 0),
+            "assetCount": Int(record["assetCount"] as? Int64 ?? 0),
+            "byteLength": Int(record["byteLength"] as? Int64 ?? 0),
+            "protected": false
+        ]
+    }
+
+    private func historyRecords(named recordNames: [String]) async -> [CKRecord] {
+        var records: [CKRecord] = []
+        for name in recordNames where name.hasPrefix("history-") {
+            if let record = try? await database.record(for: CKRecord.ID(recordName: name)) {
+                records.append(record)
+            }
+        }
+        return records
+    }
+
+    private func saveHistoryIndex(recordNames: [String]) async throws {
+        let index: CKRecord
+        do {
+            index = try await database.record(for: historyIndexRecordID)
+        } catch let error as CKError where error.code == .unknownItem {
+            index = CKRecord(recordType: "IvanDiaryHistoryIndex", recordID: historyIndexRecordID)
+        }
+        index["recordNames"] = Array(Set(recordNames)).sorted() as CKRecordValue
+        _ = try await database.save(index)
+    }
+
+    private func addToHistoryIndex(
+        _ recordName: String,
+        blobRecordNames: [String] = []
+    ) async throws {
+        let index: CKRecord
+        do {
+            index = try await database.record(for: historyIndexRecordID)
+        } catch let error as CKError where error.code == .unknownItem {
+            index = CKRecord(recordType: "IvanDiaryHistoryIndex", recordID: historyIndexRecordID)
+        }
+        var names = Set(index["recordNames"] as? [String] ?? [])
+        names.insert(recordName)
+        index["recordNames"] = names.sorted() as CKRecordValue
+        var blobs = Set(index["blobRecordNames"] as? [String] ?? [])
+        blobs.formUnion(blobRecordNames)
+        index["blobRecordNames"] = blobs.sorted() as CKRecordValue
+        _ = try await database.save(index)
+    }
+
+    private func removeFromHistoryIndex(_ recordNames: Set<String>) async throws {
+        guard let index = try? await database.record(for: historyIndexRecordID) else { return }
+        let names = Set(index["recordNames"] as? [String] ?? []).subtracting(recordNames)
+        index["recordNames"] = names.sorted() as CKRecordValue
+        _ = try await database.save(index)
+    }
+
+    private func allRecords(
+        recordType: String,
+        toleratingIndividualErrors: Bool = false
+    ) async throws -> [CKRecord] {
+        let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
+        var records: [CKRecord] = []
+        var (matches, cursor) = try await database.records(matching: query, resultsLimit: CKQueryOperation.maximumResults)
+        while true {
+            if toleratingIndividualErrors {
+                records.append(contentsOf: matches.compactMap { try? $0.1.get() })
+            } else {
+                records.append(contentsOf: try matches.map { try $0.1.get() })
+            }
+            guard let currentCursor = cursor else { break }
+            (matches, cursor) = try await database.records(continuingMatchFrom: currentCursor, resultsLimit: CKQueryOperation.maximumResults)
+        }
+        return records
+    }
+
+    private func requiredAssetIDs(in snapshotJSON: String) throws -> Set<String> {
+        guard let data = snapshotJSON.data(using: .utf8) else { throw CocoaError(.fileReadCorruptFile) }
+        let root = try JSONSerialization.jsonObject(with: data)
+        var identifiers = Set<String>()
+        func visit(_ value: Any) {
+            if let dictionary = value as? [String: Any] {
+                if dictionary["localUri"] is String, let id = dictionary["id"] as? String {
+                    identifiers.insert(id)
+                }
+                if let drawingID = dictionary["drawingDocumentId"] as? String {
+                    identifiers.insert("drawing-\(drawingID)")
+                }
+                dictionary.values.forEach(visit)
+            } else if let array = value as? [Any] {
+                array.forEach(visit)
+            }
+        }
+        visit(root)
+        return identifiers
+    }
+
+    private func saveHistoryBlob(_ asset: JSObject) async throws -> (descriptor: [String: Any], byteLength: Int64) {
+        guard let id = asset["id"] as? String,
+              let kind = asset["kind"] as? String,
+              let mimeType = asset["mimeType"] as? String else { throw CocoaError(.fileReadCorruptFile) }
+        let resolved = try assetURL(asset, id: id, kind: kind)
+        defer { if resolved.removeAfterUpload { try? FileManager.default.removeItem(at: resolved.url) } }
+        let sourceURL = resolved.url
+        let (digest, byteLength) = try await Task.detached(priority: .utility) {
+            let data = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
+            return (SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(), data.count)
+        }.value
+        let recordID = CKRecord.ID(recordName: "history-blob-\(digest)")
+        do {
+            _ = try await database.record(for: recordID)
+        } catch let error as CKError where error.code == .unknownItem {
+            let blob = CKRecord(recordType: "IvanDiaryHistoryBlob", recordID: recordID)
+            blob["asset"] = CKAsset(fileURL: resolved.url)
+            blob["checksum"] = digest as CKRecordValue
+            blob["byteLength"] = byteLength as CKRecordValue
+            _ = try await database.save(blob)
+        }
+        return ([
+            "id": id,
+            "kind": kind,
+            "mimeType": mimeType,
+            "checksum": digest,
+            "blobRecordName": recordID.recordName
+        ], Int64(byteLength))
+    }
+
+    private func restoreHistoryAsset(from source: URL, assetID: String, kind: String, mimeType: String?, restoredURIs: inout JSObject) throws {
+        let supportRoot = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let safeID = safeFileName(kind == "drawing" && assetID.hasPrefix("drawing-") ? String(assetID.dropFirst("drawing-".count)) : assetID)
+        let directory: URL
+        let destination: URL
+        if kind == "drawing" {
+            directory = supportRoot.appendingPathComponent("PencilDrawings", isDirectory: true)
+            destination = directory.appendingPathComponent(safeID).appendingPathExtension("pkdrawing")
+        } else if kind == "audio" {
+            directory = supportRoot.appendingPathComponent("JournalAssets/OriginalAudio", isDirectory: true)
+            destination = directory.appendingPathComponent(safeID).appendingPathExtension("m4a")
+        } else {
+            directory = supportRoot.appendingPathComponent("JournalAssets/OriginalFiles", isDirectory: true)
+            destination = directory.appendingPathComponent(safeID).appendingPathExtension(fileExtension(for: mimeType, source: source))
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try restoreAsset(from: source, to: destination)
+        if kind != "drawing" { restoredURIs[assetID] = destination.absoluteString }
+    }
+
+    private func retainedHistoryRecords(from records: [CKRecord]) -> [CKRecord] {
+        let ordered = records.sorted {
+            ($0["capturedAt"] as? Date ?? .distantPast) > ($1["capturedAt"] as? Date ?? .distantPast)
+        }
+        var recentDays = Set<String>()
+        for day in ordered.compactMap({ $0["entryDay"] as? String }) where recentDays.count < 5 {
+            recentDays.insert(day)
+        }
+        var retainedRecordIDs = Set<String>()
+        var retainedDailyDays = Set<String>()
+        var retainedWeeks = Set<String>()
+        let calendar = Calendar(identifier: .iso8601)
+        let twelveWeeksAgo = calendar.date(byAdding: .weekOfYear, value: -12, to: Date()) ?? .distantPast
+        for record in ordered {
+            let day = record["entryDay"] as? String ?? ""
+            let date = record["capturedAt"] as? Date ?? .distantPast
+            if recentDays.contains(day) {
+                if retainedDailyDays.insert(day).inserted { retainedRecordIDs.insert(record.recordID.recordName) }
+            } else if date >= twelveWeeksAgo {
+                let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+                let week = "\(components.yearForWeekOfYear ?? 0)-\(components.weekOfYear ?? 0)"
+                if retainedWeeks.insert(week).inserted { retainedRecordIDs.insert(record.recordID.recordName) }
+            }
+        }
+        return ordered.filter {
+            retainedRecordIDs.contains($0.recordID.recordName)
+        }
+    }
+
+    private func deleteHistoryRecords(named recordNames: Set<String>) async {
+        for name in recordNames {
+            _ = try? await database.deleteRecord(
+                withID: CKRecord.ID(recordName: name)
+            )
+        }
+        try? await removeFromHistoryIndex(recordNames)
+        try? await garbageCollectHistoryBlobs()
+    }
+
+    private func historyBlobRecordNames(_ record: CKRecord) -> Set<String> {
+        if let names = record["blobRecordNames"] as? [String] {
+            return Set(names)
+        }
+        guard let manifestAsset = record["manifest"] as? CKAsset,
+              let manifestURL = manifestAsset.fileURL,
+              let data = try? Data(contentsOf: manifestURL),
+              let manifest = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return []
+        }
+        return Set(manifest.compactMap { $0["blobRecordName"] as? String })
+    }
+
+    private func garbageCollectHistoryBlobs() async throws {
+        guard let index = try? await database.record(for: historyIndexRecordID) else {
+            return
+        }
+        let indexedBlobs = Set(index["blobRecordNames"] as? [String] ?? [])
+        guard !indexedBlobs.isEmpty else { return }
+        let historyNames = index["recordNames"] as? [String] ?? []
+        let records = await historyRecords(named: historyNames)
+        let retainedBlobs = records.reduce(into: Set<String>()) { result, record in
+            result.formUnion(historyBlobRecordNames(record))
+        }
+        let discardedBlobs = indexedBlobs.subtracting(retainedBlobs)
+        for name in discardedBlobs {
+            _ = try? await database.deleteRecord(
+                withID: CKRecord.ID(recordName: name)
+            )
+        }
+        index["blobRecordNames"] = retainedBlobs.sorted() as CKRecordValue
+        _ = try await database.save(index)
+    }
+
+    private func pruneHistory() async throws {
+        let index = try await database.record(for: historyIndexRecordID)
+        let records = await historyRecords(
+            named: index["recordNames"] as? [String] ?? []
+        )
+        let retainedNames = Set(
+            retainedHistoryRecords(from: records).map(\.recordID.recordName)
+        )
+        let discardedNames = Set(records.map(\.recordID.recordName))
+            .subtracting(retainedNames)
+        await deleteHistoryRecords(named: discardedNames)
     }
 
     private func safeFileName(_ value: String) -> String {

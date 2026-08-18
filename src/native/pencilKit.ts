@@ -187,8 +187,11 @@ export async function redoNativeDrawingOverlay(): Promise<void> {
 
 export async function getNativeDrawingPreview(
   documentId: string,
+  size?: { width: number; height: number },
 ): Promise<NativeDrawingPreview> {
-  return withWebPreview(await pencilKit.getPreview({ documentId }));
+  return withWebPreview(
+    await pencilKit.getPreview({ documentId, ...size }),
+  );
 }
 
 export async function subscribeNativeDrawingChanges(): Promise<() => void> {

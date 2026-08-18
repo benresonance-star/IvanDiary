@@ -358,8 +358,13 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
             return
         }
         do {
+            let width = max(call.getDouble("width") ?? 1200, 1)
+            let height = max(call.getDouble("height") ?? 820, 1)
             let preview = try ApplicationSupportPencilDrawingStore()
-                .loadContentPreview(documentID: documentID)
+                .loadContentPreview(
+                    documentID: documentID,
+                    bounds: CGRect(x: 0, y: 0, width: width, height: height)
+                )
             call.resolve(response(saved: true, preview: preview))
         } catch {
             call.reject("The drawing preview could not be loaded.", nil, error)

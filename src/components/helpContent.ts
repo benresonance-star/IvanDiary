@@ -100,6 +100,10 @@ export const HELP_TIPS = {
     title: "Draw with finger",
     body: "Allow your finger as well as Apple Pencil to draw.",
   },
+  "finger-erasing": {
+    title: "Erase with finger",
+    body: "Allow your finger as well as Apple Pencil to erase. This is separate from Draw with finger and stays off until you turn it on.",
+  },
   "pen-preview": {
     title: "Pen preview",
     body: "See how the selected nib, colour, thickness, and opacity will look.",
@@ -189,28 +193,36 @@ export const HELP_TIPS = {
     body: "Return to your list of sketchbooks.",
   },
   "settings-about": {
-    title: "About Me settings",
-    body: "Change your name or draw your profile picture.",
+    title: "How to use About Me",
+    body: "Tap the name box to type the name used in your welcome greeting, or tap Speak and say it aloud. Tap Edit portrait to draw your picture. Your changes save on this iPad and are included in iCloud backups.",
   },
   "settings-welcome": {
-    title: "Welcome settings",
-    body: "Change the greeting shown when the App opens and preview it.",
+    title: "How to use Welcome",
+    body: "Type the greeting, heading, and message you want to see when the App opens. Leave a heading blank to use the standard wording. Tap Preview welcome to check the complete page before returning to Settings.",
   },
   "settings-canvas": {
-    title: "Canvas settings",
-    body: "Choose drawing colours, pen behavior, and test your drawing tools.",
+    title: "How to use Canvas",
+    body: "Choose whether your finger can draw, then select and adjust favourite pen colours. Use the test canvas to try nibs, thickness, and opacity without changing a journal page. Clear removes only the test drawing.",
   },
   "settings-voice": {
-    title: "Voice settings",
-    body: "Choose recording limits and help the App recognise important words.",
+    title: "How to use Voice",
+    body: "Choose which text editor to use and set how long a voice recording may run before stopping safely. Add names or unusual phrases under My Words to help Apple Speech recognise them. Voice features ask for microphone and speech permission when needed.",
   },
   "settings-appearance": {
-    title: "Appearance settings",
-    body: "Adjust text size, contrast, and movement to suit you.",
+    title: "How to use Appearance",
+    body: "Choose a text size, then turn stronger contrast or reduced movement on if that makes the App easier to use. Standard app appearance keeps the intended iPad layout. Changes take effect immediately and can be changed back here.",
   },
   "settings-backup": {
-    title: "Backup settings",
-    body: "Check, create, or restore your iCloud backup.",
+    title: "How to use iCloud Sync",
+    body: "Tap Back up now to save the complete current diary and its photos, drawings, recordings, links, and pages to your private iCloud. Check iCloud looks for a saved copy. Automatic backup keeps the latest state updated; wait for completion before deleting the App or changing iPads.",
+  },
+  "settings-history": {
+    title: "How to use History",
+    body: "Tap Create recovery point before a major change. Tap Restore beside a date to return the whole App to that saved state; a safety point is made first. Delete removes only that recovery point. History keeps the latest five entry days, then one point per week for up to twelve weeks.",
+  },
+  "settings-privacy": {
+    title: "How to use Privacy",
+    body: "Read what stays on this iPad, what iCloud Sync stores, and when microphone or speech services are used. Delete my iCloud diary and history permanently removes all cloud backups and recovery points after two warnings, but leaves the diary on this iPad. This cannot be undone from iCloud.",
   },
   "welcome-continue": {
     title: "Open App",

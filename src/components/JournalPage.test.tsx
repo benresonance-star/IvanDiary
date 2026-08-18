@@ -138,6 +138,7 @@ function renderWorkspace({
       pages={pages ?? [page]}
       penColor="#171410"
       fingerDrawingEnabled
+      fingerErasingEnabled={false}
       favouriteColourLongPressEnabled
       favouriteColourLongPressSeconds={2}
       favouritePenColours={["#171410"]}

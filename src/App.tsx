@@ -13,6 +13,8 @@ import {
 import { SettingsView } from "./components/SettingsView";
 import { MyStoryWorkspace } from "./components/MyStoryWorkspace";
 import { ProfilePortraitEditor } from "./components/ProfilePortraitEditor";
+import { NewDeviceRecoveryDialog } from "./components/NewDeviceRecoveryDialog";
+import { RestoreCompleteDialog } from "./components/RestoreCompleteDialog";
 import { HelpMode } from "./components/HelpMode";
 import {
   WelcomeScreen,
@@ -52,6 +54,13 @@ const INITIAL_DRAWING_HEALTH: SaveHealth = {
   durableRevision: 0,
   pendingOperationCount: 0,
 };
+
+const RESTORE_COMPLETE_KEY = "ivan-diary-restore-complete";
+
+function reloadAfterRestore(): void {
+  globalThis.sessionStorage?.setItem(RESTORE_COMPLETE_KEY, "true");
+  globalThis.location.reload();
+}
 
 async function collectDiaryEntryDates(
   snapshot: JournalSnapshot,
@@ -132,7 +141,7 @@ export default function App() {
   const sketchRepository = useMemo(() => new BrowserSketchRepository(), []);
   const services = useMemo(() => createAppServices(), []);
   const { audio, backup, files, lifecycle, runtime, share, transcription } = services;
-  const { clearMessage, commit, flush, health, message, replace, snapshot } =
+  const { acknowledgeNewJournal, clearMessage, commit, flush, health, isNewJournal, message, replace, snapshot } =
     useJournal(journalRepository);
   const [activeSection, setActiveSection] =
     useState<AppSection>("diary");
@@ -165,6 +174,9 @@ export default function App() {
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [welcomePreview, setWelcomePreview] = useState<WelcomeCopy>();
   const [portraitEditorOpen, setPortraitEditorOpen] = useState(false);
+  const [restoreCompleteVisible, setRestoreCompleteVisible] = useState(
+    () => globalThis.sessionStorage?.getItem(RESTORE_COMPLETE_KEY) === "true",
+  );
   const [entryDates, setEntryDates] = useState<Set<string>>(() => new Set());
   const [entryDatesTick, setEntryDatesTick] = useState(0);
   const [drawingBackupTick, setDrawingBackupTick] = useState(0);
@@ -174,9 +186,19 @@ export default function App() {
   const {
     backupStatus,
     backUpJournalInformation,
+    createHistoryEntry,
+    deleteCloudData,
+    deleteHistoryEntry,
+    historyStatus,
+    keepThisIPadAfterConflict,
     refreshBackupStatus,
+    refreshBackupHistory,
     restoreFromCloud,
+    saveLocalConflictCopy,
+    restoreICloudAfterConflict,
+    restoreHistoryEntry,
   } = useBackupSync({
+    newJournalPending: isNewJournal !== false,
     backup,
     drawingBackupTick,
     drawingBackupTickRef,
@@ -184,6 +206,16 @@ export default function App() {
     runtime,
     snapshot,
   });
+
+  useEffect(() => {
+    if (
+      isNewJournal === true &&
+      backupStatus.state === "available" &&
+      !backupStatus.lastSuccessfulBackupAt
+    ) {
+      acknowledgeNewJournal();
+    }
+  }, [acknowledgeNewJournal, backupStatus.lastSuccessfulBackupAt, backupStatus.state, isNewJournal]);
 
   useEffect(() => {
     const handleBlockedDatabase = () => setStorageBlocked(true);
@@ -780,6 +812,7 @@ export default function App() {
             pages={dayPages}
             penColor={snapshot.settings.penColor}
             fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
+            fingerErasingEnabled={snapshot.settings.fingerErasingEnabled}
             favouriteColourLongPressEnabled={
               snapshot.settings.favouriteColourLongPressEnabled
             }
@@ -826,6 +859,7 @@ export default function App() {
           favouritePenColours={snapshot.settings.favouritePenColours}
           files={files}
           fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
+          fingerErasingEnabled={snapshot.settings.fingerErasingEnabled}
           health={combinedHealth(health, drawingHealth)}
           key={storyPage.id}
           myWords={snapshot.settings.myWords}
@@ -899,6 +933,7 @@ export default function App() {
             pages={sketchbookPages}
             penColor={snapshot.settings.penColor}
             fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
+            fingerErasingEnabled={snapshot.settings.fingerErasingEnabled}
             favouriteColourLongPressEnabled={
               snapshot.settings.favouriteColourLongPressEnabled
             }
@@ -986,12 +1021,28 @@ export default function App() {
           backupStatus={backupStatus}
           commit={commit}
           files={files}
+          historyStatus={historyStatus}
           key={snapshot.settings.lastSettingsTab}
           onEditPortrait={() => setPortraitEditorOpen(true)}
           onBackupNow={() => void backUpJournalInformation()}
           onCheckBackup={() => void refreshBackupStatus()}
+          onKeepThisIPad={() => void keepThisIPadAfterConflict()}
+          onSaveLocalCopy={() => void saveLocalConflictCopy()}
+          onUseICloud={() => {
+            void restoreICloudAfterConflict().then((restored) => {
+              if (restored) reloadAfterRestore();
+            });
+          }}
+          onCreateHistory={() => void createHistoryEntry("manual")}
+          onDeleteHistory={(entry) => void deleteHistoryEntry(entry)}
+          onDeleteCloudData={() => void deleteCloudData()}
           onPreviewWelcome={setWelcomePreview}
-          onRestore={() => void restoreFromCloud()}
+          onRefreshHistory={() => void refreshBackupHistory()}
+          onRestoreHistory={(entry) => {
+            void restoreHistoryEntry(entry).then((restored) => {
+              if (restored) reloadAfterRestore();
+            });
+          }}
           sketchRepository={sketchRepository}
           settings={snapshot.settings}
           transcription={transcription}
@@ -1042,6 +1093,48 @@ export default function App() {
           </button>
         </div>
       ) : null}
+      {restoreCompleteVisible ? (
+        <RestoreCompleteDialog
+          onDismiss={() => {
+            globalThis.sessionStorage?.removeItem(RESTORE_COMPLETE_KEY);
+            setRestoreCompleteVisible(false);
+          }}
+        />
+      ) : null}
+      {isNewJournal === true &&
+      backupStatus.lastSuccessfulBackupAt ? (
+        <NewDeviceRecoveryDialog
+          busy={
+            backupStatus.state === "syncing" ||
+            historyStatus.state === "restoring"
+          }
+          entries={historyStatus.entries}
+          message={
+            backupStatus.state === "error"
+              ? backupStatus.message
+              : historyStatus.state === "error"
+                ? historyStatus.message
+                : undefined
+          }
+          onRestoreHistory={(entry) => {
+            void restoreHistoryEntry(entry, { newDevice: true }).then(
+              (restored) => {
+                if (restored) acknowledgeNewJournal();
+                if (restored) reloadAfterRestore();
+              },
+            );
+          }}
+          onRestoreLatest={() => {
+            void restoreFromCloud().then((restored) => {
+              if (restored) acknowledgeNewJournal();
+              if (restored) reloadAfterRestore();
+            });
+          }}
+          onStartNew={() => {
+            acknowledgeNewJournal();
+          }}
+        />
+      ) : null}
       {content}
       {portraitEditorOpen ? (
         <ProfilePortraitEditor
@@ -1058,6 +1151,7 @@ export default function App() {
             width: snapshot.settings.penWidth,
             opacity: snapshot.settings.penOpacity,
             fingerDrawing: snapshot.settings.fingerDrawingEnabled,
+            fingerErasing: snapshot.settings.fingerErasingEnabled,
             favouriteColours: snapshot.settings.favouritePenColours,
           }}
           interactionObscured={helpModeActive}
@@ -1074,6 +1168,7 @@ export default function App() {
                 penWidth: penSettings.width,
                 penOpacity: penSettings.opacity,
                 fingerDrawingEnabled: penSettings.fingerDrawing !== false,
+                fingerErasingEnabled: penSettings.fingerErasing === true,
               },
             });
           }}
@@ -1112,12 +1207,14 @@ export default function App() {
                 penWidth: penSettings.width,
                 penOpacity: penSettings.opacity,
                 fingerDrawingEnabled: penSettings.fingerDrawing !== false,
+                fingerErasingEnabled: penSettings.fingerErasing === true,
               },
             });
           }}
           onReturnToSettings={() => setWelcomePreview(undefined)}
           penColor={snapshot.settings.penColor}
           fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
+          fingerErasingEnabled={snapshot.settings.fingerErasingEnabled}
           favouriteColourLongPressEnabled={
             snapshot.settings.favouriteColourLongPressEnabled
           }

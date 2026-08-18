@@ -27,6 +27,7 @@ const DEFAULT_SETTINGS: JournalSettings = {
   penWidth: 4.2,
   penOpacity: 1,
   fingerDrawingEnabled: true,
+  fingerErasingEnabled: false,
   favouritePenColours: [
     "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
     "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
@@ -46,7 +47,7 @@ const DEFAULT_SETTINGS: JournalSettings = {
   welcomeMessage: "",
   textEditorPreference: "native",
   recordingLimitMinutes: 5,
-  automaticBackup: true,
+  automaticBackup: false,
   backupOnWifiOnly: true,
   myWords: [],
 };
@@ -94,7 +95,9 @@ function migrateSettings(value: unknown): JournalSettings {
     value.lastSettingsTab === "canvas" ||
     value.lastSettingsTab === "voice" ||
     value.lastSettingsTab === "appearance" ||
-    value.lastSettingsTab === "backup"
+    value.lastSettingsTab === "backup" ||
+    value.lastSettingsTab === "history" ||
+    value.lastSettingsTab === "privacy"
       ? value.lastSettingsTab
       : "about";
 
@@ -119,6 +122,7 @@ function migrateSettings(value: unknown): JournalSettings {
       ? Math.min(1, Math.max(0, value.penOpacity))
       : DEFAULT_SETTINGS.penOpacity;
   const fingerDrawingEnabled = value.fingerDrawingEnabled !== false;
+  const fingerErasingEnabled = value.fingerErasingEnabled === true;
   const favouritePenColours = Array.isArray(value.favouritePenColours) &&
     value.favouritePenColours.length === 10
     ? value.favouritePenColours.map((colour, index) =>
@@ -230,6 +234,7 @@ function migrateSettings(value: unknown): JournalSettings {
     penWidth,
     penOpacity,
     fingerDrawingEnabled,
+    fingerErasingEnabled,
     favouritePenColours,
     favouriteColourLongPressEnabled,
     favouriteColourLongPressSeconds,

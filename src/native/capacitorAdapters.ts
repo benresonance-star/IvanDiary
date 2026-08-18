@@ -50,6 +50,11 @@ function cloudBackupShape(value: CloudBackupResult): CloudBackupResult {
       reason: item.reason,
     })) } : {}),
     ...(value.backedUpRevision === undefined ? {} : { backedUpRevision: value.backedUpRevision }),
+    ...(value.backupDeviceName ? { backupDeviceName: value.backupDeviceName } : {}),
+    ...(value.backupDeviceIdentifier ? { backupDeviceIdentifier: value.backupDeviceIdentifier } : {}),
+    ...(value.currentDeviceName ? { currentDeviceName: value.currentDeviceName } : {}),
+    ...(value.currentDeviceIdentifier ? { currentDeviceIdentifier: value.currentDeviceIdentifier } : {}),
+    ...(value.contentFingerprint ? { contentFingerprint: value.contentFingerprint } : {}),
   };
 }
 
@@ -74,6 +79,26 @@ export class CapacitorCloudBackupAdapter implements CloudBackupPlugin {
 
   async restore() {
     return nativeCall("backup", () => this.plugin.restore());
+  }
+
+  async listHistory() {
+    return nativeCall("backup", () => this.plugin.listHistory());
+  }
+
+  async createHistory(options: Parameters<CloudBackupPlugin["createHistory"]>[0]) {
+    return nativeCall("backup", () => this.plugin.createHistory(options));
+  }
+
+  async restoreHistory(options: Parameters<CloudBackupPlugin["restoreHistory"]>[0]) {
+    return nativeCall("backup", () => this.plugin.restoreHistory(options));
+  }
+
+  async deleteHistory(options: Parameters<CloudBackupPlugin["deleteHistory"]>[0]) {
+    return nativeCall("backup", () => this.plugin.deleteHistory(options));
+  }
+
+  async deleteCloudData() {
+    return nativeCall("backup", () => this.plugin.deleteCloudData());
   }
 }
 

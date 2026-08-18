@@ -271,6 +271,9 @@ export function ArrangeablePageObject({
   };
 
   return (
+    // Keyboard movement and resizing are implemented above; `group` is used
+    // because the arranged object can contain its own interactive controls.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       aria-label={
         arrange

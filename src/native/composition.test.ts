@@ -102,6 +102,27 @@ function pluginDoubles(): CapacitorPluginContracts {
         snapshotJson: "{}",
         restoredAssetUris: {},
       })),
+      listHistory: vi.fn(async () => ({ entries: [] })),
+      createHistory: vi.fn(async ({ revision, entryDay, reason }) => ({
+        entry: {
+          id: "history-test",
+          capturedAt: "2026-08-10T00:00:00Z",
+          entryDay,
+          reason,
+          deviceName: "Test iPad",
+          revision,
+          assetCount: 0,
+          byteLength: 0,
+          protected: reason !== "automatic",
+        },
+      })),
+      restoreHistory: vi.fn(async () => ({
+        snapshotJson: "{}",
+        backedUpAt: "2026-08-10T00:00:00Z",
+        restoredAssetUris: {},
+      })),
+      deleteHistory: vi.fn(async () => undefined),
+      deleteCloudData: vi.fn(async () => undefined),
     },
     share: {
       exportPage: vi.fn(async ({ fileStem, format }) => ({

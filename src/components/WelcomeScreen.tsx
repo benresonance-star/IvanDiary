@@ -31,6 +31,7 @@ export function WelcomeScreen({
   onReturnToSettings,
   penColor,
   fingerDrawingEnabled = true,
+  fingerErasingEnabled = false,
   favouriteColourLongPressEnabled = true,
   favouriteColourLongPressSeconds = 2,
   favouritePenColours,
@@ -49,6 +50,7 @@ export function WelcomeScreen({
   onReturnToSettings?: () => void;
   penColor: string;
   fingerDrawingEnabled?: boolean;
+  fingerErasingEnabled?: boolean;
   favouriteColourLongPressEnabled?: boolean;
   favouriteColourLongPressSeconds?: number;
   favouritePenColours?: string[];
@@ -72,6 +74,7 @@ export function WelcomeScreen({
     width: penWidth,
     opacity: penOpacity,
     fingerDrawing: fingerDrawingEnabled,
+    fingerErasing: fingerErasingEnabled,
     favouriteColours: favouritePenColours,
   });
   const [leaving, setLeaving] = useState(false);
@@ -92,7 +95,9 @@ export function WelcomeScreen({
     nib: penSettings.nib,
     width: penSettings.width,
     opacity: penSettings.opacity,
-    fingerDrawing: penSettings.fingerDrawing !== false,
+    fingerDrawing: tool === "eraser"
+      ? penSettings.fingerErasing === true
+      : penSettings.fingerDrawing !== false,
     paperRef,
     toolPaletteRef,
     sketchRepository,
@@ -162,7 +167,7 @@ export function WelcomeScreen({
       <SketchSurface
         capabilities={
           editing && !overlayReady
-            ? { kind: "ipad", tools: ["pen", "eraser"], fingerDrawing: penSettings.fingerDrawing !== false, pressure: true }
+            ? { kind: "ipad", tools: ["pen", "eraser"], fingerDrawing: tool === "eraser" ? penSettings.fingerErasing === true : penSettings.fingerDrawing !== false, pressure: true }
             : { kind: "readonly", tools: [], fingerDrawing: false, pressure: false }
         }
         documentId={WELCOME_DRAWING_DOCUMENT_ID}
@@ -234,7 +239,7 @@ export function WelcomeScreen({
             <button
               aria-pressed={tool === "eraser"}
               data-help-topic="erase"
-              onClick={() => setTool("eraser")}
+              onClick={() => tool === "eraser" ? setPenHudOpen(true) : setTool("eraser")}
               type="button"
             >
               <Eraser aria-hidden="true" />
@@ -273,6 +278,7 @@ export function WelcomeScreen({
               onPenSettingsChange?.(penSettings);
             }}
             settings={penSettings}
+            tool={tool === "eraser" ? "eraser" : "pen"}
           />
         </>
       ) : null}

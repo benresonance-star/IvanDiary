@@ -13,6 +13,17 @@ import type {
 } from "./journalRepository";
 
 const OPERATION_CHECKPOINT_INTERVAL = 100;
+const NEW_JOURNAL_PENDING_KEY = "ivan-diary-new-journal-pending";
+
+function pendingNewJournal(journalId: string): boolean {
+  return globalThis.localStorage?.getItem(`${NEW_JOURNAL_PENDING_KEY}:${journalId}`) === "true";
+}
+
+function setPendingNewJournal(journalId: string, pending: boolean): void {
+  const key = `${NEW_JOURNAL_PENDING_KEY}:${journalId}`;
+  if (pending) globalThis.localStorage?.setItem(key, "true");
+  else globalThis.localStorage?.removeItem(key);
+}
 
 export class JournalCommitError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -27,20 +38,28 @@ export class BrowserJournalRepository implements JournalRepository {
 
   constructor(
     journalId = "ivan-journal",
-    seedFactory = createInitialJournalSnapshot,
+    seedFactory = () => createInitialJournalSnapshot(new Date(), false),
   ) {
     this.#journalId = journalId;
     this.#seedFactory = seedFactory;
   }
 
-  async #createIfMissing(): Promise<JournalSnapshot> {
+  acknowledgeNewJournal(): void {
+    setPendingNewJournal(this.#journalId, false);
+  }
+
+  async #createIfMissing(): Promise<{
+    snapshot: JournalSnapshot;
+    created: boolean;
+  }> {
     const instance = await developmentDatabase();
     const existing = await instance.get("journalSnapshots", this.#journalId);
     if (existing) {
-      return existing;
+      return { snapshot: existing, created: pendingNewJournal(this.#journalId) };
     }
 
     const seed = this.#seedFactory();
+    setPendingNewJournal(this.#journalId, true);
     const transaction = instance.transaction(
       ["journalSnapshots", "journalBaselines"],
       "readwrite",
@@ -50,7 +69,7 @@ export class BrowserJournalRepository implements JournalRepository {
       transaction.objectStore("journalBaselines").put(seed),
       transaction.done,
     ]);
-    return seed;
+    return { snapshot: seed, created: true };
   }
 
   async #recoverFromOperations(): Promise<JournalSnapshot> {
@@ -79,19 +98,24 @@ export class BrowserJournalRepository implements JournalRepository {
   }
 
   async load(): Promise<JournalLoadResult> {
-    const stored = await this.#createIfMissing();
+    const { snapshot: stored, created } = await this.#createIfMissing();
     try {
       const snapshot = migrateJournalSnapshot(stored);
       if (snapshot !== stored) {
         const instance = await developmentDatabase();
         await instance.put("journalSnapshots", snapshot);
       }
-      return { snapshot, recoveredFromOperationLog: false };
+      return {
+        snapshot,
+        recoveredFromOperationLog: false,
+        isNewJournal: created,
+      };
     } catch (migrationError) {
       try {
         const snapshot = await this.#recoverFromOperations();
         return {
           snapshot,
+          isNewJournal: false,
           recoveredFromOperationLog: true,
           message:
             "The latest complete journal state was rebuilt from its change history.",
@@ -136,6 +160,7 @@ export class BrowserJournalRepository implements JournalRepository {
         );
       }
       await transaction.done;
+      setPendingNewJournal(this.#journalId, false);
 
       const pendingOperationCount =
         operationCount >= OPERATION_CHECKPOINT_INTERVAL ? 0 : operationCount;
@@ -168,6 +193,7 @@ export class BrowserJournalRepository implements JournalRepository {
     const operations = await transaction.objectStore("journalOperations").index("by-journal").getAllKeys(restored.id);
     await Promise.all(operations.map((key) => transaction.objectStore("journalOperations").delete(key)));
     await transaction.done;
+    setPendingNewJournal(this.#journalId, false);
     return {
       snapshot: restored,
       health: { localDurability: "saved", remoteSync: "synced", durableRevision: restored.revision, pendingOperationCount: 0 },

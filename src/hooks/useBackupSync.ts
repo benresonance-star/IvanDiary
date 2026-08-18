@@ -5,6 +5,9 @@ import type { RefObject } from "react";
 import { reconcileCloudRestore } from "../domain/cloudRestore";
 import type {
   AssetRef,
+  BackupHistoryEntry,
+  BackupHistoryReason,
+  BackupHistoryStatus,
   BackupStatus,
   JournalSnapshot,
 } from "../domain/models";
@@ -24,7 +27,10 @@ import {
 } from "../sketch/specialDocuments";
 import {
   backupContentToken,
+  backupContentFingerprint,
   backupResultStatus,
+  confirmCloudDataDeletion,
+  historyAfterCreation,
   INITIAL_BACKUP_STATUS,
 } from "./backupSyncHelpers";
 
@@ -101,6 +107,7 @@ async function collectCloudBackupAssets(
 }
 
 type UseBackupSyncOptions = {
+  newJournalPending?: boolean;
   backup: CloudBackupPlugin;
   drawingBackupTick: number;
   drawingBackupTickRef: RefObject<number>;
@@ -110,6 +117,7 @@ type UseBackupSyncOptions = {
 };
 
 export function useBackupSync({
+  newJournalPending = false,
   backup,
   drawingBackupTick,
   drawingBackupTickRef,
@@ -120,6 +128,10 @@ export function useBackupSync({
   const [backupStatus, setBackupStatus] = useState<BackupStatus>(
     INITIAL_BACKUP_STATUS,
   );
+  const [historyStatus, setHistoryStatus] = useState<BackupHistoryStatus>({
+    state: "idle",
+    entries: [],
+  });
   const lastBackedRevisionRef = useRef<number | undefined>(undefined);
   const lastBackedContentTokenRef = useRef<string | undefined>(undefined);
   const lastBackedDrawingTickRef = useRef(0);
@@ -132,6 +144,64 @@ export function useBackupSync({
       setBackupStatus(STATUS_CHECK_ERROR);
     }
   }, [backup]);
+
+  const refreshBackupHistory = useCallback(async () => {
+    setHistoryStatus((current) => ({ ...current, state: "loading", message: undefined }));
+    try {
+      const result = await backup.listHistory();
+      setHistoryStatus({ state: "idle", entries: result.entries });
+    } catch {
+      setHistoryStatus((current) => ({
+        ...current,
+        state: "error",
+        message: "Backup history could not be loaded. Your diary was not changed.",
+      }));
+    }
+  }, [backup]);
+
+  const createHistoryEntry = useCallback(async (
+    reason: BackupHistoryReason,
+  ): Promise<BackupHistoryEntry | undefined> => {
+    if (!snapshot) return undefined;
+    setHistoryStatus((current) => ({ ...current, state: "creating", message: undefined }));
+    try {
+      if (hasNativePencilKit()) await flushNativeDrawingOverlay();
+      const now = new Date();
+      const entryDay = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, "0"),
+        String(now.getDate()).padStart(2, "0"),
+      ].join("-");
+      const result = await backup.createHistory({
+        snapshotJson: JSON.stringify(snapshot),
+        revision: snapshot.revision,
+        entryDay,
+        timeZoneIdentifier: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        reason,
+        assets: await collectCloudBackupAssets(snapshot),
+      });
+      setHistoryStatus((current) => ({
+        state: "idle",
+        entries: historyAfterCreation(
+          current.entries,
+          result.entry,
+          reason === "before-restore",
+        ),
+        message: "Recovery point created.",
+      }));
+      return result.entry;
+    } catch (error) {
+      const detail = error instanceof Error && error.message
+        ? ` ${error.message}`
+        : "";
+      setHistoryStatus((current) => ({
+        ...current,
+        state: "error",
+        message: `A recovery point could not be created. Existing history is unchanged.${detail}`,
+      }));
+      return undefined;
+    }
+  }, [backup, snapshot]);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,9 +222,52 @@ export function useBackupSync({
     };
   }, [backup]);
 
-  const backUpJournalInformation = useCallback(async () => {
+  useEffect(() => {
+    let cancelled = false;
+    void backup.listHistory().then((result) => {
+      if (!cancelled) setHistoryStatus({ state: "idle", entries: result.entries });
+    }).catch(() => {
+      // The iCloud status card remains the source of connection errors.
+    });
+    return () => { cancelled = true; };
+  }, [backup]);
+
+  const backUpJournalInformation = useCallback(async (
+    options: { allowOtherDeviceOverwrite?: boolean } = {},
+  ) => {
     if (!snapshot) {
       return;
+    }
+
+    let expectedCloudFingerprint: string | undefined;
+    if (!options.allowOtherDeviceOverwrite) {
+      try {
+        const cloud = await backup.status();
+        expectedCloudFingerprint = cloud.contentFingerprint;
+        const localFingerprint = backupContentFingerprint(snapshot);
+        const differentDevice = Boolean(
+          cloud.lastSuccessfulBackupAt &&
+          ((cloud.backupDeviceIdentifier && cloud.currentDeviceIdentifier
+            && cloud.backupDeviceIdentifier !== cloud.currentDeviceIdentifier) ||
+            (!cloud.backupDeviceIdentifier && cloud.backupDeviceName
+              && cloud.currentDeviceName
+              && cloud.backupDeviceName !== cloud.currentDeviceName)),
+        );
+        if (
+          differentDevice &&
+          (!cloud.contentFingerprint || cloud.contentFingerprint !== localFingerprint)
+        ) {
+          setBackupStatus({
+            ...backupResultStatus(cloud),
+            conflictDetected: true,
+            message: `iCloud contains a different diary saved by ${cloud.backupDeviceName ?? "another iPad"}. Nothing was overwritten.`,
+          });
+          return;
+        }
+      } catch {
+        setBackupStatus(STATUS_CHECK_ERROR);
+        return;
+      }
     }
     if (snapshot.settings.backupOnWifiOnly && runtime === "native") {
       let networkStatus: Awaited<ReturnType<typeof Network.getStatus>>;
@@ -193,6 +306,10 @@ export function useBackupSync({
       const result = await backup.backupSnapshot({
         snapshotJson: JSON.stringify(snapshot),
         revision: snapshot.revision,
+        contentFingerprint: backupContentFingerprint(snapshot),
+        ...(expectedCloudFingerprint
+          ? { expectedCloudFingerprint }
+          : {}),
       });
       const cloudAssets = await collectCloudBackupAssets(snapshot);
       const assetResult = await backup.backupAssets({ assets: cloudAssets });
@@ -228,6 +345,9 @@ export function useBackupSync({
         lastBackedRevisionRef.current = snapshot.revision;
         lastBackedContentTokenRef.current = backupContentToken(snapshot);
         lastBackedDrawingTickRef.current = drawingBackupTickRef.current;
+        if (!options.allowOtherDeviceOverwrite) {
+          await createHistoryEntry("automatic");
+        }
       }
     } catch {
       setBackupStatus((current) => ({
@@ -237,7 +357,25 @@ export function useBackupSync({
           "iCloud backup failed. Your diary remains safely stored on this iPad.",
       }));
     }
-  }, [backup, drawingBackupTickRef, runtime, snapshot]);
+  }, [backup, createHistoryEntry, drawingBackupTickRef, runtime, snapshot]);
+
+  const keepThisIPadAfterConflict = useCallback(async () => {
+    const safetyEntry = await createHistoryEntry("before-restore");
+    if (!safetyEntry) return false;
+    await backUpJournalInformation({ allowOtherDeviceOverwrite: true });
+    return true;
+  }, [backUpJournalInformation, createHistoryEntry]);
+
+  const saveLocalConflictCopy = useCallback(async () => {
+    const saved = await createHistoryEntry("before-restore");
+    if (saved) {
+      setBackupStatus((current) => ({
+        ...current,
+        message: "This iPad was saved as a recovery point. The latest iCloud diary was not overwritten.",
+      }));
+    }
+    return Boolean(saved);
+  }, [createHistoryEntry]);
 
   useEffect(() => {
     if (
@@ -274,13 +412,6 @@ export function useBackupSync({
   ]);
 
   const restoreFromCloud = useCallback(async () => {
-    if (
-      !globalThis.confirm(
-        "Restore the iCloud diary on this iPad? The current local diary will be replaced after the cloud copy is downloaded.",
-      )
-    ) {
-      return;
-    }
     setBackupStatus((current) => ({
       ...current,
       state: "syncing",
@@ -302,19 +433,104 @@ export function useBackupSync({
           ? { lastSuccessfulBackupAt: restored.backedUpAt }
           : {}),
       }));
-    } catch {
+      return true;
+    } catch (error) {
+      const detail = error instanceof Error ? ` ${error.message}` : "";
       setBackupStatus((current) => ({
         ...current,
         state: "error",
         message:
-          "The iCloud diary could not be restored. The local diary was left unchanged.",
+          `The iCloud diary could not be restored. The local diary was left unchanged.${detail}`,
       }));
+      return false;
     }
   }, [backup, replace]);
+
+  const restoreICloudAfterConflict = useCallback(async () => {
+    const safetyEntry = await createHistoryEntry("before-restore");
+    if (!safetyEntry) return false;
+    return restoreFromCloud();
+  }, [createHistoryEntry, restoreFromCloud]);
+
+  const restoreHistoryEntry = useCallback(async (
+    entry: BackupHistoryEntry,
+    options: { newDevice?: boolean } = {},
+  ): Promise<boolean> => {
+    if (!snapshot) return false;
+    if (!options.newDevice && !globalThis.confirm(
+      `Restore the recovery point from ${new Date(entry.capturedAt).toLocaleString()}? A safety recovery point will be created first.`,
+    )) return false;
+    if (!options.newDevice) {
+      const safetyEntry = await createHistoryEntry("before-restore");
+      if (!safetyEntry) return false;
+    }
+    setHistoryStatus((current) => ({ ...current, state: "restoring", message: "Restoring recovery point…" }));
+    try {
+      const restored = await backup.restoreHistory({ id: entry.id });
+      const reconciled = reconcileCloudRestore(JSON.parse(restored.snapshotJson), restored.restoredAssetUris);
+      await replace({
+        ...reconciled,
+        settings: {
+          ...reconciled.settings,
+          automaticBackup: snapshot.settings.automaticBackup,
+          backupOnWifiOnly: snapshot.settings.backupOnWifiOnly,
+          lastSettingsTab: "history",
+        },
+        revision: Math.max(snapshot.revision, reconciled.revision) + 1,
+      });
+      setHistoryStatus((current) => ({ ...current, state: "idle", message: "The recovery point was restored." }));
+      return true;
+    } catch {
+      setHistoryStatus((current) => ({ ...current, state: "error", message: "The recovery point could not be restored. The current diary was left unchanged." }));
+      return false;
+    }
+  }, [backup, createHistoryEntry, replace, snapshot]);
+
+  const deleteHistoryEntry = useCallback(async (entry: BackupHistoryEntry) => {
+    if (!globalThis.confirm(`Delete the recovery point from ${new Date(entry.capturedAt).toLocaleString()}?`)) return;
+    try {
+      await backup.deleteHistory({ id: entry.id });
+      setHistoryStatus((current) => ({ ...current, entries: current.entries.filter((candidate) => candidate.id !== entry.id) }));
+    } catch {
+      setHistoryStatus((current) => ({ ...current, state: "error", message: "The recovery point could not be deleted." }));
+    }
+  }, [backup]);
+
+  const deleteCloudData = useCallback(async (): Promise<boolean> => {
+    if (!confirmCloudDataDeletion(globalThis.confirm)) return false;
+    setBackupStatus((current) => ({
+      ...current,
+      state: "syncing",
+      message: "Deleting iCloud diary information…",
+    }));
+    try {
+      await backup.deleteCloudData();
+      setHistoryStatus({ state: "idle", entries: [] });
+      setBackupStatus({
+        state: "available",
+        pendingItemCount: 0,
+        message: "The iCloud diary and recovery history were deleted. The diary on this iPad is unchanged.",
+      });
+      return true;
+    } catch (error) {
+      const detail = error instanceof Error ? ` ${error.message}` : "";
+      setBackupStatus((current) => ({
+        ...current,
+        state: "error",
+        message: `The iCloud diary could not be completely deleted. Try again.${detail}`,
+      }));
+      return false;
+    }
+  }, [backup]);
 
   useEffect(() => {
     if (
       !snapshot?.settings.automaticBackup ||
+      (newJournalPending &&
+        !(
+          backupStatus.state === "available" &&
+          !backupStatus.lastSuccessfulBackupAt
+        )) ||
       backupStatus.state === "not-configured" ||
       backupStatus.state === "syncing" ||
       backupStatus.state === "error" ||
@@ -342,12 +558,21 @@ export function useBackupSync({
     }
     const timer = setTimeout(() => void backUpJournalInformation(), 5_000);
     return () => clearTimeout(timer);
-  }, [backUpJournalInformation, backupStatus, drawingBackupTick, snapshot]);
+  }, [backUpJournalInformation, backupStatus, drawingBackupTick, newJournalPending, snapshot]);
 
   return {
     backupStatus,
     backUpJournalInformation,
+    createHistoryEntry,
+    deleteCloudData,
+    deleteHistoryEntry,
+    historyStatus,
+    keepThisIPadAfterConflict,
     refreshBackupStatus,
+    refreshBackupHistory,
+    restoreHistoryEntry,
     restoreFromCloud,
+    saveLocalConflictCopy,
+    restoreICloudAfterConflict,
   };
 }

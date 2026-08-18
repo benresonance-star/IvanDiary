@@ -12,14 +12,18 @@ export function BackupSettingsPanel({
   commit,
   onBackupNow,
   onCheckBackup,
-  onRestore,
+  onKeepThisIPad,
+  onSaveLocalCopy,
+  onUseICloud,
   settings,
 }: {
   backupStatus: BackupStatus;
   commit: (operation: DocumentOperationInput) => void;
   onBackupNow: () => void;
   onCheckBackup: () => void;
-  onRestore: () => void;
+  onKeepThisIPad: () => void;
+  onSaveLocalCopy: () => void;
+  onUseICloud: () => void;
   settings: JournalSettings;
 }) {
   const backupAvailable =
@@ -38,7 +42,7 @@ export function BackupSettingsPanel({
         <CloudOff aria-hidden="true" />
       )}
       <div>
-        <h2>iCloud backup</h2>
+        <h2>iCloud Sync</h2>
         <div
           className="backup-status-card"
           data-state={backupStatus.state}
@@ -64,8 +68,25 @@ export function BackupSettingsPanel({
             <p>{backupStatus.message}</p>
           </div>
         </div>
+        {backupStatus.conflictDetected ? (
+          <section aria-labelledby="icloud-conflict-heading" className="backup-conflict-card">
+            <h3 id="icloud-conflict-heading">Two different diaries were found</h3>
+            <p>
+              The iCloud diary was last saved by {backupStatus.backupDeviceName ?? "another iPad"}.
+              Choose which diary should become current. Nothing has been overwritten.
+            </p>
+            <div className="backup-conflict-actions">
+              <button onClick={onUseICloud} type="button">Use the iCloud diary</button>
+              <button onClick={onKeepThisIPad} type="button">Keep this iPad’s diary</button>
+              <button onClick={onSaveLocalCopy} type="button">Save this iPad as a recovery point</button>
+            </div>
+            <p className="backup-availability-note">
+              A safety recovery point is created before either diary replaces the other.
+            </p>
+          </section>
+        ) : null}
         <p className="setting-description backup-explanation">
-          Your diary is always saved on this iPad. iCloud backup includes diary
+          Your diary is always saved on this iPad. iCloud Sync keeps the latest diary
           information, original recordings, photos and drawings.
         </p>
         <button
@@ -88,17 +109,7 @@ export function BackupSettingsPanel({
             ? "Backing up…"
             : "Back up diary information now"}
         </button>
-        <button
-          className="backup-restore-action"
-          disabled={
-            backupStatus.state === "syncing" ||
-            !backupStatus.lastSuccessfulBackupAt
-          }
-          onClick={onRestore}
-          type="button"
-        >
-          Restore diary from iCloud
-        </button>
+        <p className="backup-availability-note">To restore an earlier version, open Backup History.</p>
         <details className="backup-details">
           <summary>
             Backup details <ChevronDown aria-hidden="true" />
@@ -119,6 +130,10 @@ export function BackupSettingsPanel({
             <div className="backup-location-details">
               <h3>iCloud storage details</h3>
               <dl>
+                <div>
+                  <dt>Latest backup made by</dt>
+                  <dd>{backupStatus.backupDeviceName ?? "This iPad or an older app version"}</dd>
+                </div>
                 <div>
                   <dt>iCloud account</dt>
                   <dd>

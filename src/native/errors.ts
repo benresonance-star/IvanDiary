@@ -109,8 +109,22 @@ export function normalizeNativeError(
     return error;
   }
   const code = errorCode(error);
+  const nativeMessage =
+    typeof error === "object" && error !== null && "message" in error
+      ? String(error.message)
+      : error instanceof Error
+        ? error.message
+        : undefined;
+  const defaults = ERROR_DETAILS[code];
   return new JournalServiceError(
-    { code, service, ...ERROR_DETAILS[code] },
+    {
+      code,
+      service,
+      ...defaults,
+      ...(service === "backup" && nativeMessage
+        ? { message: nativeMessage }
+        : {}),
+    },
     { cause: error },
   );
 }

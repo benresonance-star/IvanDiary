@@ -109,7 +109,8 @@ public struct ApplicationSupportPencilDrawingStore: PencilDrawingStore {
 
     /// Returns a preview only when the drawing still has strokes.
     public func loadContentPreview(
-        documentID: String
+        documentID: String,
+        bounds: CGRect = CGRect(x: 0, y: 0, width: 1200, height: 820)
     ) throws -> PencilDrawingPreview? {
         guard let data = try load(documentID: documentID) else {
             try remove(documentID: documentID)
@@ -120,6 +121,35 @@ public struct ApplicationSupportPencilDrawingStore: PencilDrawingStore {
             try remove(documentID: documentID)
             return nil
         }
+
+        let drawingURL = try fileURL(
+            documentID: documentID,
+            extension: "pkdrawing"
+        )
+        let drawingModifiedAt = try drawingURL.resourceValues(
+            forKeys: [.contentModificationDateKey]
+        ).contentModificationDate ?? Date.distantPast
+        if let preview = try loadPreview(documentID: documentID),
+           preview.modifiedAt >= drawingModifiedAt,
+           let image = UIImage(contentsOfFile: preview.fileURL.path) {
+            let requestedAspect = bounds.width / max(bounds.height, 1)
+            let previewAspect = image.size.width / max(image.size.height, 1)
+            if abs(requestedAspect - previewAspect) < 0.02 {
+                return preview
+            }
+        }
+
+        // Cloud recovery restores the authoritative PKDrawing file. Older
+        // recovery points did not include the derived PNG preview, so rebuild
+        // it lazily instead of requiring the user to open the drawing tool.
+        let previewImage = PencilInkColor.renderPreview(
+            drawing: drawing,
+            bounds: bounds
+        )
+        guard let previewData = previewImage.pngData() else {
+            return nil
+        }
+        try savePreview(previewData, documentID: documentID)
         return try loadPreview(documentID: documentID)
     }
 
