@@ -125,6 +125,10 @@ function pluginDoubles(): CapacitorPluginContracts {
       deleteCloudData: vi.fn(async () => undefined),
     },
     share: {
+      exportDiary: vi.fn(async () => ({
+        pdfFileUri: "file:///diary.pdf",
+        archiveFileUri: "file:///diary.tar",
+      })),
       exportPage: vi.fn(async ({ fileStem, format }) => ({
         fileUri: `file:///${fileStem}.${format}`,
         fileName: `${fileStem}.${format}`,

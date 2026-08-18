@@ -21,16 +21,18 @@ export function BackupHistorySettingsPanel({
   onDelete,
   onRefresh,
   onRestore,
+  embedded = false,
 }: {
   historyStatus: BackupHistoryStatus;
   onCreate: () => void;
   onDelete: (entry: BackupHistoryEntry) => void;
   onRefresh: () => void;
   onRestore: (entry: BackupHistoryEntry) => void;
+  embedded?: boolean;
 }) {
   const busy = historyStatus.state === "creating" || historyStatus.state === "restoring";
   return (
-    <div aria-labelledby="settings-tab-history" className="setting-group history-setting-group" id="settings-panel-history" role="tabpanel">
+    <div aria-labelledby={embedded ? "backup-section-history-heading" : "settings-tab-history"} className="setting-group history-setting-group" id={embedded ? "backup-section-history-content" : "settings-panel-history"} role={embedded ? "region" : "tabpanel"}>
       <History aria-hidden="true" />
       <div>
         <h2>Backup history</h2>

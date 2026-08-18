@@ -164,6 +164,14 @@ export class BrowserCloudBackupMock implements CloudBackupPlugin {
 export class BrowserNativeShareMock implements NativeSharePlugin {
   readonly isSimulation = true;
 
+  async exportDiary() {
+    return {
+      pdfFileUri: "demo://share/iPad-App-Diary.pdf",
+      archiveFileUri: "demo://share/iPad-App-Diary.tar",
+      missingAssetIDs: [],
+    };
+  }
+
   async exportPage({
     format,
     fileStem,

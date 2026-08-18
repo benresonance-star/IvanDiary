@@ -185,12 +185,23 @@ export type PageExportResult = {
   fileName: string;
 };
 
+export type DiaryExportResult = {
+  pdfFileUri: string;
+  archiveFileUri: string;
+  missingAssetIDs?: string[];
+};
+
 export type NativeShareResult = {
   completed: boolean;
   activityType?: string;
 };
 
 export interface NativeSharePlugin {
+  exportDiary(options: {
+    snapshotJson: string;
+    readableText: string;
+    assets: CloudBackupAsset[];
+  }): Promise<DiaryExportResult>;
   exportPage(options: {
     format: PageShareFormat;
     title: string;

@@ -2,6 +2,7 @@ import AVFoundation
 @preconcurrency import Capacitor
 @preconcurrency import CloudKit
 import CryptoKit
+import CoreText
 import AppleAudioServices
 import AppleDrawingKit
 import PencilKit
@@ -1174,6 +1175,7 @@ public final class NativeSharePlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
     public let identifier = "NativeSharePlugin"
     public let jsName = "NativeShare"
     public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "exportDiary", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "exportPage", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "share", returnType: CAPPluginReturnPromise)
     ]
@@ -1187,6 +1189,97 @@ public final class NativeSharePlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
         let y: CGFloat
         let width: CGFloat
         let height: CGFloat
+    }
+
+    @objc public func exportDiary(_ call: CAPPluginCall) {
+        guard let snapshotJSON = call.getString("snapshotJson"),
+              let readableText = call.getString("readableText"),
+              let assets = call.getArray("assets", JSObject.self) else {
+            call.reject("The complete diary could not be prepared.", "INVALID_EXPORT")
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self else {
+                call.reject("The complete diary could not be prepared.", "NATIVE_FAILURE")
+                return
+            }
+            do {
+                let folder = try self.prepareShareFolder()
+                let pdfURL = folder.appendingPathComponent("iPad-App-Diary.pdf")
+                try self.writeReadableDiaryPDF(readableText, to: pdfURL)
+
+                let package = folder.appendingPathComponent("iPad-App-Diary", isDirectory: true)
+                let originals = package.appendingPathComponent("Originals", isDirectory: true)
+                try FileManager.default.createDirectory(at: originals, withIntermediateDirectories: true)
+                try Data(snapshotJSON.utf8).write(
+                    to: package.appendingPathComponent("diary.json"),
+                    options: .atomic
+                )
+                try Data(readableText.utf8).write(
+                    to: package.appendingPathComponent("README.txt"),
+                    options: .atomic
+                )
+                try FileManager.default.copyItem(
+                    at: pdfURL,
+                    to: package.appendingPathComponent("Readable-Diary.pdf")
+                )
+
+                var usedNames = Set<String>()
+                var exportManifest: [[String: String]] = []
+                var missingAssetIDs: [String] = []
+                for asset in assets {
+                    let assetID = asset["id"] as? String ?? UUID().uuidString
+                    guard let exportedAsset = try self.diaryExportAssetData(asset) else {
+                        missingAssetIDs.append(assetID)
+                        continue
+                    }
+                    let kind = asset["kind"] as? String ?? "file"
+                    let originalExtension = exportedAsset.fileExtension
+                    let base = self.safeFileStem("\(kind)-\(assetID)")
+                    var name = originalExtension.isEmpty ? base : "\(base).\(originalExtension)"
+                    var suffix = 2
+                    while usedNames.contains(name) {
+                        name = originalExtension.isEmpty
+                            ? "\(base)-\(suffix)"
+                            : "\(base)-\(suffix).\(originalExtension)"
+                        suffix += 1
+                    }
+                    usedNames.insert(name)
+                    try exportedAsset.data.write(
+                        to: originals.appendingPathComponent(name),
+                        options: .atomic
+                    )
+                    exportManifest.append([
+                        "id": assetID,
+                        "kind": kind,
+                        "mimeType": asset["mimeType"] as? String ?? "application/octet-stream",
+                        "file": "Originals/\(name)"
+                    ])
+                }
+                try JSONSerialization.data(
+                    withJSONObject: exportManifest,
+                    options: [.prettyPrinted, .sortedKeys]
+                ).write(to: package.appendingPathComponent("manifest.json"), options: .atomic)
+                if !missingAssetIDs.isEmpty {
+                    let missingText = "These original files could not be found on this iPad:\n" + missingAssetIDs.joined(separator: "\n")
+                    try Data(missingText.utf8).write(
+                        to: package.appendingPathComponent("MISSING-FILES.txt"),
+                        options: .atomic
+                    )
+                }
+
+                let archiveURL = folder.appendingPathComponent("iPad-App-Diary.tar")
+                try self.writeTarArchive(directory: package, to: archiveURL)
+                try FileManager.default.removeItem(at: package)
+                call.resolve([
+                    "pdfFileUri": pdfURL.absoluteString,
+                    "archiveFileUri": archiveURL.absoluteString,
+                    "missingAssetIDs": missingAssetIDs
+                ])
+            } catch {
+                call.reject("The complete diary could not be prepared. Nothing was changed.", "NATIVE_FAILURE", error)
+            }
+        }
     }
 
     @objc public func exportPage(_ call: CAPPluginCall) {
@@ -1740,6 +1833,155 @@ public final class NativeSharePlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
         }
         shareFolder = folder
         return items
+    }
+
+    private func diaryExportAssetData(
+        _ asset: JSObject
+    ) throws -> (data: Data, fileExtension: String)? {
+        let kind = asset["kind"] as? String ?? "file"
+        if kind == "drawing", let documentID = asset["drawingDocumentId"] as? String {
+            guard let data = try ApplicationSupportPencilDrawingStore().load(documentID: documentID) else {
+                return nil
+            }
+            return (data, "pkdrawing")
+        }
+        guard let uri = asset["localUri"] as? String,
+              let assetID = asset["id"] as? String else { return nil }
+        if let url = fileURL(from: uri), FileManager.default.fileExists(atPath: url.path) {
+            let fileExtension = url.pathExtension.isEmpty
+                ? exportExtension(for: asset["mimeType"] as? String, kind: kind)
+                : url.pathExtension
+            return (try Data(contentsOf: url, options: .mappedIfSafe), fileExtension)
+        }
+        let support = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let subdirectory = kind == "audio" ? "OriginalAudio" : "OriginalFiles"
+        let directory = support
+            .appendingPathComponent("JournalAssets", isDirectory: true)
+            .appendingPathComponent(subdirectory, isDirectory: true)
+        if let fallback = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ).first(where: { $0.deletingPathExtension().lastPathComponent == assetID }) {
+            return (
+                try Data(contentsOf: fallback, options: .mappedIfSafe),
+                fallback.pathExtension.isEmpty
+                    ? exportExtension(for: asset["mimeType"] as? String, kind: kind)
+                    : fallback.pathExtension
+            )
+        }
+        if uri.hasPrefix("data:"), let separator = uri.firstIndex(of: ",") {
+            let encoded = String(uri[uri.index(after: separator)...])
+            if let data = Data(base64Encoded: encoded) {
+                return (data, exportExtension(for: asset["mimeType"] as? String, kind: kind))
+            }
+        }
+        return nil
+    }
+
+    private func exportExtension(for mimeType: String?, kind: String) -> String {
+        if let mimeType,
+           let fileExtension = UTType(mimeType: mimeType)?.preferredFilenameExtension {
+            return fileExtension
+        }
+        if kind == "audio" { return "m4a" }
+        if kind == "photo" { return "jpg" }
+        if kind == "drawing" { return "pkdrawing" }
+        return "bin"
+    }
+
+    private func writeReadableDiaryPDF(_ text: String, to url: URL) throws {
+        let page = CGRect(x: 0, y: 0, width: 595, height: 842)
+        let content = CGRect(x: 48, y: 48, width: page.width - 96, height: page.height - 96)
+        let attributed = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 12),
+                .foregroundColor: UIColor.black
+            ]
+        )
+        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
+        let renderer = UIGraphicsPDFRenderer(bounds: page)
+        try renderer.writePDF(to: url) { context in
+            var location = 0
+            repeat {
+                context.beginPage()
+                let graphics = context.cgContext
+                graphics.saveGState()
+                graphics.translateBy(x: 0, y: page.height)
+                graphics.scaleBy(x: 1, y: -1)
+                let frame = CTFramesetterCreateFrame(
+                    framesetter,
+                    CFRange(location: location, length: 0),
+                    CGPath(rect: content, transform: nil),
+                    nil
+                )
+                CTFrameDraw(frame, graphics)
+                graphics.restoreGState()
+                let visible = CTFrameGetVisibleStringRange(frame)
+                guard visible.length > 0 else { break }
+                location += visible.length
+            } while location < attributed.length
+        }
+    }
+
+    private func writeTarArchive(directory: URL, to archiveURL: URL) throws {
+        FileManager.default.createFile(atPath: archiveURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: archiveURL)
+        defer { try? handle.close() }
+        let keys: [URLResourceKey] = [.isRegularFileKey, .contentModificationDateKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
+        ) else { throw CocoaError(.fileReadUnknown) }
+        let base = directory.deletingLastPathComponent()
+        for case let file as URL in enumerator {
+            let values = try file.resourceValues(forKeys: Set(keys))
+            guard values.isRegularFile == true else { continue }
+            let relative = String(file.path.dropFirst(base.path.count + 1))
+            let data = try Data(contentsOf: file, options: .mappedIfSafe)
+            try handle.write(contentsOf: tarHeader(
+                name: relative,
+                size: data.count,
+                modifiedAt: values.contentModificationDate ?? Date()
+            ))
+            try handle.write(contentsOf: data)
+            let padding = (512 - (data.count % 512)) % 512
+            if padding > 0 { try handle.write(contentsOf: Data(repeating: 0, count: padding)) }
+        }
+        try handle.write(contentsOf: Data(repeating: 0, count: 1024))
+    }
+
+    private func tarHeader(name: String, size: Int, modifiedAt: Date) -> Data {
+        var bytes = [UInt8](repeating: 0, count: 512)
+        func put(_ value: String, at offset: Int, length: Int) {
+            for (index, byte) in value.utf8.prefix(length).enumerated() {
+                bytes[offset + index] = byte
+            }
+        }
+        func octal(_ value: Int, length: Int) -> String {
+            let digits = String(String(value, radix: 8).suffix(length - 1))
+            return String(repeating: "0", count: max(0, length - 1 - digits.count)) + digits + "\0"
+        }
+        put(name, at: 0, length: 100)
+        put("0000644\0", at: 100, length: 8)
+        put("0000000\0", at: 108, length: 8)
+        put("0000000\0", at: 116, length: 8)
+        put(octal(size, length: 12), at: 124, length: 12)
+        put(octal(Int(modifiedAt.timeIntervalSince1970), length: 12), at: 136, length: 12)
+        for index in 148..<156 { bytes[index] = 32 }
+        bytes[156] = 48
+        put("ustar\0", at: 257, length: 6)
+        put("00", at: 263, length: 2)
+        let checksum = bytes.reduce(0) { $0 + Int($1) }
+        let checksumDigits = String(String(checksum, radix: 8).suffix(6))
+        put(String(repeating: "0", count: max(0, 6 - checksumDigits.count)) + checksumDigits + "\0 ", at: 148, length: 8)
+        return Data(bytes)
     }
 
     private func clearShareFolder() {

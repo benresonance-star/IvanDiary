@@ -1,5 +1,5 @@
 import { Grid3X3, Highlighter, Paintbrush, PenLine, Pencil } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 
 import {
   clampOpacity,
@@ -42,8 +42,6 @@ function clampWidth(value: number): number {
 }
 
 export function PenSettingsHud({
-  favouriteColourLongPressEnabled = true,
-  favouriteColourLongPressMs = 2000,
   grid,
   onChange,
   onDone,
@@ -51,8 +49,6 @@ export function PenSettingsHud({
   settings,
   tool = "pen",
 }: {
-  favouriteColourLongPressEnabled?: boolean;
-  favouriteColourLongPressMs?: number;
   grid?: DrawingGridSettings;
   onChange: (settings: PenSettings) => void;
   onDone: () => void;
@@ -64,11 +60,6 @@ export function PenSettingsHud({
   const swatchSelected = inkColours.includes(settings.color);
   const activeNib = settings.nib ?? "pen";
   const [activePanel, setActivePanel] = useState<"pen" | "grid">("pen");
-  const colourPickerRefs = useRef<Array<HTMLInputElement | null>>([]);
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-  const longPressedIndexRef = useRef<number | undefined>(undefined);
   const opacityPercent = Math.round(clampOpacity(settings.opacity) * 100);
   const sampleStyle = {
     "--sample-colour": colourWithOpacity(settings.color, settings.opacity),
@@ -88,25 +79,6 @@ export function PenSettingsHud({
     const complete = { ...next, nib, profiles };
     onChange(complete);
   }
-
-  function clearLongPressTimer() {
-    if (longPressTimerRef.current !== undefined) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = undefined;
-    }
-  }
-
-  function startFavouriteColourLongPress(index: number) {
-    if (!favouriteColourLongPressEnabled) return;
-    clearLongPressTimer();
-    longPressedIndexRef.current = undefined;
-    longPressTimerRef.current = setTimeout(() => {
-      longPressTimerRef.current = undefined;
-      longPressedIndexRef.current = index;
-    }, Math.max(500, favouriteColourLongPressMs));
-  }
-
-  useEffect(() => () => clearLongPressTimer(), []);
 
   return (
     <div
@@ -236,74 +208,17 @@ export function PenSettingsHud({
               {inkColours.map((colour, index) => (
                 <span className="pen-colour-favourite" key={index}>
                   <button
-                    aria-describedby={
-                      favouriteColourLongPressEnabled
-                        ? "favourite-colour-edit-hint"
-                        : undefined
-                    }
                     aria-label={favouriteColourName(index)}
                     aria-pressed={settings.color === colour}
                     className="pen-colour-swatch"
                     data-help-topic="pen-colour"
-                    onClick={() => {
-                      if (longPressedIndexRef.current === index) {
-                        longPressedIndexRef.current = undefined;
-                        return;
-                      }
-                      changeSettings({ ...settings, color: colour });
-                    }}
-                    onContextMenu={(event) => event.preventDefault()}
-                    onPointerCancel={() => {
-                      clearLongPressTimer();
-                      longPressedIndexRef.current = undefined;
-                    }}
-                    onPointerDown={() => startFavouriteColourLongPress(index)}
-                    onPointerLeave={clearLongPressTimer}
-                    onPointerUp={() => {
-                      clearLongPressTimer();
-                      if (longPressedIndexRef.current === index) {
-                        const picker = colourPickerRefs.current[index];
-                        if (!picker) return;
-                        try {
-                          picker.showPicker();
-                        } catch {
-                          picker.click();
-                        }
-                      }
-                    }}
+                    onClick={() => changeSettings({ ...settings, color: colour })}
                     style={{ backgroundColor: colour }}
                     type="button"
-                  />
-                  <input
-                    aria-hidden="true"
-                    className="visually-hidden"
-                    onChange={(event) => {
-                      const nextColour = event.target.value;
-                      const favouriteColours = inkColours.map(
-                        (candidate, candidateIndex) =>
-                          candidateIndex === index ? nextColour : candidate,
-                      );
-                      changeSettings({
-                        ...settings,
-                        color: nextColour,
-                        favouriteColours,
-                      });
-                    }}
-                    ref={(element) => {
-                      colourPickerRefs.current[index] = element;
-                    }}
-                    tabIndex={-1}
-                    type="color"
-                    value={colour}
                   />
                 </span>
               ))}
             </div>
-            {favouriteColourLongPressEnabled ? (
-              <span className="visually-hidden" id="favourite-colour-edit-hint">
-                Hold to edit this favourite colour.
-              </span>
-            ) : null}
           </div>
 
           <label className="pen-width-control">

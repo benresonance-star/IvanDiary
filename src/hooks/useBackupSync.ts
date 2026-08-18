@@ -41,7 +41,7 @@ const STATUS_CHECK_ERROR: BackupStatus = {
     "The iCloud connection could not be checked. Your diary remains saved on this iPad.",
 };
 
-async function collectCloudBackupAssets(
+export async function collectCloudBackupAssets(
   snapshot: JournalSnapshot,
 ): Promise<CloudBackupAsset[]> {
   const assets = new Map<string, CloudBackupAsset>();
@@ -474,7 +474,7 @@ export function useBackupSync({
           ...reconciled.settings,
           automaticBackup: snapshot.settings.automaticBackup,
           backupOnWifiOnly: snapshot.settings.backupOnWifiOnly,
-          lastSettingsTab: "history",
+          lastSettingsTab: "backup",
         },
         revision: Math.max(snapshot.revision, reconciled.revision) + 1,
       });

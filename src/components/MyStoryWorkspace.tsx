@@ -178,8 +178,6 @@ export function MyStoryWorkspace({
   commit,
   defaultTextColor,
   displayName,
-  favouriteColourLongPressEnabled,
-  favouriteColourLongPressSeconds,
   favouritePenColours,
   files,
   health,
@@ -211,8 +209,6 @@ export function MyStoryWorkspace({
   commit: Commit;
   defaultTextColor: string;
   displayName: string;
-  favouriteColourLongPressEnabled: boolean;
-  favouriteColourLongPressSeconds: number;
   favouritePenColours: string[];
   files: JournalFilesPlugin;
   health: SaveHealth;
@@ -1343,12 +1339,6 @@ export function MyStoryWorkspace({
             type="button"
           />
           <PenSettingsHud
-            favouriteColourLongPressEnabled={
-              favouriteColourLongPressEnabled
-            }
-            favouriteColourLongPressMs={
-              favouriteColourLongPressSeconds * 1000
-            }
             onChange={setPenSettings}
             onDone={closePenSettings}
             settings={penSettings}

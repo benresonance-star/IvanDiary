@@ -240,6 +240,10 @@ export class CapacitorAppLifecycleAdapter implements AppLifecyclePlugin {
 export class CapacitorNativeShareAdapter implements NativeSharePlugin {
   constructor(private readonly plugin: NativeSharePlugin) {}
 
+  async exportDiary(options: Parameters<NativeSharePlugin["exportDiary"]>[0]) {
+    return nativeCall("share", () => this.plugin.exportDiary(options));
+  }
+
   async exportPage(options: Parameters<NativeSharePlugin["exportPage"]>[0]) {
     const result = await nativeCall("share", () => this.plugin.exportPage(options));
     return {

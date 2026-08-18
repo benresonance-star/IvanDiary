@@ -105,8 +105,6 @@ export function createInitialJournalSnapshot(
         "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
         "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
       ],
-      favouriteColourLongPressEnabled: true,
-      favouriteColourLongPressSeconds: 2,
       standardAppAppearance: true,
       penNib: "pen",
       penNibProfiles: {

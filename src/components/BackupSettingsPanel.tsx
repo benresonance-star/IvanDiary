@@ -16,6 +16,7 @@ export function BackupSettingsPanel({
   onSaveLocalCopy,
   onUseICloud,
   settings,
+  embedded = false,
 }: {
   backupStatus: BackupStatus;
   commit: (operation: DocumentOperationInput) => void;
@@ -25,16 +26,17 @@ export function BackupSettingsPanel({
   onSaveLocalCopy: () => void;
   onUseICloud: () => void;
   settings: JournalSettings;
+  embedded?: boolean;
 }) {
   const backupAvailable =
     backupStatus.state === "synced" || backupStatus.state === "available";
 
   return (
     <div
-      aria-labelledby="settings-tab-backup"
+      aria-labelledby={embedded ? "backup-section-sync-heading" : "settings-tab-backup"}
       className="setting-group backup-setting-group"
-      id="settings-panel-backup"
-      role="tabpanel"
+      id={embedded ? "backup-section-sync-content" : "settings-panel-backup"}
+      role={embedded ? "region" : "tabpanel"}
     >
       {backupAvailable ? (
         <Cloud aria-hidden="true" />
@@ -109,7 +111,7 @@ export function BackupSettingsPanel({
             ? "Backing up…"
             : "Back up diary information now"}
         </button>
-        <p className="backup-availability-note">To restore an earlier version, open Backup History.</p>
+        <p className="backup-availability-note">To restore an earlier version, open History below.</p>
         <details className="backup-details">
           <summary>
             Backup details <ChevronDown aria-hidden="true" />

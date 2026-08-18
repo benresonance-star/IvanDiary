@@ -199,8 +199,6 @@ export function PageWorkspace({
   penColor,
   fingerDrawingEnabled,
   fingerErasingEnabled,
-  favouriteColourLongPressEnabled,
-  favouriteColourLongPressSeconds,
   favouritePenColours,
   penNib,
   penNibProfiles,
@@ -235,8 +233,6 @@ export function PageWorkspace({
   penColor: string;
   fingerDrawingEnabled: boolean;
   fingerErasingEnabled: boolean;
-  favouriteColourLongPressEnabled: boolean;
-  favouriteColourLongPressSeconds: number;
   favouritePenColours: string[];
   penNib: "pen" | "marker" | "pencil" | "brush";
   penNibProfiles: PenSettings["profiles"];
@@ -1286,12 +1282,6 @@ export function PageWorkspace({
             type="button"
           />
           <PenSettingsHud
-            favouriteColourLongPressEnabled={
-              favouriteColourLongPressEnabled
-            }
-            favouriteColourLongPressMs={
-              favouriteColourLongPressSeconds * 1000
-            }
             grid={drawingGrid}
             onChange={setPenSettings}
             onDone={closePenSettings}

@@ -121,7 +121,7 @@ export function normalizeNativeError(
       code,
       service,
       ...defaults,
-      ...(service === "backup" && nativeMessage
+      ...((service === "backup" || service === "share") && nativeMessage
         ? { message: nativeMessage }
         : {}),
     },

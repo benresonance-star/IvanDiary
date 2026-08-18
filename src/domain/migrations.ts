@@ -32,8 +32,6 @@ const DEFAULT_SETTINGS: JournalSettings = {
     "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
     "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
   ],
-  favouriteColourLongPressEnabled: true,
-  favouriteColourLongPressSeconds: 2,
   standardAppAppearance: true,
   penNib: "pen",
   penNibProfiles: {
@@ -91,13 +89,13 @@ function migrateSettings(value: unknown): JournalSettings {
   const displayName = welcomeText(value.displayName, DEFAULT_SETTINGS.displayName, 60);
   const lastSettingsTab = value.lastSettingsTab === "text"
     ? "appearance"
+    : value.lastSettingsTab === "history" || value.lastSettingsTab === "privacy"
+      ? "backup"
     : value.lastSettingsTab === "welcome" ||
     value.lastSettingsTab === "canvas" ||
     value.lastSettingsTab === "voice" ||
     value.lastSettingsTab === "appearance" ||
-    value.lastSettingsTab === "backup" ||
-    value.lastSettingsTab === "history" ||
-    value.lastSettingsTab === "privacy"
+    value.lastSettingsTab === "backup"
       ? value.lastSettingsTab
       : "about";
 
@@ -131,14 +129,7 @@ function migrateSettings(value: unknown): JournalSettings {
           : DEFAULT_SETTINGS.favouritePenColours[index]!,
       )
     : [...DEFAULT_SETTINGS.favouritePenColours];
-  const favouriteColourLongPressSeconds =
-    typeof value.favouriteColourLongPressSeconds === "number" &&
-    Number.isFinite(value.favouriteColourLongPressSeconds)
-      ? Math.min(5, Math.max(0.5, value.favouriteColourLongPressSeconds))
-      : DEFAULT_SETTINGS.favouriteColourLongPressSeconds;
   const standardAppAppearance = value.standardAppAppearance !== false;
-  const favouriteColourLongPressEnabled =
-    value.favouriteColourLongPressEnabled !== false;
   const penNib =
     value.penNib === "marker" ||
     value.penNib === "pencil" ||
@@ -236,8 +227,6 @@ function migrateSettings(value: unknown): JournalSettings {
     fingerDrawingEnabled,
     fingerErasingEnabled,
     favouritePenColours,
-    favouriteColourLongPressEnabled,
-    favouriteColourLongPressSeconds,
     standardAppAppearance,
     penNib,
     penNibProfiles,

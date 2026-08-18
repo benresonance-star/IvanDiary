@@ -240,8 +240,6 @@ export type JournalSettings = {
   fingerDrawingEnabled: boolean;
   fingerErasingEnabled: boolean;
   favouritePenColours: string[];
-  favouriteColourLongPressEnabled: boolean;
-  favouriteColourLongPressSeconds: number;
   standardAppAppearance: boolean;
   penNib: "pen" | "marker" | "pencil" | "brush";
   penNibProfiles: Record<
@@ -258,7 +256,7 @@ export type JournalSettings = {
   myWords: MyWord[];
 };
 
-export type SettingsTabId = "about" | "welcome" | "canvas" | "voice" | "appearance" | "backup" | "history" | "privacy";
+export type SettingsTabId = "about" | "welcome" | "canvas" | "voice" | "appearance" | "backup";
 
 export type BackupHistoryReason = "automatic" | "manual" | "before-restore";
 

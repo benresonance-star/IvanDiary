@@ -213,16 +213,8 @@ export const HELP_TIPS = {
     body: "Choose a text size, then turn stronger contrast or reduced movement on if that makes the App easier to use. Standard app appearance keeps the intended iPad layout. Changes take effect immediately and can be changed back here.",
   },
   "settings-backup": {
-    title: "How to use iCloud Sync",
-    body: "Tap Back up now to save the complete current diary and its photos, drawings, recordings, links, and pages to your private iCloud. Check iCloud looks for a saved copy. Automatic backup keeps the latest state updated; wait for completion before deleting the App or changing iPads.",
-  },
-  "settings-history": {
-    title: "How to use History",
-    body: "Tap Create recovery point before a major change. Tap Restore beside a date to return the whole App to that saved state; a safety point is made first. Delete removes only that recovery point. History keeps the latest five entry days, then one point per week for up to twelve weeks.",
-  },
-  "settings-privacy": {
-    title: "How to use Privacy",
-    body: "Read what stays on this iPad, what iCloud Sync stores, and when microphone or speech services are used. Delete my iCloud diary and history permanently removes all cloud backups and recovery points after two warnings, but leaves the diary on this iPad. This cannot be undone from iCloud.",
+    title: "How to use Backup",
+    body: "Open iCloud Sync to save or check the latest complete diary. Open History to create, restore, or delete dated recovery points. Open Privacy & Export to export a portable copy or permanently delete iCloud data after two warnings. Tap a heading again to close it.",
   },
   "welcome-continue": {
     title: "Open App",

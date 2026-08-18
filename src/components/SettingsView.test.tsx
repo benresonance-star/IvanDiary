@@ -6,6 +6,7 @@ import {
   BrowserAppleTranscriptionMock,
   BrowserJournalAudioMock,
   BrowserJournalFilesMock,
+  BrowserNativeShareMock,
 } from "../native/browserMocks";
 import { BrowserSketchRepository } from "../repository/browserSketchRepository";
 import { SettingsView } from "./SettingsView";
@@ -15,6 +16,7 @@ function renderSettings({
   commit = vi.fn(),
   files = new BrowserJournalFilesMock(),
   onDeleteCloudData = vi.fn(),
+  share = new BrowserNativeShareMock(),
   transcription = new BrowserAppleTranscriptionMock(),
 } = {}) {
   const settings = {
@@ -23,6 +25,9 @@ function renderSettings({
     ).settings,
     lastSettingsTab: "about" as const,
   };
+  const snapshot = createInitialJournalSnapshot(
+    new Date("2026-08-14T10:00:00.000Z"),
+  );
   render(
     <SettingsView
       audio={new BrowserJournalAudioMock()}
@@ -47,11 +52,13 @@ function renderSettings({
       onRefreshHistory={vi.fn()}
       onRestoreHistory={vi.fn()}
       settings={settings}
+      share={share}
       sketchRepository={new BrowserSketchRepository()}
+      snapshot={{ ...snapshot, settings }}
       transcription={transcription}
     />,
   );
-  return { commit, files, onDeleteCloudData, settings };
+  return { commit, files, onDeleteCloudData, settings, share };
 }
 
 describe("SettingsView name entry", () => {
@@ -134,16 +141,24 @@ describe("SettingsView text editor preference", () => {
   });
 });
 
-describe("SettingsView backup history", () => {
-  it("keeps recovery points separate from iCloud Sync", () => {
+describe("SettingsView backup sections", () => {
+  it("groups iCloud Sync, History, and Privacy & Export into accessible collapsible sections", () => {
     renderSettings();
 
-    expect(screen.getByRole("tab", { name: "iCloud Sync" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Backup" }));
+    const sync = screen.getByRole("button", { name: /iCloud Sync/ });
+    const history = screen.getByRole("button", { name: /History/ });
+    const privacy = screen.getByRole("button", { name: /Privacy & Export/ });
+    expect(sync).toHaveAttribute("aria-expanded", "true");
+    expect(history).toHaveAttribute("aria-expanded", "false");
+    expect(privacy).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(history);
 
     expect(screen.getByRole("heading", { name: "Backup history" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create recovery point" })).toBeInTheDocument();
     expect(screen.getByText(/last 5 entry days/)).toBeInTheDocument();
+    expect(sync).toHaveAttribute("aria-expanded", "false");
   });
 });
 
@@ -185,9 +200,10 @@ describe("iCloud conflict choices", () => {
 describe("SettingsView privacy", () => {
   it("explains private iCloud storage and exposes cloud deletion", () => {
     const { onDeleteCloudData } = renderSettings();
-    fireEvent.click(screen.getByRole("tab", { name: "Privacy" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Backup" }));
+    fireEvent.click(screen.getByRole("button", { name: /Privacy & Export/ }));
 
-    expect(screen.getByRole("heading", { name: "Privacy" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Privacy & Export" })).toBeInTheDocument();
     expect(screen.getByText(/private iCloud database/i)).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", {
@@ -197,15 +213,60 @@ describe("SettingsView privacy", () => {
     expect(onDeleteCloudData).toHaveBeenCalledOnce();
   });
 
-  it("provides a dedicated privacy help topic", () => {
-    renderSettings();
-    const privacyTab = screen.getByRole("tab", { name: "Privacy" });
+  it("exports a readable diary and complete portable archive", async () => {
+    const share = new BrowserNativeShareMock();
+    const exportDiary = vi.spyOn(share, "exportDiary");
+    const openShareSheet = vi.spyOn(share, "share");
+    renderSettings({ share });
+    fireEvent.click(screen.getByRole("tab", { name: "Backup" }));
+    fireEvent.click(screen.getByRole("button", { name: /Privacy & Export/ }));
 
-    expect(privacyTab).toHaveAttribute("data-help-topic", "settings-privacy");
-    fireEvent.click(privacyTab);
+    fireEvent.click(screen.getByRole("button", { name: "Export my complete diary" }));
+
+    await waitFor(() => expect(exportDiary).toHaveBeenCalledOnce());
+    expect(exportDiary).toHaveBeenCalledWith(expect.objectContaining({
+      snapshotJson: expect.any(String),
+      readableText: expect.stringContaining("iPad App — Complete Diary Export"),
+      assets: expect.any(Array),
+    }));
+    await waitFor(() => expect(openShareSheet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileUris: [
+          "demo://share/iPad-App-Diary.pdf",
+          "demo://share/iPad-App-Diary.tar",
+        ],
+      }),
+    ));
+    expect(await screen.findByText("The complete diary was exported."))
+      .toBeInTheDocument();
+  });
+
+  it("shows export failures as a prominent alert with the reason", async () => {
+    const share = new BrowserNativeShareMock();
+    vi.spyOn(share, "exportDiary").mockRejectedValueOnce(
+      new Error("An original diary file could not be read."),
+    );
+    renderSettings({ share });
+    fireEvent.click(screen.getByRole("tab", { name: "Backup" }));
+    fireEvent.click(screen.getByRole("button", { name: /Privacy & Export/ }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Export my complete diary" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveClass("settings-result-alert", "error");
+    expect(alert).toHaveTextContent("Export failed");
+    expect(alert).toHaveTextContent("An original diary file could not be read");
+  });
+
+  it("provides one help topic for the combined Backup section", () => {
+    renderSettings();
+    const backupTab = screen.getByRole("tab", { name: "Backup" });
+
+    expect(backupTab).toHaveAttribute("data-help-topic", "settings-backup");
+    fireEvent.click(backupTab);
     expect(document.querySelector(".settings-panel")).toHaveAttribute(
       "data-help-topic",
-      "settings-privacy",
+      "settings-backup",
     );
   });
 });

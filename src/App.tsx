@@ -813,12 +813,6 @@ export default function App() {
             penColor={snapshot.settings.penColor}
             fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
             fingerErasingEnabled={snapshot.settings.fingerErasingEnabled}
-            favouriteColourLongPressEnabled={
-              snapshot.settings.favouriteColourLongPressEnabled
-            }
-            favouriteColourLongPressSeconds={
-              snapshot.settings.favouriteColourLongPressSeconds
-            }
             favouritePenColours={snapshot.settings.favouritePenColours}
             penNib={snapshot.settings.penNib}
             penNibProfiles={snapshot.settings.penNibProfiles}
@@ -850,12 +844,6 @@ export default function App() {
             snapshot.myStory?.defaultTextColor ?? "#171410"
           }
           displayName={snapshot.settings.displayName}
-          favouriteColourLongPressEnabled={
-            snapshot.settings.favouriteColourLongPressEnabled
-          }
-          favouriteColourLongPressSeconds={
-            snapshot.settings.favouriteColourLongPressSeconds
-          }
           favouritePenColours={snapshot.settings.favouritePenColours}
           files={files}
           fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
@@ -934,12 +922,6 @@ export default function App() {
             penColor={snapshot.settings.penColor}
             fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
             fingerErasingEnabled={snapshot.settings.fingerErasingEnabled}
-            favouriteColourLongPressEnabled={
-              snapshot.settings.favouriteColourLongPressEnabled
-            }
-            favouriteColourLongPressSeconds={
-              snapshot.settings.favouriteColourLongPressSeconds
-            }
             favouritePenColours={snapshot.settings.favouritePenColours}
             penNib={snapshot.settings.penNib}
             penNibProfiles={snapshot.settings.penNibProfiles}
@@ -1045,7 +1027,9 @@ export default function App() {
           }}
           sketchRepository={sketchRepository}
           settings={snapshot.settings}
+          share={share}
           transcription={transcription}
+          snapshot={snapshot}
         />
       );
       break;
@@ -1138,12 +1122,6 @@ export default function App() {
       {content}
       {portraitEditorOpen ? (
         <ProfilePortraitEditor
-          favouriteColourLongPressEnabled={
-            snapshot.settings.favouriteColourLongPressEnabled
-          }
-          favouriteColourLongPressMs={
-            snapshot.settings.favouriteColourLongPressSeconds * 1000
-          }
           initialPenSettings={{
             color: snapshot.settings.penColor,
             nib: snapshot.settings.penNib,
@@ -1215,12 +1193,6 @@ export default function App() {
           penColor={snapshot.settings.penColor}
           fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
           fingerErasingEnabled={snapshot.settings.fingerErasingEnabled}
-          favouriteColourLongPressEnabled={
-            snapshot.settings.favouriteColourLongPressEnabled
-          }
-          favouriteColourLongPressSeconds={
-            snapshot.settings.favouriteColourLongPressSeconds
-          }
           favouritePenColours={snapshot.settings.favouritePenColours}
           penNib={snapshot.settings.penNib}
           penNibProfiles={snapshot.settings.penNibProfiles}

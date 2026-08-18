@@ -90,6 +90,7 @@ function renderWorkspace({
   page = diaryPage(),
   pages,
   share = {
+    exportDiary: vi.fn(async () => ({ pdfFileUri: "file:///diary.pdf", archiveFileUri: "file:///diary.tar" })),
     exportPage: vi.fn(async () => ({
       fileUri: "file:///Ivan 14 August 2026.jpg",
       fileName: "Ivan 14 August 2026.jpg",
@@ -139,8 +140,6 @@ function renderWorkspace({
       penColor="#171410"
       fingerDrawingEnabled
       fingerErasingEnabled={false}
-      favouriteColourLongPressEnabled
-      favouriteColourLongPressSeconds={2}
       favouritePenColours={["#171410"]}
       penNib="pen"
       penNibProfiles={{
@@ -219,6 +218,7 @@ describe("PageWorkspace share", () => {
 
   it("exports a picture after the chooser closes and reports a destination", async () => {
     const share: NativeSharePlugin = {
+      exportDiary: vi.fn(async () => ({ pdfFileUri: "file:///diary.pdf", archiveFileUri: "file:///diary.tar" })),
       exportPage: vi.fn(async () => {
         expect(document.querySelector(".journal-workspace.share-capturing")).toBeTruthy();
         expect(
@@ -289,6 +289,7 @@ describe("PageWorkspace share", () => {
 
   it("exports PDF web links with the page", async () => {
     const share: NativeSharePlugin = {
+      exportDiary: vi.fn(async () => ({ pdfFileUri: "file:///diary.pdf", archiveFileUri: "file:///diary.tar" })),
       exportPage: vi.fn(async () => ({
         fileUri: "file:///Ivan-14-August-2026.pdf",
         fileName: "Ivan-14-August-2026.pdf",
@@ -343,6 +344,7 @@ describe("PageWorkspace share", () => {
 
   it("does not announce success when the share sheet is cancelled", async () => {
     const share: NativeSharePlugin = {
+      exportDiary: vi.fn(async () => ({ pdfFileUri: "file:///diary.pdf", archiveFileUri: "file:///diary.tar" })),
       exportPage: vi.fn(async () => ({
         fileUri: "file:///page.jpg",
         fileName: "page.jpg",

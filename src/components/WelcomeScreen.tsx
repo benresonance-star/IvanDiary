@@ -32,8 +32,6 @@ export function WelcomeScreen({
   penColor,
   fingerDrawingEnabled = true,
   fingerErasingEnabled = false,
-  favouriteColourLongPressEnabled = true,
-  favouriteColourLongPressSeconds = 2,
   favouritePenColours,
   interactionObscured = false,
   penNib = "pen",
@@ -51,8 +49,6 @@ export function WelcomeScreen({
   penColor: string;
   fingerDrawingEnabled?: boolean;
   fingerErasingEnabled?: boolean;
-  favouriteColourLongPressEnabled?: boolean;
-  favouriteColourLongPressSeconds?: number;
   favouritePenColours?: string[];
   interactionObscured?: boolean;
   penNib?: "pen" | "marker" | "pencil" | "brush";
@@ -266,12 +262,6 @@ export function WelcomeScreen({
             type="button"
           />
           <PenSettingsHud
-            favouriteColourLongPressEnabled={
-              favouriteColourLongPressEnabled
-            }
-            favouriteColourLongPressMs={
-              favouriteColourLongPressSeconds * 1000
-            }
             onChange={setPenSettings}
             onDone={() => {
               setPenHudOpen(false);

@@ -14,16 +14,12 @@ import type { SketchRepository, SketchTool } from "../sketch/types";
 import { PenSettingsHud, type PenSettings } from "./PenSettingsHud";
 
 export function ProfilePortraitEditor({
-  favouriteColourLongPressEnabled = true,
-  favouriteColourLongPressMs = 2000,
   initialPenSettings,
   interactionObscured = false,
   onPenSettingsChange,
   onReturn,
   sketchRepository,
 }: {
-  favouriteColourLongPressEnabled?: boolean;
-  favouriteColourLongPressMs?: number;
   initialPenSettings: PenSettings;
   interactionObscured?: boolean;
   onPenSettingsChange: (settings: PenSettings) => void;
@@ -130,10 +126,6 @@ export function ProfilePortraitEditor({
         <>
           <button aria-label="Close pen settings" className="pen-hud-backdrop portrait-pen-backdrop" onClick={closePenSettings} type="button" />
           <PenSettingsHud
-            favouriteColourLongPressEnabled={
-              favouriteColourLongPressEnabled
-            }
-            favouriteColourLongPressMs={favouriteColourLongPressMs}
             onChange={setPenSettings}
             onDone={closePenSettings}
             settings={penSettings}

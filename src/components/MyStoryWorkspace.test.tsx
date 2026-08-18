@@ -114,8 +114,6 @@ function renderStory(
         commit={commit}
         defaultTextColor="#245b8a"
         displayName="Ivan"
-        favouriteColourLongPressEnabled
-        favouriteColourLongPressSeconds={2}
         favouritePenColours={["#171410", "#245b8a"]}
         files={files}
         fingerDrawingEnabled

@@ -4,10 +4,12 @@ import { useState } from "react";
 
 import { Navigation } from "./Navigation";
 import { SettingsView } from "./SettingsView";
+import { createInitialJournalSnapshot } from "../domain/initialState";
 import {
   BrowserAppleTranscriptionMock,
   BrowserJournalAudioMock,
   BrowserJournalFilesMock,
+  BrowserNativeShareMock,
 } from "../native/browserMocks";
 import { hslToHex } from "../utils/colour";
 
@@ -116,8 +118,6 @@ describe("accessible navigation and settings", () => {
             "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
             "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
           ],
-          favouriteColourLongPressEnabled: true,
-          favouriteColourLongPressSeconds: 2,
           standardAppAppearance: true,
           penNib: "pen",
           penNibProfiles: {
@@ -134,6 +134,15 @@ describe("accessible navigation and settings", () => {
           automaticBackup: true,
           backupOnWifiOnly: true,
           myWords: [],
+        }}
+        share={new BrowserNativeShareMock()}
+        snapshot={{
+          ...createInitialJournalSnapshot(new Date("2026-08-14T10:00:00Z")),
+          settings: {
+            ...createInitialJournalSnapshot(new Date("2026-08-14T10:00:00Z")).settings,
+            displayName: "Ivan",
+            lastSettingsTab: "welcome",
+          },
         }}
         transcription={new BrowserAppleTranscriptionMock()}
       />,
@@ -154,25 +163,6 @@ describe("accessible navigation and settings", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Canvas" }));
     expect(screen.getAllByRole("button", { name: /^(Black|Blue|Green|Red|Purple|Brown|Orange|Teal|Rose|Grey)$/ })).toHaveLength(10);
-    const longHoldToggle = screen.getByRole("checkbox", {
-      name: "Change colours with a long hold",
-    });
-    expect(longHoldToggle).toBeChecked();
-    fireEvent.click(longHoldToggle);
-    expect(commit).toHaveBeenCalledWith({
-      type: "settings-update",
-      settings: { favouriteColourLongPressEnabled: false },
-    });
-    fireEvent.change(
-      screen.getByRole("slider", {
-        name: "Favourite colour long-hold time",
-      }),
-      { target: { value: "3" } },
-    );
-    expect(commit).toHaveBeenCalledWith({
-      type: "settings-update",
-      settings: { favouriteColourLongPressSeconds: 3 },
-    });
     fireEvent.change(screen.getByRole("slider", { name: "Canvas colour hue" }), {
       target: { value: "180" },
     });
@@ -224,7 +214,7 @@ describe("accessible navigation and settings", () => {
       settings: { contrast: "high" },
     });
 
-    fireEvent.click(screen.getByRole("tab", { name: "iCloud Sync" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Backup" }));
     expect(screen.getByRole("status")).toHaveTextContent("Backup is not connected");
     expect(screen.getByRole("button", { name: "Check iCloud connection" })).toBeEnabled();
 

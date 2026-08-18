@@ -12,7 +12,6 @@ import { clampOpacity } from "../utils/colour";
 import { SketchSurface } from "../sketch/SketchSurface";
 import { favouriteColourName } from "./penColours";
 import { PEN_WIDTH_MAX, PEN_WIDTH_MIN } from "./PenSettingsHud";
-import { SettingToggle } from "./SettingToggle";
 
 const NIBS = [
   { id: "pen", label: "Pen", Icon: PenLine },
@@ -138,40 +137,6 @@ export function CanvasSettingsPanel({
         <p className="setting-description">
           Choose ten favourite drawing colours and try them below.
         </p>
-        <SettingToggle
-          checked={settings.favouriteColourLongPressEnabled}
-          description="Hold a favourite colour to open its colour selector."
-          label="Change colours with a long hold"
-          onChange={(favouriteColourLongPressEnabled) =>
-            commit({
-              type: "settings-update",
-              settings: { favouriteColourLongPressEnabled },
-            })
-          }
-        />
-        {settings.favouriteColourLongPressEnabled ? (
-          <label className="pen-width-control canvas-long-press-control">
-            <span>
-              Long-hold time {settings.favouriteColourLongPressSeconds}s
-            </span>
-            <input
-              aria-label="Favourite colour long-hold time"
-              max="5"
-              min="0.5"
-              onChange={(event) =>
-                commit({
-                  type: "settings-update",
-                  settings: {
-                    favouriteColourLongPressSeconds: Number(event.target.value),
-                  },
-                })
-              }
-              step="0.5"
-              type="range"
-              value={settings.favouriteColourLongPressSeconds}
-            />
-          </label>
-        ) : null}
         <p className="canvas-colour-instructions">
           Select one of the round colour swatches then move the sliders to change it to one of your favourite colours
         </p>
@@ -213,36 +178,38 @@ export function CanvasSettingsPanel({
           <button aria-pressed={tool === "eraser"} onClick={() => setTool("eraser")} type="button"><Eraser aria-hidden="true" />Erase</button>
         </div>
         <div className="canvas-test-ink-controls">
-          <button
-            aria-checked={tool === "eraser" ? settings.fingerErasingEnabled : settings.fingerDrawingEnabled}
-            className={`finger-toggle${(tool === "eraser" ? settings.fingerErasingEnabled : settings.fingerDrawingEnabled) ? " selected" : ""}`}
-            data-help-topic={tool === "eraser" ? "finger-erasing" : "finger-drawing"}
-            onClick={() => commit({
-              type: "settings-update",
-              settings: tool === "eraser"
-                ? { fingerErasingEnabled: !settings.fingerErasingEnabled }
-                : { fingerDrawingEnabled: !settings.fingerDrawingEnabled },
-            })}
-            role="switch"
-            type="button"
-          >
-            <span aria-hidden="true" className="grid-switch-track"><span /></span>
-            <span>{tool === "eraser" ? "Erase with finger" : "Draw with finger"}</span>
-          </button>
-          <label className="pen-width-control">
-            <span>Thickness</span>
-            <input
-              aria-label="Test pen thickness"
-              max={PEN_WIDTH_MAX}
-              min={PEN_WIDTH_MIN}
-              onChange={(event) =>
-                updateInkSettings(Number(event.target.value), penOpacity)
-              }
-              step="0.5"
-              type="range"
-              value={penWidth}
-            />
-          </label>
+          <div className="canvas-finger-and-thickness-controls">
+            <button
+              aria-checked={tool === "eraser" ? settings.fingerErasingEnabled : settings.fingerDrawingEnabled}
+              className={`finger-toggle${(tool === "eraser" ? settings.fingerErasingEnabled : settings.fingerDrawingEnabled) ? " selected" : ""}`}
+              data-help-topic={tool === "eraser" ? "finger-erasing" : "finger-drawing"}
+              onClick={() => commit({
+                type: "settings-update",
+                settings: tool === "eraser"
+                  ? { fingerErasingEnabled: !settings.fingerErasingEnabled }
+                  : { fingerDrawingEnabled: !settings.fingerDrawingEnabled },
+              })}
+              role="switch"
+              type="button"
+            >
+              <span aria-hidden="true" className="grid-switch-track"><span /></span>
+              <span>{tool === "eraser" ? "Erase with finger" : "Draw with finger"}</span>
+            </button>
+            <label className="pen-width-control">
+              <span>Thickness</span>
+              <input
+                aria-label="Test pen thickness"
+                max={PEN_WIDTH_MAX}
+                min={PEN_WIDTH_MIN}
+                onChange={(event) =>
+                  updateInkSettings(Number(event.target.value), penOpacity)
+                }
+                step="0.5"
+                type="range"
+                value={penWidth}
+              />
+            </label>
+          </div>
           <label className="pen-width-control">
             <span>Opacity {Math.round(clampOpacity(penOpacity) * 100)}%</span>
             <input

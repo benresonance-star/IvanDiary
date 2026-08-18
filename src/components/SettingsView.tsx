@@ -18,9 +18,12 @@ import type {
   AppleTranscriptionPlugin,
   JournalAudioPlugin,
   JournalFilesPlugin,
+  NativeSharePlugin,
   RecordingSnapshot,
 } from "../native/contracts";
 import { recordingStorageAvailable } from "../native/durableAudio";
+import { collectCloudBackupAssets } from "../hooks/useBackupSync";
+import { readableDiaryText } from "../utils/diaryExport";
 import {
   EphemeralTranscriptionError,
   transcribeEphemeralRecording,
@@ -47,13 +50,15 @@ const SETTINGS_TABS = [
   { id: "canvas", label: "Canvas" },
   { id: "voice", label: "Voice" },
   { id: "appearance", label: "Appearance" },
-  { id: "backup", label: "iCloud Sync" },
-  { id: "history", label: "History" },
-  { id: "privacy", label: "Privacy" },
+  { id: "backup", label: "Backup" },
 ] as const;
+
+type BackupSectionId = "sync" | "history" | "privacy";
 
 export function SettingsView({
   settings,
+  snapshot,
+  share,
   commit,
   audio,
   files,
@@ -75,6 +80,8 @@ export function SettingsView({
   transcription,
 }: {
   settings: JournalSettings;
+  snapshot: import("../domain/models").JournalSnapshot;
+  share: NativeSharePlugin;
   commit: (operation: DocumentOperationInput) => void;
   audio: JournalAudioPlugin;
   files: JournalFilesPlugin;
@@ -109,6 +116,43 @@ export function SettingsView({
   const [nameRecording, setNameRecording] = useState<RecordingSnapshot>();
   const [nameStatus, setNameStatus] = useState<string>();
   const [activeTab, setActiveTab] = useState<SettingsTabId>(settings.lastSettingsTab);
+  const [openBackupSection, setOpenBackupSection] = useState<BackupSectionId | null>("sync");
+  const [exportState, setExportState] = useState<"idle" | "exporting" | "complete" | "warning" | "error">("idle");
+  const [exportMessage, setExportMessage] = useState<string>();
+
+  const exportCompleteDiary = async () => {
+    setExportState("exporting");
+    setExportMessage(undefined);
+    try {
+      const exported = await share.exportDiary({
+        snapshotJson: JSON.stringify(snapshot),
+        readableText: readableDiaryText(snapshot),
+        assets: await collectCloudBackupAssets(snapshot),
+      });
+      const result = await share.share({
+        title: "Export complete diary",
+        fileUris: [exported.pdfFileUri, exported.archiveFileUri],
+        sourceRect: { x: window.innerWidth / 2 - 28, y: window.innerHeight / 2 - 28, width: 56, height: 56 },
+      });
+      if (!result.completed) {
+        setExportState("idle");
+      } else if (exported.missingAssetIDs?.length) {
+        setExportState("warning");
+        setExportMessage(
+          `The diary was exported, but ${exported.missingAssetIDs.length} original ${exported.missingAssetIDs.length === 1 ? "file was" : "files were"} missing from this iPad. The archive includes a MISSING-FILES list.`,
+        );
+      } else {
+        setExportState("complete");
+      }
+    } catch (error) {
+      setExportState("error");
+      setExportMessage(
+        error instanceof Error && error.message
+          ? `The complete diary could not be exported: ${error.message}`
+          : "The complete diary could not be exported. Nothing was changed. Try again, and restart the iPad App if the problem continues.",
+      );
+    }
+  };
 
   const saveDisplayName = (name: string) => {
     const cleaned = name.trim() || "Ivan";
@@ -359,36 +403,90 @@ export function SettingsView({
         ) : null}
 
         {activeTab === "backup" ? (
-          <BackupSettingsPanel
-            backupStatus={backupStatus}
-            commit={commit}
-            onBackupNow={onBackupNow}
-            onCheckBackup={onCheckBackup}
-            onKeepThisIPad={onKeepThisIPad}
-            onSaveLocalCopy={onSaveLocalCopy}
-            onUseICloud={onUseICloud}
-            settings={settings}
-          />
-        ) : null}
+          <div
+            aria-labelledby="settings-tab-backup"
+            className="backup-sections"
+            id="settings-panel-backup"
+            role="tabpanel"
+          >
+            <section className="backup-collapsible-section">
+              <button
+                aria-controls="backup-section-sync-content"
+                aria-expanded={openBackupSection === "sync"}
+                className="backup-section-heading"
+                id="backup-section-sync-heading"
+                onClick={() => setOpenBackupSection((current) => current === "sync" ? null : "sync")}
+                type="button"
+              >
+                <span><strong>iCloud Sync</strong><small>Keep the latest complete diary available through your Apple ID.</small></span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+              {openBackupSection === "sync" ? (
+                <BackupSettingsPanel
+                  backupStatus={backupStatus}
+                  commit={commit}
+                  embedded
+                  onBackupNow={onBackupNow}
+                  onCheckBackup={onCheckBackup}
+                  onKeepThisIPad={onKeepThisIPad}
+                  onSaveLocalCopy={onSaveLocalCopy}
+                  onUseICloud={onUseICloud}
+                  settings={settings}
+                />
+              ) : null}
+            </section>
 
-        {activeTab === "history" ? (
-          <BackupHistorySettingsPanel
-            historyStatus={historyStatus}
-            onCreate={onCreateHistory}
-            onDelete={onDeleteHistory}
-            onRefresh={onRefreshHistory}
-            onRestore={onRestoreHistory}
-          />
-        ) : null}
+            <section className="backup-collapsible-section">
+              <button
+                aria-controls="backup-section-history-content"
+                aria-expanded={openBackupSection === "history"}
+                className="backup-section-heading"
+                id="backup-section-history-heading"
+                onClick={() => setOpenBackupSection((current) => current === "history" ? null : "history")}
+                type="button"
+              >
+                <span><strong>History</strong><small>Create or restore dated recovery points.</small></span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+              {openBackupSection === "history" ? (
+                <BackupHistorySettingsPanel
+                  embedded
+                  historyStatus={historyStatus}
+                  onCreate={onCreateHistory}
+                  onDelete={onDeleteHistory}
+                  onRefresh={onRefreshHistory}
+                  onRestore={onRestoreHistory}
+                />
+              ) : null}
+            </section>
 
-        {activeTab === "privacy" ? (
-          <PrivacySettingsPanel
-            deletingCloudData={
-              backupStatus.state === "syncing" &&
-              backupStatus.message.startsWith("Deleting")
-            }
-            onDeleteCloudData={onDeleteCloudData}
-          />
+            <section className="backup-collapsible-section">
+              <button
+                aria-controls="backup-section-privacy-content"
+                aria-expanded={openBackupSection === "privacy"}
+                className="backup-section-heading"
+                id="backup-section-privacy-heading"
+                onClick={() => setOpenBackupSection((current) => current === "privacy" ? null : "privacy")}
+                type="button"
+              >
+                <span><strong>Privacy &amp; Export</strong><small>Export the diary or manage its private iCloud data.</small></span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+              {openBackupSection === "privacy" ? (
+                <PrivacySettingsPanel
+                  deletingCloudData={
+                    backupStatus.state === "syncing" &&
+                    backupStatus.message.startsWith("Deleting")
+                  }
+                  embedded
+                  onDeleteCloudData={onDeleteCloudData}
+                  exportState={exportState}
+                  exportMessage={exportMessage}
+                  onExportDiary={() => void exportCompleteDiary()}
+                />
+              ) : null}
+            </section>
+          </div>
         ) : null}
       </div>
     </section>
