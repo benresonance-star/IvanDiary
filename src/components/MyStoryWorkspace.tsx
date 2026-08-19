@@ -29,7 +29,10 @@ import type {
   MyStoryTextBlock,
   MyStoryVoiceRecording,
   MyWord,
+  Position,
   SaveHealth,
+  ShapeKind,
+  ShapeObject,
 } from "../domain/models";
 import { useNativeDrawingOverlay } from "../hooks/useNativeDrawingOverlay";
 import { displayAssetUri } from "../utils/displayAssetUri";
@@ -70,7 +73,9 @@ import {
   type LayoutChange,
 } from "./ArrangeablePageObject";
 import { AudioCard } from "./AudioCard";
-import { VOICE_FRAME } from "./arrangeGeometry";
+import { clampPosition, defaultObjectFrame, VOICE_FRAME } from "./arrangeGeometry";
+import { ShapeCard } from "./ShapeCard";
+import { PolygonDraftEditor } from "./PolygonDraftEditor";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DiaryPageStrip } from "./DiaryPageStrip";
 import { LinkComposer } from "./LinkComposer";
@@ -260,6 +265,8 @@ export function MyStoryWorkspace({
   const [textPendingDeletion, setTextPendingDeletion] =
     useState<MyStoryTextBlock>();
   const [selectedRecordingId, setSelectedRecordingId] = useState<string>();
+  const [selectedShapeId, setSelectedShapeId] = useState<string>();
+  const [polygonDraft, setPolygonDraft] = useState<Position[] | null>(null);
   const [notice, setNotice] = useState<string>();
   const [penHudOpen, setPenHudOpen] = useState(false);
   const [shareChooserOpen, setShareChooserOpen] = useState(false);
@@ -293,6 +300,33 @@ export function MyStoryWorkspace({
     page.textBackgroundColor,
   );
   const textSelectionEnabled = tool === "arrange";
+
+  const placeShape = async (shapeKind: Exclude<ShapeKind, "polygon">) => {
+    const shape: ShapeObject = { id: createId(), type: "shape", shapeKind, pageId: page.id,
+      position: { x: 0.38, y: 0.34 }, frame: { width: 0.24, height: 0.24 }, fillColor: penSettings.color,
+      outlineColor: "#3f3528", outlineWidth: 3, layer: "above-sketch", revision: 0, createdAt: new Date().toISOString() };
+    if (await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id })) {
+      setPenHudOpen(false); onToolChange("arrange"); setSelectedShapeId(shape.id); setSelection(undefined); setSelectedRecordingId(undefined);
+    }
+  };
+  const startShapePlacement = (kind: ShapeKind) => {
+    if (kind !== "polygon") { void placeShape(kind); return; }
+    setPenHudOpen(false); onToolChange("view"); setSelection(undefined); setSelectedRecordingId(undefined); setSelectedShapeId(undefined);
+    setPolygonDraft([]); setNotice("Tap at least three points, then choose Finish polygon.");
+  };
+  const finishPolygon = async () => {
+    if (!polygonDraft || polygonDraft.length < 3) return;
+    const xs = polygonDraft.map(({ x }) => x); const ys = polygonDraft.map(({ y }) => y);
+    const position = { x: Math.min(...xs), y: Math.min(...ys) };
+    const frame = { width: Math.max(0.18, Math.max(...xs) - position.x), height: Math.max(0.12, Math.max(...ys) - position.y) };
+    const clamped = clampPosition(position, frame);
+    const shape: ShapeObject = { id: createId(), type: "shape", shapeKind: "polygon", pageId: page.id, position: clamped, frame,
+      points: polygonDraft.map(({ x, y }) => ({ x: (x - clamped.x) / frame.width, y: (y - clamped.y) / frame.height })),
+      fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3, layer: "above-sketch", revision: 0, createdAt: new Date().toISOString() };
+    if (await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id })) {
+      setPolygonDraft(null); setNotice(undefined); onToolChange("arrange"); setSelectedShapeId(shape.id);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -374,6 +408,7 @@ export function MyStoryWorkspace({
     linkEditing === undefined &&
     !textEditorRequested &&
     textEditing === undefined &&
+    polygonDraft === null &&
     !voiceDialogOpen;
   const { overlayActive, overlayReady, suspendOverlay } =
     useNativeDrawingOverlay({
@@ -1357,6 +1392,7 @@ export function MyStoryWorkspace({
           <PenSettingsHud
             onChange={setPenSettings}
             onDone={closePenSettings}
+            onShapeSelect={startShapePlacement}
             settings={penSettings}
             tool={tool === "eraser" ? "eraser" : "pen"}
           />
@@ -1383,6 +1419,14 @@ export function MyStoryWorkspace({
           tool === "pen" || tool === "eraser" ? " drawing-active" : ""
         }${tool === "arrange" ? " arranging" : ""}`}
         data-text-side={page.textSide}
+        onClick={(event) => {
+          if (!polygonDraft || !(event.target instanceof Element) || event.target.closest("button")) return;
+          const bounds = paperRef.current?.getBoundingClientRect();
+          if (bounds) setPolygonDraft([...polygonDraft, {
+            x: Math.min(0.96, Math.max(0.04, (event.clientX - bounds.left) / bounds.width)),
+            y: Math.min(0.96, Math.max(0.04, (event.clientY - bounds.top) / bounds.height)),
+          }]);
+        }}
         ref={paperRef}
         style={{
           gridTemplateColumns:
@@ -1427,6 +1471,7 @@ export function MyStoryWorkspace({
         {overlayActive ? null : (
           <NativeSketchPreview documentId={page.drawingDocumentId} />
         )}
+        {polygonDraft ? <PolygonDraftEditor color={penSettings.color} onCancel={() => { setPolygonDraft(null); setNotice(undefined); onToolChange("pen"); }} onChange={setPolygonDraft} onFinish={() => void finishPolygon()} pageRef={paperRef} points={polygonDraft} /> : null}
 
         <section
           aria-label="Story text"
@@ -1666,6 +1711,19 @@ export function MyStoryWorkspace({
             />
           </ArrangeablePageObject>
         ))}
+
+        {(page.shapes ?? []).map((shape, index, shapes) => <ArrangeablePageObject
+          arrange={tool === "arrange"} className="page-object shape-object" deleteDescription={`${shape.shapeKind} shape`}
+          frame={defaultObjectFrame(shape)} key={shape.id} layer={shape.layer ?? "above-sketch"} objectLabel={`${shape.shapeKind} shape`}
+          objectId={shape.id} onCommit={(change) => { const next = change.kind === "move" ? { ...shape, position: change.after.position, revision: shape.revision + 1 } : { ...shape, frame: change.after.frame, revision: shape.revision + 1 }; void commitWithUndo({ type: "my-story-shape-update", pageId: page.id, shape: next }, { type: "my-story-shape-update", pageId: page.id, shape }); }}
+          onDelete={() => void commitWithUndo({ type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id }, { type: "my-story-shape-add", pageId: page.id, shape })}
+          onMoveBackward={() => { if (index === 0) return; const previous = shapes.map(({ id }) => id); const ids = [...previous]; [ids[index - 1], ids[index]] = [ids[index]!, ids[index - 1]!]; void commitWithUndo({ type: "my-story-shapes-reorder", pageId: page.id, shapeIds: ids }, { type: "my-story-shapes-reorder", pageId: page.id, shapeIds: previous }); }}
+          onMoveForward={() => { if (index === shapes.length - 1) return; const previous = shapes.map(({ id }) => id); const ids = [...previous]; [ids[index], ids[index + 1]] = [ids[index + 1]!, ids[index]!]; void commitWithUndo({ type: "my-story-shapes-reorder", pageId: page.id, shapeIds: ids }, { type: "my-story-shapes-reorder", pageId: page.id, shapeIds: previous }); }}
+          onSelect={() => { setSelection(undefined); setSelectedRecordingId(undefined); setSelectedShapeId(shape.id); }}
+          onToggleLayer={() => { const next = { ...shape, layer: shape.layer === "behind-sketch" ? "above-sketch" as const : "behind-sketch" as const, revision: shape.revision + 1 }; void commitWithUndo({ type: "my-story-shape-update", pageId: page.id, shape: next }, { type: "my-story-shape-update", pageId: page.id, shape }); }}
+          pageRef={paperRef} position={shape.position} selected={selectedShapeId === shape.id} showShortcuts={false}
+        ><ShapeCard arrange={tool === "arrange"} onUpdate={(next) => void commitWithUndo({ type: "my-story-shape-update", pageId: page.id, shape: next }, { type: "my-story-shape-update", pageId: page.id, shape })} selected={selectedShapeId === shape.id} shape={shape} /></ArrangeablePageObject>)}
+
 
         {selection && tool === "arrange" ? (
           <MyStoryInspector

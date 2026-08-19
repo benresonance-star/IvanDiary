@@ -148,6 +148,36 @@ function renderStory(
 }
 
 describe("MyStoryWorkspace", () => {
+  it("places a selected parametric shape from Draw settings", async () => {
+    const { commit } = renderStory();
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Shapes" }));
+    expect(screen.queryByRole("button", { name: "Christian Cross" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Triangle" }));
+    await waitFor(() => expect(commit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "my-story-shape-add",
+      shape: expect.objectContaining({ type: "shape", shapeKind: "triangle", fillColor: "#171410" }),
+    })));
+  });
+
+  it("builds a custom polygon from canvas points", async () => {
+    const { commit } = renderStory();
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Shapes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Custom polygon" }));
+    const paper = document.querySelector<HTMLElement>(".my-story-paper")!;
+    vi.spyOn(paper, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 600, width: 1000, height: 600, toJSON: () => ({}) });
+    fireEvent.click(paper, { clientX: 200, clientY: 150 });
+    fireEvent.click(paper, { clientX: 600, clientY: 160 });
+    fireEvent.click(paper, { clientX: 400, clientY: 450 });
+    fireEvent.click(screen.getByRole("button", { name: "Finish polygon" }));
+    await waitFor(() => expect(commit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "my-story-shape-add",
+      shape: expect.objectContaining({ shapeKind: "polygon", points: expect.arrayContaining([expect.any(Object)]) }),
+    })));
+  });
   it("uses the existing tools and renders semantic structured text", () => {
     renderStory();
 

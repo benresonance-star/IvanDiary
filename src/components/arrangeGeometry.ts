@@ -3,8 +3,8 @@ import type { PageObject, Position, Size } from "../domain/models";
 export const PAGE_LAYOUT_BOUNDS = {
   left: 0.03,
   right: 0.97,
-  top: 0.16,
-  bottom: 0.92,
+  top: 0.04,
+  bottom: 0.96,
 } as const;
 
 export const MINIMUM_FRAME = { width: 0.18, height: 0.12 } as const;
@@ -99,6 +99,8 @@ export function defaultObjectFrame(object: PageObject): Size {
       return { width: 0.26, height: 0.18 };
     case "link":
       return { width: 0.26, height: 0.1 };
+    case "shape":
+      return { width: 0.24, height: 0.24 };
     case "photo":
       return defaultPhotoFrame(object.size);
     case "transcript":
@@ -139,13 +141,13 @@ export function moveLayout(
   const centreX = position.x + start.frame.width / 2;
   const centreY = position.y + start.frame.height / 2;
   const vertical = Math.abs(centreX - 0.5) <= 0.015;
-  const horizontal = Math.abs(centreY - 0.54) <= 0.015;
+  const horizontal = Math.abs(centreY - 0.5) <= 0.015;
 
   if (vertical) {
     position = { ...position, x: 0.5 - start.frame.width / 2 };
   }
   if (horizontal) {
-    position = { ...position, y: 0.54 - start.frame.height / 2 };
+    position = { ...position, y: 0.5 - start.frame.height / 2 };
   }
 
   return {

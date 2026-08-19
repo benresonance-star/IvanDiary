@@ -635,6 +635,21 @@ export function applyDocumentOperation(
         updatedAt: operation.createdAt,
       }));
       break;
+    case "page-objects-reorder":
+      next = updatePage(snapshot, operation.pageId, (page) => {
+        const ids = new Set(operation.objectIds);
+        if (ids.size !== page.objects.length || operation.objectIds.length !== page.objects.length ||
+            page.objects.some((object) => !ids.has(object.id))) {
+          throw new OperationConflictError("Reordered page objects must contain every object exactly once.");
+        }
+        return {
+          ...page,
+          objects: operation.objectIds.map((id) => page.objects.find((object) => object.id === id)!),
+          revision: page.revision + 1,
+          updatedAt: operation.createdAt,
+        };
+      });
+      break;
     case "page-paper-update":
       next = updatePage(snapshot, operation.pageId, (page) => ({
         ...page,
@@ -922,6 +937,22 @@ export function applyDocumentOperation(
         revision: page.revision + 1,
         updatedAt: operation.createdAt,
       }));
+      break;
+    case "my-story-shape-add":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({ ...page, shapes: [...(page.shapes ?? []), operation.shape], revision: page.revision + 1, updatedAt: operation.createdAt }));
+      break;
+    case "my-story-shape-update":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({ ...page, shapes: (page.shapes ?? []).map((shape) => shape.id === operation.shape.id ? operation.shape : shape), revision: page.revision + 1, updatedAt: operation.createdAt }));
+      break;
+    case "my-story-shape-delete":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => ({ ...page, shapes: (page.shapes ?? []).filter((shape) => shape.id !== operation.shapeId), revision: page.revision + 1, updatedAt: operation.createdAt }));
+      break;
+    case "my-story-shapes-reorder":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => {
+        const shapes = page.shapes ?? [];
+        if (!isExactReorder(shapes.map(({ id }) => id), operation.shapeIds)) throw new OperationConflictError("Reordered story shapes must contain every shape exactly once.");
+        return { ...page, shapes: operation.shapeIds.map((id) => shapes.find((shape) => shape.id === id)!), revision: page.revision + 1, updatedAt: operation.createdAt };
+      });
       break;
     case "my-story-link-add":
       if (!webHttpUrl(operation.link.url) || !operation.link.title.trim()) {

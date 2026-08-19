@@ -29,7 +29,10 @@ import type {
   Page,
   PageObject,
   PhotoObject,
+  Position,
   SaveHealth,
+  ShapeKind,
+  ShapeObject,
   Sketchbook,
   TextObject,
   TranscriptObject,
@@ -80,6 +83,7 @@ import {
   defaultObjectFrame,
   defaultPhotoFrame,
   defaultPhotoPosition,
+  clampPosition,
   MAXIMUM_PHOTO_FRAME,
   pageAspectFromImage,
   VOICE_FRAME,
@@ -89,6 +93,8 @@ import { DiaryPageStrip } from "./DiaryPageStrip";
 import { insertSpokenText, type TextSelection } from "./textInsertion";
 import { FlowerPhoto } from "./JournalIllustrations";
 import { FavouriteConfirmation } from "./FavouriteConfirmation";
+import { ShapeCard } from "./ShapeCard";
+import { PolygonDraftEditor } from "./PolygonDraftEditor";
 import { LinkComposer } from "./LinkComposer";
 import {
   PenSettingsHud,
@@ -142,6 +148,9 @@ export type PageWorkspaceContext =
 type PageAction =
   | { kind: "drawing" }
   | { kind: "layout"; objectId: string; change: LayoutChange }
+  | { kind: "create"; objects: PageObject[] }
+  | { kind: "update"; before: PageObject; after: PageObject }
+  | { kind: "reorder"; beforeIds: string[]; afterIds: string[] }
   | { kind: "delete"; objects: PageObject[] };
 
 function deletionDescription(
@@ -161,6 +170,8 @@ function deletionDescription(
       return object.text.trim() || "Empty text block";
     case "link":
       return object.title.trim() || object.url;
+    case "shape":
+      return `${object.shapeKind} shape`;
     default: {
       const exhaustiveObject: never = object;
       throw new Error(`Unsupported page object: ${exhaustiveObject}`);
@@ -296,6 +307,7 @@ export function PageWorkspace({
   const [linkBeingEdited, setLinkBeingEdited] = useState<LinkObject>();
   const [recording, setRecording] = useState<RecordingSnapshot>();
   const [voiceDialogOpen, setVoiceDialogOpen] = useState(false);
+  const [polygonDraft, setPolygonDraft] = useState<Position[] | null>(null);
   const autoStopStartedRef = useRef(false);
   const toggleVoiceRef = useRef<() => Promise<void>>(async () => undefined);
   useEffect(() => {
@@ -324,7 +336,7 @@ export function PageWorkspace({
 
   const { overlayActive, overlayReady, suspendOverlay } = useNativeDrawingOverlay({
     documentId: page.drawingDocumentId,
-    enabled: hasNativePencilKit() && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested && !voiceDialogOpen && !shareChooserOpen && !shareChooserRequested && !shareInProgress,
+    enabled: hasNativePencilKit() && polygonDraft === null && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested && !voiceDialogOpen && !shareChooserOpen && !shareChooserRequested && !shareInProgress,
     tool,
     color: penSettings.color,
     nib: penSettings.nib,
@@ -544,13 +556,65 @@ export function PageWorkspace({
       .map((transcript) => [transcript.recordingId, transcript]),
   );
   const updateObject = (
-    object: TextObject | TranscriptObject | LinkObject,
+    object: TextObject | TranscriptObject | LinkObject | ShapeObject,
   ) => {
     void commit({
       type: "page-object-update",
       pageId: page.id,
       object,
     });
+  };
+
+  const placeShape = async (shapeKind: Exclude<ShapeKind, "polygon">) => {
+    const shape: ShapeObject = {
+      id: createId(), type: "shape", shapeKind, pageId: page.id,
+      position: { x: 0.38, y: 0.34 }, frame: { width: 0.24, height: 0.24 },
+      fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3,
+      layer: "above-sketch", revision: 0, createdAt: new Date().toISOString(),
+    };
+    if (!await commit({ type: "page-object-add", pageId: page.id, object: shape })) return;
+    setPenHudOpen(false); setTool("arrange"); setSelectedObjectId(shape.id);
+    actionTimelineRef.current.push({ kind: "create", objects: [shape] });
+  };
+
+  const startShapePlacement = (kind: ShapeKind) => {
+    if (kind !== "polygon") { void placeShape(kind); return; }
+    setPenHudOpen(false); setTool("view"); setSelectedObjectId(undefined);
+    setPolygonDraft([]); setNotice("Tap at least three points, then choose Finish polygon.");
+  };
+
+  const finishPolygon = async () => {
+    if (!polygonDraft || polygonDraft.length < 3) return;
+    const xs = polygonDraft.map(({ x }) => x); const ys = polygonDraft.map(({ y }) => y);
+    const minX = Math.min(...xs); const minY = Math.min(...ys);
+    const frame = { width: Math.max(0.18, Math.max(...xs) - minX), height: Math.max(0.12, Math.max(...ys) - minY) };
+    const position = clampPosition({ x: minX, y: minY }, frame);
+    const shape: ShapeObject = {
+      id: createId(), type: "shape", shapeKind: "polygon", pageId: page.id, position, frame,
+      points: polygonDraft.map(({ x, y }) => ({ x: (x - position.x) / frame.width, y: (y - position.y) / frame.height })),
+      fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3,
+      layer: "above-sketch", revision: 0, createdAt: new Date().toISOString(),
+    };
+    if (await commit({ type: "page-object-add", pageId: page.id, object: shape })) {
+      actionTimelineRef.current.push({ kind: "create", objects: [shape] });
+      setPolygonDraft(null); setNotice(undefined); setTool("arrange"); setSelectedObjectId(shape.id);
+    }
+  };
+
+  const moveObjectOrder = (objectId: string, direction: -1 | 1) => {
+    const beforeIds = page.objects.map(({ id }) => id); const ids = [...beforeIds]; const index = ids.indexOf(objectId);
+    let target = index + direction;
+    while (target >= 0 && target < page.objects.length && page.objects[target]?.type === "transcript") target += direction;
+    if (index < 0 || target < 0 || target >= ids.length) return;
+    [ids[index], ids[target]] = [ids[target]!, ids[index]!];
+    actionTimelineRef.current.push({ kind: "reorder", beforeIds, afterIds: ids });
+    void commit({ type: "page-objects-reorder", pageId: page.id, objectIds: ids });
+  };
+
+  const updateShape = (shape: ShapeObject) => {
+    const before = page.objects.find((object) => object.id === shape.id);
+    if (before) actionTimelineRef.current.push({ kind: "update", before, after: shape });
+    updateObject(shape);
   };
 
   const editTextObjectNative = async (object: TextObject) => {
@@ -712,6 +776,20 @@ export function PageWorkspace({
           object,
         });
       }
+      return;
+    }
+
+    if (action.kind === "create") {
+      for (const object of action.objects) void commit({ type: "page-object-delete", pageId: page.id, objectId: object.id });
+      return;
+    }
+
+    if (action.kind === "update") {
+      void commit({ type: "page-object-update", pageId: page.id, object: action.before });
+      return;
+    }
+    if (action.kind === "reorder") {
+      void commit({ type: "page-objects-reorder", pageId: page.id, objectIds: action.beforeIds });
       return;
     }
 
@@ -1318,6 +1396,7 @@ export function PageWorkspace({
                 grid,
               });
             }}
+            onShapeSelect={startShapePlacement}
             settings={penSettings}
             tool={tool === "eraser" ? "eraser" : "pen"}
           />
@@ -1419,6 +1498,14 @@ export function PageWorkspace({
           tool === "view" ? " viewing" : ""
         }`}
         onClick={(event) => {
+          if (polygonDraft && event.target instanceof Element && !event.target.closest("button")) {
+            const bounds = paperRef.current?.getBoundingClientRect();
+            if (bounds) setPolygonDraft([...polygonDraft, {
+              x: Math.min(0.96, Math.max(0.04, (event.clientX - bounds.left) / bounds.width)),
+              y: Math.min(0.96, Math.max(0.04, (event.clientY - bounds.top) / bounds.height)),
+            }]);
+            return;
+          }
           if (!placingTextId || !(event.target instanceof Element)) return;
           const clickedObject = event.target.closest<HTMLElement>("[data-object-id]");
           if (clickedObject?.dataset.objectId === placingTextId) return;
@@ -1469,6 +1556,8 @@ export function PageWorkspace({
             documentId={page.drawingDocumentId}
           />
         )}
+
+        {polygonDraft ? <PolygonDraftEditor color={penSettings.color} onCancel={() => { setPolygonDraft(null); setNotice(undefined); setTool("pen"); }} onChange={setPolygonDraft} onFinish={() => void finishPolygon()} pageRef={paperRef} points={polygonDraft} /> : null}
 
         {page.objects.map((object) => {
           if (object.type === "transcript") {
@@ -1532,6 +1621,17 @@ export function PageWorkspace({
                 </ArrangeablePageObject>
               );
             }
+            case "shape":
+              return <ArrangeablePageObject
+                arrange={tool === "arrange"} className="page-object shape-object"
+                deleteDescription={deletionDescription(object)} frame={defaultObjectFrame(object)}
+                key={object.id} layer={object.layer ?? "above-sketch"} objectLabel={`${object.shapeKind} shape`}
+                objectId={object.id} onCommit={(change) => commitLayoutChange(object.id, change)}
+                onDelete={() => deletePageObject(object)} onMoveBackward={() => moveObjectOrder(object.id, -1)}
+                onMoveForward={() => moveObjectOrder(object.id, 1)} onSelect={() => setSelectedObjectId(object.id)}
+                onToggleLayer={() => toggleObjectLayer(object)} pageRef={paperRef} position={object.position}
+                selected={selectedObjectId === object.id} showShortcuts={false}
+              ><ShapeCard arrange={tool === "arrange"} onUpdate={updateShape} selected={selectedObjectId === object.id} shape={object} /></ArrangeablePageObject>;
             case "photo": {
               const lockAspectRatio = object.lockAspectRatio !== false;
               return (

@@ -102,6 +102,7 @@ function renderWorkspace({
   favourite = false,
   isFirstPage = true,
   textEditorPreference = "native",
+  tool = "view",
 }: {
   page?: Page;
   pages?: Page[];
@@ -111,6 +112,7 @@ function renderWorkspace({
   favourite?: boolean;
   isFirstPage?: boolean;
   textEditorPreference?: "native" | "standard";
+  tool?: "view" | "arrange" | "pen" | "eraser";
 } = {}) {
   const snapshot = createInitialJournalSnapshot(
     new Date("2026-08-14T09:00:00.000Z"),
@@ -155,7 +157,7 @@ function renderWorkspace({
       textEditorPreference={textEditorPreference}
       share={share}
       sketchRepository={sketchRepository}
-      tool="view"
+      tool={tool}
       transcription={new BrowserAppleTranscriptionMock()}
     />,
   );
@@ -205,6 +207,19 @@ describe("PageWorkspace share", () => {
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(tools).not.toContainElement(favourite);
+  });
+
+  it("adds a selected vector shape from Draw settings", async () => {
+    const commit = vi.fn(async () => true);
+    const page = diaryPage();
+    renderWorkspace({ commit, page, tool: "pen" });
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Shapes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Circle" }));
+    await waitFor(() => expect(commit).toHaveBeenCalledWith({
+      type: "page-object-add", pageId: page.id,
+      object: expect.objectContaining({ type: "shape", shapeKind: "circle", frame: { width: 0.24, height: 0.24 } }),
+    }));
   });
 
   it("blocks share while a recording is in progress", async () => {

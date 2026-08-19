@@ -239,6 +239,12 @@ describe("journal migrations", () => {
               title: "Unsafe",
             },
           ],
+          shapes: [{
+            id: "story-shape", type: "shape", shapeKind: "triangle",
+            position: { x: 0.2, y: 0.3 }, frame: { width: 0.3, height: 0.25 },
+            fillColor: "#abcdef", outlineColor: "#123456", outlineWidth: 4,
+            layer: "above-sketch", revision: 1,
+          }],
         }],
       },
     });
@@ -261,6 +267,7 @@ describe("journal migrations", () => {
           }),
         ],
         recordings: [],
+        shapes: [expect.objectContaining({ id: "story-shape", shapeKind: "triangle", fillColor: "#abcdef" })],
       }),
     );
   });

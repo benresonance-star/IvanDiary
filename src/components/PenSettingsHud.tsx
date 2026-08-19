@@ -1,11 +1,11 @@
-import { Grid3X3, Highlighter, Paintbrush, PenLine, Pencil } from "lucide-react";
+import { Circle, Grid3X3, Highlighter, Paintbrush, PenLine, Pencil, Pentagon, RectangleHorizontal, Triangle } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 
 import {
   clampOpacity,
   colourWithOpacity,
 } from "../utils/colour";
-import type { DrawingGridSettings } from "../domain/models";
+import type { DrawingGridSettings, ShapeKind } from "../domain/models";
 import type { PenNib } from "../sketch/types";
 import { DEFAULT_FAVOURITE_PEN_COLOURS, favouriteColourName } from "./penColours";
 
@@ -46,6 +46,7 @@ export function PenSettingsHud({
   onChange,
   onDone,
   onGridChange,
+  onShapeSelect,
   settings,
   tool = "pen",
 }: {
@@ -53,13 +54,14 @@ export function PenSettingsHud({
   onChange: (settings: PenSettings) => void;
   onDone: () => void;
   onGridChange?: (grid: DrawingGridSettings) => void;
+  onShapeSelect?: (shape: ShapeKind) => void;
   settings: PenSettings;
   tool?: "pen" | "eraser";
 }) {
   const inkColours = settings.favouriteColours ?? DEFAULT_FAVOURITE_PEN_COLOURS;
   const swatchSelected = inkColours.includes(settings.color);
   const activeNib = settings.nib ?? "pen";
-  const [activePanel, setActivePanel] = useState<"pen" | "grid">("pen");
+  const [activePanel, setActivePanel] = useState<"pen" | "grid" | "shapes">("pen");
   const opacityPercent = Math.round(clampOpacity(settings.opacity) * 100);
   const sampleStyle = {
     "--sample-colour": colourWithOpacity(settings.color, settings.opacity),
@@ -96,9 +98,9 @@ export function PenSettingsHud({
           Done
         </button>
       </div>
-      {tool === "pen" && grid && onGridChange ? (
+      {tool === "pen" && ((grid && onGridChange) || onShapeSelect) ? (
         <div aria-label="Draw settings section" className="pen-panel-tabs" role="tablist">
-          <button
+          {grid && onGridChange ? <button
             aria-controls="pen-settings-panel"
             aria-selected={activePanel === "pen"}
             data-help-topic="pen-tab"
@@ -108,7 +110,7 @@ export function PenSettingsHud({
             type="button"
           >
             Pen
-          </button>
+          </button> : null}
           <button
             aria-controls="grid-settings-panel"
             aria-selected={activePanel === "grid"}
@@ -120,6 +122,7 @@ export function PenSettingsHud({
           >
             Grid
           </button>
+          {onShapeSelect ? <button aria-controls="shape-settings-panel" aria-selected={activePanel === "shapes"} id="shape-settings-tab" onClick={() => setActivePanel("shapes")} role="tab" type="button">Shapes</button> : null}
         </div>
       ) : null}
 
@@ -140,7 +143,7 @@ export function PenSettingsHud({
             <span>Erase with finger</span>
           </button>
         </div>
-      ) : activePanel === "pen" || !grid || !onGridChange ? (
+      ) : activePanel === "pen" || ((!grid || !onGridChange) && !onShapeSelect) ? (
         <div
           aria-labelledby={grid ? "pen-settings-tab" : undefined}
           className="pen-settings-panel"
@@ -259,7 +262,18 @@ export function PenSettingsHud({
             />
           </label>
         </div>
-      ) : (
+      ) : activePanel === "shapes" && onShapeSelect ? (
+        <section aria-labelledby="shape-settings-tab" className="shape-picker" id="shape-settings-panel" role="tabpanel">
+          <p>Select a shape to place on the canvas.</p>
+          <div aria-label="Shapes" className="shape-picker-grid" role="group">
+            {([
+              ["circle", "Circle", Circle], ["rectangle", "Rectangle", RectangleHorizontal],
+              ["triangle", "Triangle", Triangle],
+              ["polygon", "Custom polygon", Pentagon],
+            ] as const).map(([kind, label, Icon]) => <button key={kind} onClick={() => onShapeSelect(kind)} type="button"><Icon aria-hidden="true" /><span>{label}</span></button>)}
+          </div>
+        </section>
+      ) : activePanel === "grid" && grid && onGridChange ? (
         <section
           aria-labelledby="grid-settings-tab"
           className="grid-settings"
@@ -359,7 +373,7 @@ export function PenSettingsHud({
             </div>
           ) : null}
         </section>
-      )}
+      ) : null}
 
     </div>
   );

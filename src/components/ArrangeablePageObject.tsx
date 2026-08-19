@@ -17,6 +17,8 @@ import {
   Layers2,
   Maximize2,
   Ratio,
+  StepBack,
+  StepForward,
   Trash2,
 } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -73,6 +75,8 @@ export function ArrangeablePageObject({
   objectId,
   onCommit,
   onDelete,
+  onMoveBackward,
+  onMoveForward,
   onSelect,
   onToggleAspectLock,
   onToggleLayer,
@@ -95,6 +99,8 @@ export function ArrangeablePageObject({
   objectId: string;
   onCommit: (change: LayoutChange) => void;
   onDelete: () => void;
+  onMoveBackward?: () => void;
+  onMoveForward?: () => void;
   onSelect: () => void;
   onToggleAspectLock?: () => void;
   onToggleLayer: () => void;
@@ -379,6 +385,8 @@ export function ArrangeablePageObject({
               <ArrowDown aria-hidden="true" className="layer-direction-icon" />
             )}
           </button>
+          {onMoveForward ? <button aria-label={`Bring ${objectLabel} forward`} className="arrange-order arrange-order-forward" onClick={(event) => { event.stopPropagation(); onMoveForward(); }} type="button"><StepForward aria-hidden="true" /></button> : null}
+          {onMoveBackward ? <button aria-label={`Send ${objectLabel} backward`} className="arrange-order arrange-order-backward" onClick={(event) => { event.stopPropagation(); onMoveBackward(); }} type="button"><StepBack aria-hidden="true" /></button> : null}
           {showShortcuts ? (
             <div
               className="arrange-nudge-controls"

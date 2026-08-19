@@ -95,6 +95,8 @@ export function PagePreview({
                 style={previewStyle(object)}
               />
             );
+          case "shape":
+            return <span className="page-preview-object preview-shape" key={object.id} style={{ ...previewStyle(object), backgroundColor: object.fillColor ?? "transparent", borderColor: object.outlineColor ?? "transparent" }} />;
           case "transcript":
             return null;
           default: {

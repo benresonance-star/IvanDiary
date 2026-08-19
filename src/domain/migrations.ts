@@ -13,6 +13,7 @@ import {
   type MyStoryVoiceRecording,
   type MyWord,
   type PageObject,
+  type ShapeObject,
   type Size,
 } from "./models";
 import { webHttpUrl } from "../utils/webHttpUrl";
@@ -254,6 +255,8 @@ function defaultFrame(object: PageObject): Size | undefined {
       return { width: 0.26, height: 0.1 };
     case "photo":
       return { width: 0.22, height: 0.3 };
+    case "shape":
+      return { width: 0.24, height: 0.24 };
     case "transcript":
       return undefined;
     default: {
@@ -315,6 +318,7 @@ function defaultStoryPage(timestamp: string): MyStoryPage {
     photos: [],
     links: [],
     recordings: [],
+    shapes: [],
     revision: 0,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -501,6 +505,26 @@ function migrateMyStory(value: unknown, timestamp: string): MyStory {
           }];
         })
       : [];
+    const shapes = Array.isArray(candidate.shapes)
+      ? candidate.shapes.flatMap((value): ShapeObject[] => {
+          if (!isRecord(value) || typeof value.id !== "string" ||
+              !["circle", "rectangle", "triangle", "cross", "polygon"].includes(String(value.shapeKind)) ||
+              !isRecord(value.position) || typeof value.position.x !== "number" || typeof value.position.y !== "number") return [];
+          const points = Array.isArray(value.points) ? value.points.flatMap((point) => isRecord(point) && typeof point.x === "number" && typeof point.y === "number" ? [{ x: Math.min(1, Math.max(0, point.x)), y: Math.min(1, Math.max(0, point.y)) }] : []) : undefined;
+          if (value.shapeKind === "polygon" && (!points || points.length < 3)) return [];
+          const frame = isRecord(value.frame) && typeof value.frame.width === "number" && typeof value.frame.height === "number"
+            ? { width: Math.min(0.94, Math.max(0.18, value.frame.width)), height: Math.min(0.92, Math.max(0.12, value.frame.height)) }
+            : { width: 0.24, height: 0.24 };
+          return [{ id: value.id, pageId: candidate.id as string, type: "shape", shapeKind: value.shapeKind as ShapeObject["shapeKind"],
+            position: { x: Math.min(0.96 - frame.width, Math.max(0.03, value.position.x)), y: Math.min(0.96 - frame.height, Math.max(0.04, value.position.y)) }, frame,
+            ...(points ? { points } : {}),
+            ...(typeof value.fillColor === "string" && /^#[0-9a-f]{6}$/i.test(value.fillColor) ? { fillColor: value.fillColor } : {}),
+            ...(typeof value.outlineColor === "string" && /^#[0-9a-f]{6}$/i.test(value.outlineColor) ? { outlineColor: value.outlineColor } : {}),
+            outlineWidth: typeof value.outlineWidth === "number" ? Math.min(12, Math.max(1, value.outlineWidth)) : 3,
+            layer: value.layer === "behind-sketch" ? "behind-sketch" : "above-sketch", revision: typeof value.revision === "number" ? value.revision : 0,
+            createdAt: typeof value.createdAt === "string" ? value.createdAt : timestamp }];
+        })
+      : [];
     const splitRatio =
       typeof candidate.splitRatio === "number" &&
       Number.isFinite(candidate.splitRatio)
@@ -525,6 +549,7 @@ function migrateMyStory(value: unknown, timestamp: string): MyStory {
       photos,
       links,
       recordings,
+      shapes,
       revision:
         typeof candidate.revision === "number" ? candidate.revision : 0,
       createdAt:

@@ -119,12 +119,25 @@ export type LinkObject = PageObjectBase & {
   previewAsset?: AssetRef;
 };
 
+export type ShapeKind = "circle" | "rectangle" | "triangle" | "cross" | "polygon";
+
+export type ShapeObject = PageObjectBase & {
+  type: "shape";
+  shapeKind: ShapeKind;
+  /** Polygon vertices normalized to the shape frame. */
+  points?: Position[];
+  fillColor?: string;
+  outlineColor?: string;
+  outlineWidth: number;
+};
+
 export type PageObject =
   | VoiceRecordingObject
   | TranscriptObject
   | PhotoObject
   | TextObject
-  | LinkObject;
+  | LinkObject
+  | ShapeObject;
 
 export type Page = {
   schemaVersion: typeof DOCUMENT_SCHEMA_VERSION;
@@ -211,6 +224,7 @@ export type MyStoryPage = {
   photos: MyStoryPhoto[];
   links: MyStoryLink[];
   recordings: MyStoryVoiceRecording[];
+  shapes?: ShapeObject[];
   revision: number;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
@@ -430,6 +444,11 @@ export type DocumentOperation = OperationBase &
       objectId: EntityId;
     }
     | {
+      type: "page-objects-reorder";
+      pageId: EntityId;
+      objectIds: EntityId[];
+    }
+    | {
       type: "page-paper-update";
       pageId: EntityId;
       paperStyle: PaperStyle;
@@ -513,6 +532,10 @@ export type DocumentOperation = OperationBase &
       pageId: EntityId;
       recordingId: EntityId;
     }
+    | { type: "my-story-shape-add"; pageId: EntityId; shape: ShapeObject }
+    | { type: "my-story-shape-update"; pageId: EntityId; shape: ShapeObject }
+    | { type: "my-story-shape-delete"; pageId: EntityId; shapeId: EntityId }
+    | { type: "my-story-shapes-reorder"; pageId: EntityId; shapeIds: EntityId[] }
     | {
       type: "my-story-link-add";
       pageId: EntityId;

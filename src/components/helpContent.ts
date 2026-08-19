@@ -168,6 +168,10 @@ export const HELP_TIPS = {
     title: "Keep photo shape",
     body: "Keep the photo’s proportions while you resize it.",
   },
+  "arrange-shape-appearance": {
+    title: "Shape fill and outline",
+    body: "Open the palette to add, remove, or change this shape’s fill, outline colour, and outline thickness.",
+  },
   "arrange-edit-link": {
     title: "Edit link",
     body: "Change this link’s web address or name.",
