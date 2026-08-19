@@ -2061,10 +2061,6 @@ textarea,
   touch-action: none;
 }
 
-.paper-page.drawing-active .sketch-surface {
-  z-index: 10;
-}
-
 .paper-page.arranging .sketch-surface,
 .paper-page.viewing .sketch-surface {
   pointer-events: none;
@@ -2085,7 +2081,16 @@ textarea,
   display: block;
 }
 
+.sketch-grid-layer {
+  z-index: 0;
+}
+
+.sketch-scene-layer {
+  z-index: 1;
+}
+
 .sketch-input-layer {
+  z-index: 2;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -2263,6 +2268,19 @@ textarea,
   display: flex;
   flex-direction: column;
   width: 28%;
+}
+
+.voice-object > .audio-memory,
+.voice-object > .audio-memory > .audio-player {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.voice-object > .audio-memory > .audio-player {
+  padding: 6px 10px;
 }
 
 .photo-object {
@@ -4004,7 +4022,8 @@ textarea,
 
 .settings-panel {
   display: grid;
-  max-width: 850px;
+  width: 100%;
+  max-width: 980px;
   margin: 0 auto;
   gap: 20px;
 }
@@ -5227,7 +5246,6 @@ textarea,
     padding-right: 6%;
   }
 
-  .voice-object,
   .text-object,
   .link-object-frame {
     width: 44% !important;
@@ -5247,7 +5265,6 @@ textarea,
     top: 455px !important;
     right: auto;
     left: 7% !important;
-    width: 86% !important;
   }
 
   .page-object[data-object-id="garden-photo"] {
@@ -5261,7 +5278,6 @@ textarea,
     top: 630px !important;
     right: 5%;
     left: auto !important;
-    width: 44% !important;
   }
 
   .library-view {
@@ -5338,6 +5354,66 @@ textarea,
   .save-status {
     bottom: 18px;
   }
+}
+
+.voice-recording-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(36, 28, 20, 0.56);
+}
+
+.voice-recording-dialog {
+  display: grid;
+  width: min(620px, 100%);
+  padding: clamp(22px, 4vw, 36px);
+  gap: 22px;
+  border: 2px solid #796247;
+  border-radius: 24px;
+  background: #fffaf0;
+  box-shadow: 0 24px 70px rgba(30, 22, 14, 0.32);
+}
+
+.voice-recording-dialog > header,
+.voice-recording-actions,
+.voice-review-actions,
+.voice-preview-action,
+.voice-end-action {
+  display: flex;
+  align-items: center;
+}
+
+.voice-recording-dialog > header { justify-content: space-between; gap: 18px; }
+.voice-recording-dialog h2, .voice-recording-dialog p { margin: 0; }
+.voice-recording-dialog header p { margin-top: 5px; color: #665d51; }
+.voice-recording-dialog header button { min-width: 52px; padding: 8px; }
+
+.voice-microphone-meter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 76px;
+  gap: 7px;
+}
+.voice-microphone-meter > span {
+  width: 9px;
+  height: 58px;
+  border-radius: 6px;
+  background: #b94f42;
+  transition: transform 100ms linear;
+}
+.voice-recording-time { text-align: center; font-size: 2rem; font-variant-numeric: tabular-nums; }
+.voice-recording-actions, .voice-review-actions { justify-content: center; flex-wrap: wrap; gap: 14px; }
+.voice-end-action, .voice-preview-action { justify-content: center; min-height: 52px; padding: 10px 18px; gap: 9px; border: 2px solid #8c3027; border-radius: 13px; background: #f2cbc2; color: #6d2119; font: inherit; font-weight: 800; }
+.voice-review { display: grid; justify-items: center; gap: 18px; }
+.voice-preview-action { min-width: 220px; border-color: #536f45; background: #e4efdc; color: #2f4826; }
+.voice-recording-status { min-height: 1.5em; color: #665d51; text-align: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-microphone-meter > span { transition: none; }
 }
 
 @media (orientation: portrait) {

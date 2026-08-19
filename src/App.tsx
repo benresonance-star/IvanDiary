@@ -813,6 +813,7 @@ export default function App() {
             penColor={snapshot.settings.penColor}
             fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
             fingerErasingEnabled={snapshot.settings.fingerErasingEnabled}
+            twoFingerUndoEnabled={snapshot.settings.twoFingerUndoEnabled}
             favouritePenColours={snapshot.settings.favouritePenColours}
             penNib={snapshot.settings.penNib}
             penNibProfiles={snapshot.settings.penNibProfiles}
@@ -848,6 +849,7 @@ export default function App() {
           files={files}
           fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
           fingerErasingEnabled={snapshot.settings.fingerErasingEnabled}
+          twoFingerUndoEnabled={snapshot.settings.twoFingerUndoEnabled}
           health={combinedHealth(health, drawingHealth)}
           key={storyPage.id}
           myWords={snapshot.settings.myWords}
@@ -922,6 +924,7 @@ export default function App() {
             penColor={snapshot.settings.penColor}
             fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
             fingerErasingEnabled={snapshot.settings.fingerErasingEnabled}
+            twoFingerUndoEnabled={snapshot.settings.twoFingerUndoEnabled}
             favouritePenColours={snapshot.settings.favouritePenColours}
             penNib={snapshot.settings.penNib}
             penNibProfiles={snapshot.settings.penNibProfiles}
@@ -1133,6 +1136,7 @@ export default function App() {
             favouriteColours: snapshot.settings.favouritePenColours,
           }}
           interactionObscured={helpModeActive}
+          twoFingerUndoEnabled={snapshot.settings.twoFingerUndoEnabled}
           onPenSettingsChange={(penSettings) => {
             void commit({
               type: "settings-update",
@@ -1193,6 +1197,7 @@ export default function App() {
           penColor={snapshot.settings.penColor}
           fingerDrawingEnabled={snapshot.settings.fingerDrawingEnabled}
           fingerErasingEnabled={snapshot.settings.fingerErasingEnabled}
+          twoFingerUndoEnabled={snapshot.settings.twoFingerUndoEnabled}
           favouritePenColours={snapshot.settings.favouritePenColours}
           penNib={snapshot.settings.penNib}
           penNibProfiles={snapshot.settings.penNibProfiles}

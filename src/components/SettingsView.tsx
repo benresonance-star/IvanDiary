@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import {
   ChevronDown,
-  Eye,
   Mic,
   Palette,
 } from "lucide-react";
@@ -271,7 +270,6 @@ export function SettingsView({
           <p className="eyebrow">Change the Settings to Suit you</p>
           <h1 id="settings-heading">Settings</h1>
         </div>
-        <Eye aria-hidden="true" />
       </header>
 
       <div className="settings-tabs" aria-label="Settings sections" role="tablist">

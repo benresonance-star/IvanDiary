@@ -58,6 +58,7 @@ export async function openNativeDrawing(options: {
   width: number;
   opacity?: number;
   fingerDrawing?: boolean;
+  twoFingerUndo?: boolean;
   initialTool: "pen" | "eraser";
   backgroundDataUrl?: string;
 }): Promise<NativeDrawingPreview> {
@@ -75,6 +76,7 @@ export async function showNativeDrawingOverlay(options: {
   width: number;
   opacity?: number;
   fingerDrawing?: boolean;
+  twoFingerUndo?: boolean;
   tool: "pen" | "eraser";
   rect: PencilKitOverlayRect;
   clipShape?: "circle";
@@ -102,6 +104,7 @@ export async function updateNativeDrawingOverlay(options: {
   width?: number;
   opacity?: number;
   fingerDrawing?: boolean;
+  twoFingerUndo?: boolean;
   tool?: "pen" | "eraser";
   rect?: PencilKitOverlayRect;
   clipShape?: "circle";
@@ -119,6 +122,7 @@ export async function updateNativeDrawingOverlay(options: {
     options.width ?? "",
     options.opacity ?? "",
     options.fingerDrawing ?? "",
+    options.twoFingerUndo ?? "",
     options.tool ?? "",
     options.clipShape ?? "",
     options.grid?.enabled ?? "",

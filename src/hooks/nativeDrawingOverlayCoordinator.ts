@@ -17,6 +17,7 @@ export type NativeDrawingOverlayRequest = {
   width: number;
   opacity: number;
   fingerDrawing?: boolean;
+  twoFingerUndo?: boolean;
   tool: "pen" | "eraser";
   rect: OverlayRect;
   clipShape?: "circle";
@@ -57,6 +58,7 @@ const defaultOperations: NativeDrawingOverlayOperations = {
       width: request.width,
       opacity: request.opacity,
       fingerDrawing: request.fingerDrawing ?? true,
+      twoFingerUndo: request.twoFingerUndo ?? true,
       tool: request.tool,
       rect: request.rect,
       clipShape: request.clipShape,
@@ -76,6 +78,7 @@ const defaultOperations: NativeDrawingOverlayOperations = {
       width: request.width,
       opacity: request.opacity,
       fingerDrawing: request.fingerDrawing ?? true,
+      twoFingerUndo: request.twoFingerUndo ?? true,
       tool: request.tool,
       rect: request.rect,
       clipShape: request.clipShape,

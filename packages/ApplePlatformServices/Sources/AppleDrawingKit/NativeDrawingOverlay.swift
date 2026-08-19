@@ -86,7 +86,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         canvasView.isOpaque = false
         canvasView.drawingPolicy = .anyInput
         canvasView.delegate = self
-        canvasView.addGestureRecognizer(twoFingerUndoRecognizer)
+        addGestureRecognizer(twoFingerUndoRecognizer)
         canvasView.addGestureRecognizer(oneFingerSelectionRecognizer)
         canvasView.addGestureRecognizer(oneFingerLongPressRecognizer)
         oneFingerSelectionRecognizer.require(
@@ -150,6 +150,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         width: CGFloat,
         nib: NativeDrawingNib = .pen,
         fingerDrawing: Bool = true,
+        twoFingerUndo: Bool = true,
         tool: NativeDrawingTool,
         grid: DrawingGridSettings = .off,
         frame: CGRect,
@@ -166,6 +167,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         self.width = width
         self.selectedNib = nib
         self.fingerDrawing = fingerDrawing
+        twoFingerUndoRecognizer.isEnabled = twoFingerUndo
         canvasView.drawingPolicy = fingerDrawing ? .anyInput : .pencilOnly
         self.grid = grid
         updateGridInput()
@@ -215,6 +217,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         width: CGFloat?,
         nib: NativeDrawingNib? = nil,
         fingerDrawing: Bool? = nil,
+        twoFingerUndo: Bool? = nil,
         tool: NativeDrawingTool?,
         grid: DrawingGridSettings? = nil,
         frame: CGRect?,
@@ -232,6 +235,9 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         if let fingerDrawing {
             self.fingerDrawing = fingerDrawing
             canvasView.drawingPolicy = fingerDrawing ? .anyInput : .pencilOnly
+        }
+        if let twoFingerUndo {
+            twoFingerUndoRecognizer.isEnabled = twoFingerUndo
         }
         if let grid {
             self.grid = grid
@@ -383,7 +389,11 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
     }
 
     private func updateGridInput() {
-        gridGuideView.grid = grid
+        // The web grid is deliberately rendered below page objects such as
+        // voice controls and photos. A native guide would sit above the web
+        // view regardless of its subview order, so native code handles only
+        // snapping while the web layer remains the single visible guide.
+        gridGuideView.grid = .off
         gridInputView.grid = DrawingGridSettings(
             enabled: grid.enabled && grid.snapToGrid && selectedTool == .pen,
             snapToGrid: grid.snapToGrid,
@@ -405,8 +415,20 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
             ink: PKInk(selectedNib.inkType, color: PencilInkColor.forLightPaper(color)),
             path: PKStrokePath(controlPoints: points, creationDate: Date())
         )
-        canvasView.drawing = PKDrawing(strokes: canvasView.drawing.strokes + [stroke])
+        let previousDrawing = canvasView.drawing
+        let nextDrawing = PKDrawing(strokes: previousDrawing.strokes + [stroke])
+        replaceGridDrawing(nextDrawing, undoingTo: previousDrawing)
         if let documentID { onDrawingChanged?(documentID) }
+    }
+
+    private func replaceGridDrawing(_ drawing: PKDrawing, undoingTo previous: PKDrawing) {
+        canvasView.drawing = drawing
+        canvasView.undoManager?.registerUndo(withTarget: self) { overlay in
+            overlay.replaceGridDrawing(previous, undoingTo: drawing)
+            if let documentID = overlay.documentID {
+                overlay.onDrawingChanged?(documentID)
+            }
+        }
     }
 
     private func loadDrawing(documentID: String) throws {

@@ -110,11 +110,24 @@ function recordingShape(value: RecordingSnapshot): RecordingSnapshot {
     ...(value.temporaryUri ? { temporaryUri: value.temporaryUri } : {}),
     ...(value.asset ? { asset: value.asset } : {}),
     ...(value.message ? { message: value.message } : {}),
+    ...(typeof value.powerLevel === "number" ? { powerLevel: value.powerLevel } : {}),
   };
 }
 
 export class CapacitorJournalAudioAdapter implements JournalAudioPlugin {
   constructor(private readonly plugin: JournalAudioPlugin) {}
+
+  async startMonitoring() {
+    return nativeCall("audio", () => this.plugin.startMonitoring!());
+  }
+
+  async monitorLevel() {
+    return nativeCall("audio", () => this.plugin.monitorLevel!());
+  }
+
+  async stopMonitoring() {
+    return nativeCall("audio", () => this.plugin.stopMonitoring!());
+  }
 
   async start(options?: { preferredFormat?: "m4a" }) {
     return recordingShape(
@@ -126,6 +139,14 @@ export class CapacitorJournalAudioAdapter implements JournalAudioPlugin {
     return recordingShape(
       await nativeCall("audio", () => this.plugin.status()),
     );
+  }
+
+  async pauseRecording() {
+    return recordingShape(await nativeCall("audio", () => this.plugin.pauseRecording!()));
+  }
+
+  async resumeRecording() {
+    return recordingShape(await nativeCall("audio", () => this.plugin.resumeRecording!()));
   }
 
   async stop() {

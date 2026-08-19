@@ -19,6 +19,10 @@ export class BrowserJournalAudioMock implements JournalAudioPlugin {
   };
   #startedAt = 0;
 
+  async startMonitoring() { return { powerLevel: 0.45 }; }
+  async monitorLevel() { return { powerLevel: 0.25 + Math.random() * 0.55 }; }
+  async stopMonitoring() {}
+
   async start(): Promise<RecordingSnapshot> {
     this.#startedAt = Date.now();
     this.#recording = {
@@ -37,7 +41,19 @@ export class BrowserJournalAudioMock implements JournalAudioPlugin {
     return {
       ...this.#recording,
       elapsedMs: Date.now() - this.#startedAt,
+      powerLevel: 0.65,
     };
+  }
+
+  async pauseRecording(): Promise<RecordingSnapshot> {
+    this.#recording = { ...(await this.status()), state: "paused", powerLevel: 0 };
+    return this.#recording;
+  }
+
+  async resumeRecording(): Promise<RecordingSnapshot> {
+    this.#startedAt = Date.now() - this.#recording.elapsedMs;
+    this.#recording = { ...this.#recording, state: "recording" };
+    return this.#recording;
   }
 
   async stop(): Promise<RecordingSnapshot> {

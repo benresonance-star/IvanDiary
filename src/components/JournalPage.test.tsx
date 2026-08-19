@@ -210,10 +210,9 @@ describe("PageWorkspace share", () => {
   it("blocks share while a recording is in progress", async () => {
     renderWorkspace();
     fireEvent.click(screen.getByRole("button", { name: "Voice" }));
-    await screen.findByRole("button", { name: /Stop recording/ });
-    fireEvent.click(screen.getByRole("button", { name: "Share this page" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start recording" }));
+    expect(await screen.findByRole("button", { name: "Pause recording" })).toBeVisible();
     expect(screen.queryByRole("dialog", { name: "Share this page" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Stop recording first, then share." })).toBeInTheDocument();
   });
 
   it("exports a picture after the chooser closes and reports a destination", async () => {

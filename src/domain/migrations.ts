@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS: JournalSettings = {
   penOpacity: 1,
   fingerDrawingEnabled: true,
   fingerErasingEnabled: false,
+  twoFingerUndoEnabled: true,
   favouritePenColours: [
     "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
     "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
@@ -120,6 +121,7 @@ function migrateSettings(value: unknown): JournalSettings {
       ? Math.min(1, Math.max(0, value.penOpacity))
       : DEFAULT_SETTINGS.penOpacity;
   const fingerDrawingEnabled = value.fingerDrawingEnabled !== false;
+  const twoFingerUndoEnabled = value.twoFingerUndoEnabled !== false;
   const fingerErasingEnabled = value.fingerErasingEnabled === true;
   const favouritePenColours = Array.isArray(value.favouritePenColours) &&
     value.favouritePenColours.length === 10
@@ -226,6 +228,7 @@ function migrateSettings(value: unknown): JournalSettings {
     penOpacity,
     fingerDrawingEnabled,
     fingerErasingEnabled,
+    twoFingerUndoEnabled,
     favouritePenColours,
     standardAppAppearance,
     penNib,

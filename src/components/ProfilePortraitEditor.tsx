@@ -16,12 +16,14 @@ import { PenSettingsHud, type PenSettings } from "./PenSettingsHud";
 export function ProfilePortraitEditor({
   initialPenSettings,
   interactionObscured = false,
+  twoFingerUndoEnabled = true,
   onPenSettingsChange,
   onReturn,
   sketchRepository,
 }: {
   initialPenSettings: PenSettings;
   interactionObscured?: boolean;
+  twoFingerUndoEnabled?: boolean;
   onPenSettingsChange: (settings: PenSettings) => void;
   onReturn: () => void;
   sketchRepository: SketchRepository;
@@ -43,6 +45,7 @@ export function ProfilePortraitEditor({
     fingerDrawing: tool === "eraser"
       ? penSettings.fingerErasing === true
       : penSettings.fingerDrawing !== false,
+    twoFingerUndo: twoFingerUndoEnabled,
     paperRef: canvasRef,
     toolPaletteRef: toolsRef,
     sketchRepository,

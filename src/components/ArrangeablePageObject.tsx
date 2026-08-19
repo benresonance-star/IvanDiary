@@ -60,6 +60,7 @@ function layoutsEqual(first: PageLayout, second: PageLayout): boolean {
 
 export function ArrangeablePageObject({
   arrange,
+  canResize = true,
   aspectLock = false,
   aspectRatio,
   children,
@@ -81,6 +82,7 @@ export function ArrangeablePageObject({
   showShortcuts,
 }: {
   arrange: boolean;
+  canResize?: boolean;
   aspectLock?: boolean;
   aspectRatio?: number;
   children: ReactNode;
@@ -221,7 +223,7 @@ export function ArrangeablePageObject({
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const amount = 0.015;
     let handled = true;
-    if (event.shiftKey) {
+    if (event.shiftKey && canResize) {
       switch (event.key) {
         case "ArrowLeft":
           applyResize({ width: -amount, height: 0 });
@@ -277,13 +279,13 @@ export function ArrangeablePageObject({
     <div
       aria-label={
         arrange
-          ? `${objectLabel}. Arrow keys move. Shift and arrow keys resize.`
+          ? `${objectLabel}. Arrow keys move.${canResize ? " Shift and arrow keys resize." : ""}`
           : undefined
       }
       className={`${className}${layer === "behind-sketch" ? " behind-sketch" : ""}${arrange ? " arrangeable" : ""}${selected ? " selected-object" : ""}`}
       data-help-body={
         arrange
-          ? `This ${objectLabel.toLowerCase()} can be moved, resized, layered, or removed.`
+          ? `This ${objectLabel.toLowerCase()} can be moved${canResize ? ", resized" : ""}, layered, or removed.`
           : undefined
       }
       data-help-title={arrange ? objectLabel : undefined}
@@ -332,7 +334,7 @@ export function ArrangeablePageObject({
           >
             <GripHorizontal aria-hidden="true" />
           </button>
-          <button
+          {canResize ? <button
             aria-label={`Drag to resize ${objectLabel}`}
             className="arrange-handle resize-handle"
             data-help-title={`Resize ${objectLabel.toLowerCase()}`}
@@ -345,7 +347,7 @@ export function ArrangeablePageObject({
             type="button"
           >
             <Maximize2 aria-hidden="true" />
-          </button>
+          </button> : null}
           <button
             aria-label={`Delete ${objectLabel}`}
             className="arrange-delete"

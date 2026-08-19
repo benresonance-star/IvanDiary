@@ -1,7 +1,7 @@
 import Foundation
 
 public enum JournalRecordingState: String, Codable, Sendable {
-    case idle, recording, finalising, saved, interrupted, error
+    case idle, recording, paused, finalising, saved, interrupted, error
 }
 
 public struct JournalRecordingSnapshot: Codable, Equatable, Sendable {
@@ -53,13 +53,20 @@ public struct RecordingStateMachine: Sendable {
     }
 
     public mutating func resume() throws {
-        guard snapshot.state == .interrupted else { throw RecordingTransitionError.invalidTransition }
+        guard snapshot.state == .interrupted || snapshot.state == .paused else { throw RecordingTransitionError.invalidTransition }
         snapshot.state = .recording
         snapshot.message = nil
     }
 
+    public mutating func pause(elapsedMilliseconds: Int) throws {
+        guard snapshot.state == .recording else { throw RecordingTransitionError.invalidTransition }
+        snapshot.state = .paused
+        snapshot.elapsedMilliseconds = elapsedMilliseconds
+        snapshot.message = nil
+    }
+
     public mutating func finalise(elapsedMilliseconds: Int) throws {
-        guard snapshot.state == .recording || snapshot.state == .interrupted else {
+        guard snapshot.state == .recording || snapshot.state == .paused || snapshot.state == .interrupted else {
             throw RecordingTransitionError.invalidTransition
         }
         snapshot.state = .finalising

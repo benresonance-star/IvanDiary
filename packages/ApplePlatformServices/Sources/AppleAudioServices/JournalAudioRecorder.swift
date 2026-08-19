@@ -10,6 +10,8 @@ public final class JournalAudioRecorder: NSObject, AVAudioRecorderDelegate {
     private let temporaryRoot: URL
     private let recoveryURL: URL
     private var recorder: AVAudioRecorder?
+    private var monitorRecorder: AVAudioRecorder?
+    private var monitorURL: URL?
     private var startedAt: Date?
 
     public init(fileManager: FileManager = .default) throws {
@@ -24,6 +26,7 @@ public final class JournalAudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     public func start(maximumDurationMilliseconds: Int? = nil) async throws -> JournalRecordingSnapshot {
+        stopMonitoring()
         let granted: Bool
         if #available(iOS 17.0, *) {
             granted = await AVAudioApplication.requestRecordPermission()
@@ -65,12 +68,60 @@ public final class JournalAudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     public func currentPowerLevel() -> Float {
-        guard let recorder, recorder.isRecording else { return 0 }
-        recorder.updateMeters()
-        let decibels = recorder.averagePower(forChannel: 0)
+        guard let source = recorder?.isRecording == true ? recorder : monitorRecorder,
+              source.isRecording else { return 0 }
+        source.updateMeters()
+        let decibels = source.averagePower(forChannel: 0)
         guard decibels.isFinite else { return 0 }
         let linearLevel = min(1, max(0, (decibels + 60) / 60))
         return pow(linearLevel, 0.55)
+    }
+
+    public func startMonitoring() async throws {
+        guard recorder == nil, monitorRecorder == nil else { return }
+        let granted: Bool
+        if #available(iOS 17.0, *) {
+            granted = await AVAudioApplication.requestRecordPermission()
+        } else {
+            granted = await withCheckedContinuation { continuation in
+                session.requestRecordPermission { continuation.resume(returning: $0) }
+            }
+        }
+        guard granted else { throw NSError(domain: "JournalAudio", code: 1, userInfo: ["code": "PERMISSION_DENIED"]) }
+        try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetoothHFP])
+        try session.setActive(true)
+        let url = temporaryRoot.appendingPathComponent("microphone-monitor-(UUID().uuidString)").appendingPathExtension("m4a")
+        let created = try AVAudioRecorder(url: url, settings: [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC), AVSampleRateKey: 22_050,
+            AVNumberOfChannelsKey: 1, AVEncoderAudioQualityKey: AVAudioQuality.min.rawValue
+        ])
+        created.isMeteringEnabled = true
+        guard created.prepareToRecord(), created.record() else { throw NSError(domain: "JournalAudio", code: 2) }
+        monitorURL = url
+        monitorRecorder = created
+    }
+
+    public func stopMonitoring() {
+        monitorRecorder?.stop()
+        monitorRecorder = nil
+        if let monitorURL { try? fileManager.removeItem(at: monitorURL) }
+        monitorURL = nil
+        if recorder == nil { try? session.setActive(false, options: .notifyOthersOnDeactivation) }
+    }
+
+    public func pause() throws -> JournalRecordingSnapshot {
+        guard let recorder, recorder.isRecording else { throw RecordingTransitionError.invalidTransition }
+        recorder.pause()
+        try machine.pause(elapsedMilliseconds: Int(recorder.currentTime * 1_000))
+        try persistRecovery()
+        return status()
+    }
+
+    public func resume() throws -> JournalRecordingSnapshot {
+        guard let recorder, recorder.record() else { throw RecordingTransitionError.invalidTransition }
+        try machine.resume()
+        try persistRecovery()
+        return status()
     }
 
     public func stop() throws -> JournalRecordingSnapshot {

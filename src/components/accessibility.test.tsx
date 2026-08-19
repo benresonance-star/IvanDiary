@@ -113,6 +113,7 @@ describe("accessible navigation and settings", () => {
           penWidth: 4.2,
           penOpacity: 1,
           fingerDrawingEnabled: true,
+          twoFingerUndoEnabled: true,
           fingerErasingEnabled: false,
           favouritePenColours: [
             "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",

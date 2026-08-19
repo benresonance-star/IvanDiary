@@ -82,6 +82,7 @@ import {
   defaultPhotoPosition,
   MAXIMUM_PHOTO_FRAME,
   pageAspectFromImage,
+  VOICE_FRAME,
 } from "./arrangeGeometry";
 import { DiaryCalendar } from "./DiaryCalendar";
 import { DiaryPageStrip } from "./DiaryPageStrip";
@@ -111,6 +112,7 @@ import {
 } from "./TextComposer";
 import { TranscriptEditor } from "./TranscriptEditor";
 import { TwoFingerTapRecognizer } from "./twoFingerTap";
+import { VoiceRecordingDialog } from "./VoiceRecordingDialog";
 import { DEFAULT_DRAWING_GRID } from "../sketch/gridGeometry";
 
 export { LinkComposer, TextComposer };
@@ -199,6 +201,7 @@ export function PageWorkspace({
   penColor,
   fingerDrawingEnabled,
   fingerErasingEnabled,
+  twoFingerUndoEnabled = true,
   favouritePenColours,
   penNib,
   penNibProfiles,
@@ -233,6 +236,7 @@ export function PageWorkspace({
   penColor: string;
   fingerDrawingEnabled: boolean;
   fingerErasingEnabled: boolean;
+  twoFingerUndoEnabled?: boolean;
   favouritePenColours: string[];
   penNib: "pen" | "marker" | "pencil" | "brush";
   penNibProfiles: PenSettings["profiles"];
@@ -291,6 +295,7 @@ export function PageWorkspace({
   const [shareCapturing, setShareCapturing] = useState(false);
   const [linkBeingEdited, setLinkBeingEdited] = useState<LinkObject>();
   const [recording, setRecording] = useState<RecordingSnapshot>();
+  const [voiceDialogOpen, setVoiceDialogOpen] = useState(false);
   const autoStopStartedRef = useRef(false);
   const toggleVoiceRef = useRef<() => Promise<void>>(async () => undefined);
   useEffect(() => {
@@ -319,7 +324,7 @@ export function PageWorkspace({
 
   const { overlayActive, overlayReady, suspendOverlay } = useNativeDrawingOverlay({
     documentId: page.drawingDocumentId,
-    enabled: hasNativePencilKit() && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested && !shareChooserOpen && !shareChooserRequested && !shareInProgress,
+    enabled: hasNativePencilKit() && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested && !voiceDialogOpen && !shareChooserOpen && !shareChooserRequested && !shareInProgress,
     tool,
     color: penSettings.color,
     nib: penSettings.nib,
@@ -328,6 +333,7 @@ export function PageWorkspace({
     fingerDrawing: tool === "eraser"
       ? penSettings.fingerErasing === true
       : penSettings.fingerDrawing !== false,
+    twoFingerUndo: twoFingerUndoEnabled,
     grid: drawingGrid,
     paperRef,
     protectedHeaderRef: pageHeaderRef,
@@ -603,24 +609,25 @@ export function PageWorkspace({
     void commit(operation);
   };
 
-  const twoFingerUndoEnabled =
-    tool === "pen" || tool === "eraser" || tool === "arrange";
+  const twoFingerGestureActive =
+    twoFingerUndoEnabled &&
+    (tool === "pen" || tool === "eraser" || tool === "arrange");
   const handleTwoFingerPointerDown = (
     event: ReactPointerEvent<HTMLDivElement>,
   ) => {
-    if (!twoFingerUndoEnabled) return;
+    if (!twoFingerGestureActive) return;
     twoFingerTapRecognizerRef.current.pointerDown(event.nativeEvent);
   };
   const handleTwoFingerPointerMove = (
     event: ReactPointerEvent<HTMLDivElement>,
   ) => {
-    if (!twoFingerUndoEnabled) return;
+    if (!twoFingerGestureActive) return;
     twoFingerTapRecognizerRef.current.pointerMove(event.nativeEvent);
   };
   const handleTwoFingerPointerUp = (
     event: ReactPointerEvent<HTMLDivElement>,
   ) => {
-    if (!twoFingerUndoEnabled) return;
+    if (!twoFingerGestureActive) return;
     if (twoFingerTapRecognizerRef.current.pointerUp(event.nativeEvent)) {
       event.preventDefault();
       globalThis.queueMicrotask(undoLastAction);
@@ -1039,6 +1046,31 @@ export function PageWorkspace({
       ? "Browser demonstration only. Tap Voice again to stop."
       : "Recording original audio on this device. Tap Voice again to save.");
   };
+
+  const placeReviewedVoice = async (savedRecording: RecordingSnapshot) => {
+    if (!savedRecording.asset) return;
+    const width = VOICE_FRAME.width;
+    const voice: VoiceRecordingObject = {
+      id: savedRecording.id,
+      type: "voice",
+      pageId: page.id,
+      position: { x: (1 - width) / 2, y: 0.3 },
+      frame: VOICE_FRAME,
+      createdAt: new Date().toISOString(),
+      revision: 0,
+      asset: savedRecording.asset,
+      durationMs: savedRecording.elapsedMs,
+      transcriptionStatus: "not-requested",
+      layer: "above-sketch",
+    };
+    const saved = await commit({ type: "page-object-add", pageId: page.id, object: voice });
+    if (!saved) { setNotice("The recording could not be added to this page."); return; }
+    setVoiceDialogOpen(false);
+    setRecording(undefined);
+    setPlacingTextId(voice.id);
+    setSelectedObjectId(voice.id);
+    setTool("arrange");
+  };
   useEffect(() => {
     toggleVoiceRef.current = toggleVoice;
   });
@@ -1169,21 +1201,15 @@ export function PageWorkspace({
             <span>Text</span>
           </button>
           <button
-          aria-pressed={recording?.state === "recording"}
-          className={
-            recording?.state === "recording"
-              ? "tool voice-tool recording"
-              : "tool voice-tool"
-          }
+          aria-expanded={voiceDialogOpen}
+          aria-haspopup="dialog"
+          className="tool voice-tool"
           data-help-topic="voice"
-          onClick={() => void toggleVoice()}
+          onClick={() => setVoiceDialogOpen(true)}
           type="button"
         >
           <Mic aria-hidden="true" />
-          <span>{recording?.state === "recording" ? "Stop recording" : "Voice"}</span>
-          {recording?.state === "recording" ? (
-            <small>{Math.floor(recording.elapsedMs / 60_000)}:{String(Math.floor(recording.elapsedMs / 1_000) % 60).padStart(2, "0")}</small>
-          ) : null}
+          <span>Voice</span>
           </button>
         </div>
         <div aria-label="Drawing tools" className="tool-hud" role="group">
@@ -1454,6 +1480,7 @@ export function PageWorkspace({
               return (
                 <ArrangeablePageObject
                   arrange={tool === "arrange"}
+                  canResize={false}
                   className="page-object voice-object"
                   deleteDescription={deletionDescription(object, transcript)}
                   frame={defaultObjectFrame(object)}
@@ -1659,6 +1686,17 @@ export function PageWorkspace({
 
         {textComposerOpen ? (
           <TextComposer draft={textDraft} recording={textRecording?.state === "recording"} selectionRef={textSelectionRef} status={textStatus} onCancel={() => { setTextComposerOpen(false); setTextDraft(EMPTY_TEXT_DRAFT); textSelectionRef.current = { start: 0, end: 0 }; setTextStatus(undefined); }} onChange={setTextDraft} onSubmit={() => void addText()} onToggleVoice={() => void toggleTextVoice()} />
+        ) : null}
+
+        {voiceDialogOpen ? (
+          <VoiceRecordingDialog
+            audio={audio}
+            files={files}
+            initialRecording={recording}
+            onCancel={() => { setVoiceDialogOpen(false); setRecording(undefined); }}
+            onPlace={(reviewed) => void placeReviewedVoice(reviewed)}
+            recordingLimitMinutes={recordingLimitMinutes}
+          />
         ) : null}
 
         {shareChooserOpen ? (

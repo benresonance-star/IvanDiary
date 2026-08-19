@@ -341,7 +341,7 @@ final class GridStrokeInputView: UIView {
     var onStroke: (([PKStrokePoint]) -> Void)?
 
     private let liveLayer = CAShapeLayer()
-    private var rawLocations: [CGPoint] = []
+    private var rawSamples: [PKStrokePoint] = []
     private var samples: [PKStrokePoint] = []
     private var axis: Axis?
     private var startedAt: TimeInterval = 0
@@ -365,33 +365,36 @@ final class GridStrokeInputView: UIView {
         guard let touch = touches.first, accepts(touch) else { return }
         startedAt = touch.timestamp
         axis = nil
-        rawLocations = [touch.location(in: self)]
-        samples = [strokePoint(for: touch, location: rawLocations[0])]
+        let first = strokePoint(for: touch, location: touch.location(in: self))
+        rawSamples = [first]
+        samples = [first]
         renderLivePath()
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first, accepts(touch), !rawLocations.isEmpty else { return }
+        guard let touch = touches.first, accepts(touch), !rawSamples.isEmpty else { return }
         let touchesToUse = event?.coalescedTouches(for: touch) ?? [touch]
         for value in touchesToUse {
-            rawLocations.append(value.location(in: self))
+            let location = value.location(in: self)
+            rawSamples.append(strokePoint(for: value, location: location))
             if axis == nil,
-               let first = rawLocations.first,
-               hypot(value.location(in: self).x - first.x, value.location(in: self).y - first.y) >= 8 {
-                axis = preferredAxis(from: first, to: value.location(in: self))
+               let first = rawSamples.first?.location,
+               hypot(location.x - first.x, location.y - first.y) >= 8 {
+                axis = preferredAxis(from: first, to: location)
             }
-            rebuildSamples(using: value)
+            rebuildSamples()
         }
         renderLivePath()
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         if let touch = touches.first, accepts(touch) {
-            rawLocations.append(touch.location(in: self))
-            if axis == nil, let first = rawLocations.first {
-                axis = preferredAxis(from: first, to: touch.location(in: self))
+            let location = touch.location(in: self)
+            rawSamples.append(strokePoint(for: touch, location: location))
+            if axis == nil, let first = rawSamples.first?.location {
+                axis = preferredAxis(from: first, to: location)
             }
-            rebuildSamples(using: touch)
+            rebuildSamples()
         }
         let completed = samples
         clearLivePath()
@@ -472,32 +475,30 @@ final class GridStrokeInputView: UIView {
         )
     }
 
-    private func rebuildSamples(using touch: UITouch) {
-        guard let start = rawLocations.first else { return }
-        let force = touch.maximumPossibleForce > 0
-            ? touch.force / touch.maximumPossibleForce
-            : 0.5
-        samples = rawLocations.enumerated().map { index, location in
+    private func rebuildSamples() {
+        guard let start = rawSamples.first?.location else { return }
+        samples = rawSamples.map { sample in
             PKStrokePoint(
-                location: snapped(location, start: start),
-                timeOffset: TimeInterval(index) / 120,
-                size: CGSize(width: inkWidth, height: inkWidth),
-                opacity: 1,
-                force: force,
-                azimuth: touch.azimuthAngle(in: self),
-                altitude: touch.altitudeAngle
+                location: snapped(sample.location, start: start),
+                timeOffset: sample.timeOffset,
+                size: sample.size,
+                opacity: sample.opacity,
+                force: sample.force,
+                azimuth: sample.azimuth,
+                altitude: sample.altitude
             )
         }
     }
 
     private func strokePoint(for touch: UITouch, location: CGPoint) -> PKStrokePoint {
-        let force = touch.maximumPossibleForce > 0
-            ? touch.force / touch.maximumPossibleForce
+        let force = touch.type == .pencil && touch.maximumPossibleForce > 0
+            ? min(1, max(0, touch.force / touch.maximumPossibleForce))
             : 0.5
+        let pressureWidth = inkWidth * (0.22 + force * 0.78)
         return PKStrokePoint(
             location: location,
             timeOffset: touch.timestamp - startedAt,
-            size: CGSize(width: inkWidth, height: inkWidth),
+            size: CGSize(width: pressureWidth, height: pressureWidth),
             opacity: 1,
             force: force,
             azimuth: touch.azimuthAngle(in: self),
@@ -516,7 +517,7 @@ final class GridStrokeInputView: UIView {
     }
 
     private func clearLivePath() {
-        rawLocations = []
+        rawSamples = []
         samples = []
         axis = nil
         liveLayer.path = nil

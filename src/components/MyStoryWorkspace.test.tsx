@@ -495,9 +495,10 @@ describe("MyStoryWorkspace", () => {
     const voice = screen.getByRole("button", { name: "Voice" });
 
     fireEvent.click(voice);
+    fireEvent.click(await screen.findByRole("button", { name: "Start recording" }));
     await waitFor(() => expect(start).toHaveBeenCalled());
-    await waitFor(() => expect(voice).toHaveTextContent("Stop recording"));
-    fireEvent.click(voice);
+    fireEvent.click(await screen.findByRole("button", { name: "End recording" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Place recording" }));
 
     await waitFor(() =>
       expect(commit).toHaveBeenCalledWith(
@@ -538,17 +539,17 @@ describe("MyStoryWorkspace", () => {
       await screen.findByRole("button", { name: "Pause voice recording" }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(
-      screen.getByRole("group", {
+    const voiceObject = screen.getByRole("group", {
         name: /voice recording\. Arrow keys move/i,
-      }),
-    );
+      });
+    fireEvent.click(voiceObject);
+    expect(voiceObject).toHaveStyle({ width: "18%", height: "12%" });
     expect(
       screen.getByRole("button", { name: "Drag to move voice recording" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Drag to resize voice recording" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Drag to resize voice recording" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Delete voice recording" }),
     ).toBeInTheDocument();

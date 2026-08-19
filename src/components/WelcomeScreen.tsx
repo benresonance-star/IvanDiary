@@ -32,6 +32,7 @@ export function WelcomeScreen({
   penColor,
   fingerDrawingEnabled = true,
   fingerErasingEnabled = false,
+  twoFingerUndoEnabled = true,
   favouritePenColours,
   interactionObscured = false,
   penNib = "pen",
@@ -49,6 +50,7 @@ export function WelcomeScreen({
   penColor: string;
   fingerDrawingEnabled?: boolean;
   fingerErasingEnabled?: boolean;
+  twoFingerUndoEnabled?: boolean;
   favouritePenColours?: string[];
   interactionObscured?: boolean;
   penNib?: "pen" | "marker" | "pencil" | "brush";
@@ -94,6 +96,7 @@ export function WelcomeScreen({
     fingerDrawing: tool === "eraser"
       ? penSettings.fingerErasing === true
       : penSettings.fingerDrawing !== false,
+    twoFingerUndo: twoFingerUndoEnabled,
     paperRef,
     toolPaletteRef,
     sketchRepository,

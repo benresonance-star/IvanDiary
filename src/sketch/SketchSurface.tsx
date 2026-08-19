@@ -114,6 +114,7 @@ function SketchSurfaceComponent(
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneCanvasRef = useRef<HTMLCanvasElement>(null);
+  const gridCanvasRef = useRef<HTMLCanvasElement>(null);
   const liveCanvasRef = useRef<HTMLCanvasElement>(null);
   const documentRef = useRef<SketchDocument | undefined>(undefined);
   const activeStrokeRef = useRef<SketchStroke | undefined>(undefined);
@@ -180,8 +181,8 @@ function SketchSurfaceComponent(
     renderDocument(context, document);
   }, [configureContext]);
 
-  const renderLiveStroke = useCallback(() => {
-    const canvas = liveCanvasRef.current;
+  const renderGrid = useCallback(() => {
+    const canvas = gridCanvasRef.current;
     const document = documentRef.current;
     if (!canvas || !document) {
       return;
@@ -196,6 +197,21 @@ function SketchSurfaceComponent(
     if (grid) {
       drawGrid(context, document.size.width, document.size.height, grid);
     }
+  }, [configureContext, grid]);
+
+  const renderLiveStroke = useCallback(() => {
+    const canvas = liveCanvasRef.current;
+    const document = documentRef.current;
+    if (!canvas || !document) {
+      return;
+    }
+
+    const context = configureContext(canvas);
+    if (!context) {
+      return;
+    }
+
+    context.clearRect(0, 0, document.size.width, document.size.height);
     if (activeStrokeRef.current) {
       drawStroke(context, activeStrokeRef.current);
     }
@@ -208,10 +224,11 @@ function SketchSurfaceComponent(
 
     frameRef.current = requestAnimationFrame(() => {
       frameRef.current = undefined;
+      renderGrid();
       renderScene();
       renderLiveStroke();
     });
-  }, [renderLiveStroke, renderScene]);
+  }, [renderGrid, renderLiveStroke, renderScene]);
 
   useEffect(() => {
     scheduleSceneRender();
@@ -241,12 +258,13 @@ function SketchSurfaceComponent(
   const replaceDocument = useCallback(
     (next: SketchDocument) => {
       documentRef.current = next;
+      renderGrid();
       renderScene();
       renderLiveStroke();
       scheduleSceneRender();
       void persist(next);
     },
-    [persist, renderLiveStroke, renderScene, scheduleSceneRender],
+    [persist, renderGrid, renderLiveStroke, renderScene, scheduleSceneRender],
   );
 
   const undo = useCallback(() => {
@@ -677,7 +695,8 @@ function SketchSurfaceComponent(
       ref={containerRef}
       aria-busy={loading}
     >
-      <canvas className="sketch-layer" ref={sceneCanvasRef} />
+      <canvas className="sketch-layer sketch-grid-layer" ref={gridCanvasRef} />
+      <canvas className="sketch-layer sketch-scene-layer" ref={sceneCanvasRef} />
       <canvas
         aria-label="Drawing area"
         className="sketch-layer sketch-input-layer"

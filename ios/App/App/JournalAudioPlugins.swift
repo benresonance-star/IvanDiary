@@ -954,7 +954,12 @@ public final class JournalAudioPlugin: CAPPlugin, @preconcurrency CAPBridgedPlug
     public let jsName = "JournalAudio"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startMonitoring", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "monitorLevel", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopMonitoring", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pauseRecording", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resumeRecording", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "acknowledgeSaved", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "recoverInterrupted", returnType: CAPPluginReturnPromise),
@@ -974,10 +979,45 @@ public final class JournalAudioPlugin: CAPPlugin, @preconcurrency CAPBridgedPlug
         }
     }
 
+    @objc public func startMonitoring(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            guard let recorder else { call.reject("Audio recording is unavailable.", "UNAVAILABLE"); return }
+            do { try await recorder.startMonitoring(); call.resolve(["powerLevel": recorder.currentPowerLevel()]) }
+            catch { reject(call, error: error, fallback: "Microphone monitoring could not start.") }
+        }
+    }
+
+    @objc public func monitorLevel(_ call: CAPPluginCall) {
+        call.resolve(["powerLevel": recorder?.currentPowerLevel() ?? 0])
+    }
+
+    @objc public func stopMonitoring(_ call: CAPPluginCall) {
+        recorder?.stopMonitoring()
+        call.resolve()
+    }
+
     @objc public func status(_ call: CAPPluginCall) {
         Task { @MainActor in
             guard let recorder else { call.reject("Audio recording is unavailable.", "UNAVAILABLE"); return }
-            call.resolve(recordingPayload(recorder.status()))
+            var payload = recordingPayload(recorder.status())
+            payload["powerLevel"] = recorder.currentPowerLevel()
+            call.resolve(payload)
+        }
+    }
+
+    @objc public func pauseRecording(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            guard let recorder else { call.reject("Audio recording is unavailable.", "UNAVAILABLE"); return }
+            do { call.resolve(recordingPayload(try recorder.pause())) }
+            catch { reject(call, error: error, fallback: "Recording could not be paused.") }
+        }
+    }
+
+    @objc public func resumeRecording(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            guard let recorder else { call.reject("Audio recording is unavailable.", "UNAVAILABLE"); return }
+            do { call.resolve(recordingPayload(try recorder.resume())) }
+            catch { reject(call, error: error, fallback: "Recording could not resume.") }
         }
     }
 

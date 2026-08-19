@@ -45,6 +45,7 @@ export function useNativeDrawingOverlay({
   width,
   opacity = 1,
   fingerDrawing = true,
+  twoFingerUndo = true,
   paperRef,
   protectedHeaderRef,
   toolPaletteRef,
@@ -61,6 +62,7 @@ export function useNativeDrawingOverlay({
   width: number;
   opacity?: number;
   fingerDrawing?: boolean;
+  twoFingerUndo?: boolean;
   paperRef: RefObject<HTMLDivElement | null>;
   protectedHeaderRef?: RefObject<HTMLElement | null>;
   toolPaletteRef: RefObject<HTMLDivElement | null>;
@@ -213,6 +215,7 @@ export function useNativeDrawingOverlay({
       width,
       opacity,
       fingerDrawing,
+      twoFingerUndo,
       tool: tool === "eraser" ? "eraser" : "pen",
       rect: overlayRect,
       clipShape,
@@ -241,6 +244,7 @@ export function useNativeDrawingOverlay({
     gridDocumentSize.width,
     opacity,
     fingerDrawing,
+    twoFingerUndo,
     overlayRect,
     sketchRepository,
     tool,

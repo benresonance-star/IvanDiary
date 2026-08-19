@@ -12,6 +12,7 @@ import { clampOpacity } from "../utils/colour";
 import { SketchSurface } from "../sketch/SketchSurface";
 import { favouriteColourName } from "./penColours";
 import { PEN_WIDTH_MAX, PEN_WIDTH_MIN } from "./PenSettingsHud";
+import { SettingToggle } from "./SettingToggle";
 
 const NIBS = [
   { id: "pen", label: "Pen", Icon: PenLine },
@@ -54,6 +55,7 @@ export function CanvasSettingsPanel({
     fingerDrawing: tool === "eraser"
       ? settings.fingerErasingEnabled
       : settings.fingerDrawingEnabled,
+    twoFingerUndo: settings.twoFingerUndoEnabled,
     paperRef: canvasRef,
     toolPaletteRef: toolsRef,
     sketchRepository,
@@ -131,6 +133,16 @@ export function CanvasSettingsPanel({
   return (
     <div className="canvas-settings-content">
       <h2>Canvas</h2>
+
+      <SettingToggle
+        checked={settings.twoFingerUndoEnabled}
+        description="Tap the canvas with two fingers to undo the last drawing action."
+        label="Two-finger undo"
+        onChange={(twoFingerUndoEnabled) => commit({
+          type: "settings-update",
+          settings: { twoFingerUndoEnabled },
+        })}
+      />
 
       <section aria-labelledby="favourite-colours-heading" className="canvas-colour-editor">
         <h3 id="favourite-colours-heading">My favourite colours</h3>

@@ -4,6 +4,7 @@ import type { DrawingGridSettings } from "../domain/models";
 export type RecordingState =
   | "idle"
   | "recording"
+  | "paused"
   | "finalising"
   | "saved"
   | "interrupted"
@@ -16,11 +17,17 @@ export type RecordingSnapshot = {
   temporaryUri?: string;
   asset?: AssetRef;
   message?: string;
+  powerLevel?: number;
 };
 
 export interface JournalAudioPlugin {
+  startMonitoring?(): Promise<{ powerLevel: number }>;
+  monitorLevel?(): Promise<{ powerLevel: number }>;
+  stopMonitoring?(): Promise<void>;
   start(options?: { preferredFormat?: "m4a"; maximumDurationMs?: number }): Promise<RecordingSnapshot>;
   status(): Promise<RecordingSnapshot>;
+  pauseRecording?(): Promise<RecordingSnapshot>;
+  resumeRecording?(): Promise<RecordingSnapshot>;
   stop(): Promise<RecordingSnapshot>;
   acknowledgeSaved(): Promise<RecordingSnapshot>;
   recoverInterrupted(): Promise<{ recordings: RecordingSnapshot[] }>;
@@ -287,6 +294,7 @@ export interface PencilKitPlugin {
     width: number;
     opacity?: number;
     fingerDrawing?: boolean;
+    twoFingerUndo?: boolean;
     initialTool: "pen" | "eraser";
     backgroundDataUrl?: string;
   }): Promise<PencilKitPreview>;
@@ -297,6 +305,7 @@ export interface PencilKitPlugin {
     width: number;
     opacity?: number;
     fingerDrawing?: boolean;
+    twoFingerUndo?: boolean;
     tool: "pen" | "eraser";
     rect: PencilKitOverlayRect;
     clipShape?: "circle";
@@ -315,6 +324,7 @@ export interface PencilKitPlugin {
     width?: number;
     opacity?: number;
     fingerDrawing?: boolean;
+    twoFingerUndo?: boolean;
     tool?: "pen" | "eraser";
     rect?: PencilKitOverlayRect;
     clipShape?: "circle";

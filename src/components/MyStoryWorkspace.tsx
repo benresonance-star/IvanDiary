@@ -70,6 +70,7 @@ import {
   type LayoutChange,
 } from "./ArrangeablePageObject";
 import { AudioCard } from "./AudioCard";
+import { VOICE_FRAME } from "./arrangeGeometry";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DiaryPageStrip } from "./DiaryPageStrip";
 import { LinkComposer } from "./LinkComposer";
@@ -89,6 +90,7 @@ import {
   withShareTimeout,
 } from "./pageShare";
 import { ShareChooser } from "./ShareChooser";
+import { VoiceRecordingDialog } from "./VoiceRecordingDialog";
 
 type Commit = (operation: DocumentOperationInput) => Promise<boolean>;
 
@@ -198,6 +200,7 @@ export function MyStoryWorkspace({
   penWidth,
   fingerDrawingEnabled,
   fingerErasingEnabled,
+  twoFingerUndoEnabled = true,
   recordingLimitMinutes,
   share,
   sketchRepository,
@@ -229,6 +232,7 @@ export function MyStoryWorkspace({
   penWidth: number;
   fingerDrawingEnabled: boolean;
   fingerErasingEnabled: boolean;
+  twoFingerUndoEnabled?: boolean;
   recordingLimitMinutes: 2 | 5 | 10 | 30 | null;
   share: NativeSharePlugin;
   sketchRepository: BrowserSketchRepository;
@@ -281,6 +285,7 @@ export function MyStoryWorkspace({
   const dividerDragOffsetRef = useRef(0);
   const transcriptionInFlightRef = useRef(new Set<string>());
   const [recording, setRecording] = useState<RecordingSnapshot>();
+  const [voiceDialogOpen, setVoiceDialogOpen] = useState(false);
   const autoStopStartedRef = useRef(false);
   const toggleVoiceRef = useRef<() => Promise<void>>(async () => undefined);
   const pageTextColor = readableTextColour(
@@ -368,7 +373,8 @@ export function MyStoryWorkspace({
     !linkComposerRequested &&
     linkEditing === undefined &&
     !textEditorRequested &&
-    textEditing === undefined;
+    textEditing === undefined &&
+    !voiceDialogOpen;
   const { overlayActive, overlayReady, suspendOverlay } =
     useNativeDrawingOverlay({
       documentId: page.drawingDocumentId,
@@ -381,6 +387,7 @@ export function MyStoryWorkspace({
     fingerDrawing: tool === "eraser"
       ? penSettings.fingerErasing === true
       : penSettings.fingerDrawing !== false,
+      twoFingerUndo: twoFingerUndoEnabled,
       paperRef,
       protectedHeaderRef: headerRef,
       toolPaletteRef,
@@ -648,7 +655,7 @@ export function MyStoryWorkspace({
           x: 0.06 + (page.recordings.length % 3) * 0.3,
           y: Math.min(0.84, 0.7 + Math.floor(page.recordings.length / 3) * 0.12),
         },
-        frame: { width: 0.26, height: 0.1 },
+        frame: VOICE_FRAME,
         layer: "above-sketch",
         revision: 0,
         createdAt: new Date().toISOString(),
@@ -690,6 +697,28 @@ export function MyStoryWorkspace({
         "Microphone recording could not start. Check microphone permission and available storage.",
       );
     }
+  };
+
+  const placeReviewedVoice = async (savedRecording: RecordingSnapshot) => {
+    if (!savedRecording.asset) return;
+    const voice: MyStoryVoiceRecording = {
+      id: savedRecording.id,
+      asset: savedRecording.asset,
+      durationMs: savedRecording.elapsedMs,
+      transcriptionStatus: "not-requested",
+      position: { x: 0.37, y: 0.3 },
+      frame: VOICE_FRAME,
+      layer: "above-sketch",
+      revision: 0,
+      createdAt: new Date().toISOString(),
+    };
+    const saved = await commit({ type: "my-story-recording-add", pageId: page.id, recording: voice });
+    if (!saved) { setNotice("The recording could not be added to My Story."); return; }
+    setVoiceDialogOpen(false);
+    setRecording(undefined);
+    setSelection(undefined);
+    setSelectedRecordingId(voice.id);
+    onToolChange("arrange");
   };
 
   useEffect(() => {
@@ -1229,27 +1258,14 @@ export function MyStoryWorkspace({
             <span>Text</span>
           </button>
           <button
-            aria-pressed={recording?.state === "recording"}
-            className={
-              recording?.state === "recording"
-                ? "tool voice-tool recording"
-                : "tool voice-tool"
-            }
-            onClick={() => void toggleVoice()}
+            aria-expanded={voiceDialogOpen}
+            aria-haspopup="dialog"
+            className="tool voice-tool"
+            onClick={() => setVoiceDialogOpen(true)}
             type="button"
           >
             <Mic aria-hidden="true" />
-            <span>
-              {recording?.state === "recording" ? "Stop recording" : "Voice"}
-            </span>
-            {recording?.state === "recording" ? (
-              <small>
-                {Math.floor(recording.elapsedMs / 60_000)}:
-                {String(
-                  Math.floor(recording.elapsedMs / 1_000) % 60,
-                ).padStart(2, "0")}
-              </small>
-            ) : null}
+            <span>Voice</span>
           </button>
         </div>
         <div aria-label="Drawing tools" className="tool-hud" role="group">
@@ -1617,9 +1633,10 @@ export function MyStoryWorkspace({
         {page.recordings.map((voice, index) => (
           <ArrangeablePageObject
             arrange={tool === "arrange"}
+            canResize={false}
             className="page-object voice-object story-voice-object"
             deleteDescription="Voice recording"
-            frame={voice.frame ?? { width: 0.26, height: 0.1 }}
+            frame={VOICE_FRAME}
             key={voice.id}
             layer={voice.layer ?? "above-sketch"}
             objectLabel="voice recording"
@@ -1782,6 +1799,17 @@ export function MyStoryWorkspace({
           onCancel={() => setShareChooserOpen(false)}
           onSharePdf={() => void sharePage("pdf")}
           onSharePicture={() => void sharePage("jpg")}
+        />
+      ) : null}
+
+      {voiceDialogOpen ? (
+        <VoiceRecordingDialog
+          audio={audio}
+          files={files}
+          initialRecording={recording}
+          onCancel={() => { setVoiceDialogOpen(false); setRecording(undefined); }}
+          onPlace={(reviewed) => void placeReviewedVoice(reviewed)}
+          recordingLimitMinutes={recordingLimitMinutes}
         />
       ) : null}
     </section>

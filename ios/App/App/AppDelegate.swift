@@ -144,6 +144,7 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         let width = max(1, min(call.getDouble("width") ?? 4, 28))
         let nib = NativeDrawingNib(rawValue: call.getString("nib") ?? "") ?? .pen
         let fingerDrawing = call.getBool("fingerDrawing") ?? true
+        let twoFingerUndo = call.getBool("twoFingerUndo") ?? true
         let tool = NativeDrawingTool(
             rawValue: call.getString("tool") ?? ""
         ) ?? .pen
@@ -170,6 +171,7 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
                     width: CGFloat(width),
                     nib: nib,
                     fingerDrawing: fingerDrawing,
+                    twoFingerUndo: twoFingerUndo,
                     tool: tool,
                     grid: grid,
                     frame: frame,
@@ -195,6 +197,7 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         let width = call.getDouble("width").map { max(1, min($0, 28)) }
         let nib = call.getString("nib").flatMap(NativeDrawingNib.init(rawValue:))
         let fingerDrawing = call.getBool("fingerDrawing")
+        let twoFingerUndo = call.getBool("twoFingerUndo")
         let tool = call.getString("tool").flatMap(NativeDrawingTool.init(rawValue:))
         let frameInWebView = call.getObject("rect") == nil
             ? nil
@@ -214,6 +217,7 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
                 width: width.map { CGFloat($0) },
                 nib: nib,
                 fingerDrawing: fingerDrawing,
+                twoFingerUndo: twoFingerUndo,
                 tool: tool,
                 grid: grid,
                 frame: frame,

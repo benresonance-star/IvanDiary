@@ -8,6 +8,7 @@ export const PAGE_LAYOUT_BOUNDS = {
 } as const;
 
 export const MINIMUM_FRAME = { width: 0.18, height: 0.12 } as const;
+export const VOICE_FRAME = MINIMUM_FRAME;
 export const MAXIMUM_FRAME = { width: 0.6, height: 0.55 } as const;
 
 /** Matches `--active-canvas-aspect` in styles.css. */
@@ -86,13 +87,14 @@ export function defaultPhotoPosition(frame: Size): Position {
 }
 
 export function defaultObjectFrame(object: PageObject): Size {
+  if (object.type === "voice") {
+    return VOICE_FRAME;
+  }
   if (object.frame) {
     return object.frame;
   }
 
   switch (object.type) {
-    case "voice":
-      return { width: 0.28, height: 0.23 };
     case "text":
       return { width: 0.26, height: 0.18 };
     case "link":

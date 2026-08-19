@@ -239,6 +239,7 @@ export type JournalSettings = {
   penOpacity: number;
   fingerDrawingEnabled: boolean;
   fingerErasingEnabled: boolean;
+  twoFingerUndoEnabled: boolean;
   favouritePenColours: string[];
   standardAppAppearance: boolean;
   penNib: "pen" | "marker" | "pencil" | "brush";

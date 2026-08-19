@@ -39,6 +39,7 @@ describe("journal migrations", () => {
       penOpacity: 1,
       fingerDrawingEnabled: true,
       fingerErasingEnabled: false,
+      twoFingerUndoEnabled: true,
       favouritePenColours: [
         "#171410", "#245b8a", "#426b3a", "#9b352f", "#6b4f82",
         "#76512f", "#c86f24", "#2f6f6d", "#a64b6b", "#686868",
@@ -105,6 +106,22 @@ describe("journal migrations", () => {
     });
 
     expect(migrated.settings.textEditorPreference).toBe("standard");
+  });
+
+  it("defaults two-finger undo on and preserves an explicit off setting", () => {
+    const current = createInitialJournalSnapshot();
+    const { twoFingerUndoEnabled: _removed, ...legacySettings } = current.settings;
+    const migratedLegacy = migrateJournalSnapshot({
+      ...current,
+      settings: legacySettings,
+    });
+    const migratedOff = migrateJournalSnapshot({
+      ...current,
+      settings: { ...current.settings, twoFingerUndoEnabled: false },
+    });
+
+    expect(migratedLegacy.settings.twoFingerUndoEnabled).toBe(true);
+    expect(migratedOff.settings.twoFingerUndoEnabled).toBe(false);
   });
 
   it("preserves valid per-nib pen profile values", () => {

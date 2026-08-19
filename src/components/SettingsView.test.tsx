@@ -297,3 +297,20 @@ describe("SettingsView app orientation", () => {
     });
   });
 });
+
+describe("SettingsView canvas gestures", () => {
+  it("shows two-finger undo on by default and can turn it off", () => {
+    const commit = vi.fn();
+    renderSettings({ commit });
+    fireEvent.click(screen.getByRole("tab", { name: "Canvas" }));
+
+    const toggle = screen.getByRole("checkbox", { name: "Two-finger undo" });
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+
+    expect(commit).toHaveBeenCalledWith({
+      type: "settings-update",
+      settings: { twoFingerUndoEnabled: false },
+    });
+  });
+});
