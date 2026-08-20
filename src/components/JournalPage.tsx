@@ -1687,7 +1687,7 @@ export function PageWorkspace({
             }
             case "shape":
               return <ShapeEditor
-                arrange={tool === "arrange"}
+                arrange={tool === "arrange" && !navigationObscured}
                 canMoveDown={object.layer !== "behind-sketch"}
                 canMoveUp={object.layer === "behind-sketch" || index < page.objects.length - 1}
                 key={object.id}

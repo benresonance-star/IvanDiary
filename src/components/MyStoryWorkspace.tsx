@@ -1807,7 +1807,7 @@ export function MyStoryWorkspace({
         {(page.shapes ?? []).map((shape) => {
           const stackIndex = stackFor("shape", shape.id);
           return <ShapeEditor
-            arrange={tool === "arrange"}
+            arrange={tool === "arrange" && !navigationObscured}
             canMoveDown={shape.layer !== "behind-sketch"}
             canMoveUp={shape.layer === "behind-sketch" || stackIndex < renderOrder.length - 1}
             key={shape.id}

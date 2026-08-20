@@ -2323,14 +2323,14 @@ textarea,
 .shape-edit-palette {
   position: fixed; z-index: 1100; display: grid; box-sizing: border-box; width: 174px; max-height: calc(100vh - 24px);
   padding: 7px; gap: 5px; overflow-y: auto; scrollbar-gutter: stable; border: 2px solid #6f5b40; border-radius: 14px;
-  background: #fffaf0; box-shadow: 0 8px 26px rgba(53,39,21,.28);
+  background: #f5ead8; box-shadow: 0 8px 26px rgba(53,39,21,.28);
 }
 .shape-edit-palette > button, .shape-edit-mode-group > button, .shape-edit-grid > button, .shape-colour-controls button {
   display: flex; align-items: center; justify-content: center; min-height: 40px; padding: 5px 8px;
   gap: 7px; border: 1px solid #8f7758; border-radius: 9px; background: #f5ead8; color: #33291d;
-  font: inherit; font-weight: 850; letter-spacing: .035em; cursor: pointer;
+  font: inherit; font-size: 14px; font-weight: 400; letter-spacing: normal; cursor: pointer;
 }
-.shape-edit-palette button[aria-pressed="true"] { border-color: #244d65; background: #d9e8f0; box-shadow: inset 0 0 0 2px #244d65; }
+.shape-edit-palette button[aria-pressed="true"] { border-color: #8f7758; background: #eadcc3; color: #33291d; box-shadow: none; font-weight: 700; }
 .shape-edit-palette button:disabled { opacity: .45; cursor: not-allowed; }
 .shape-edit-palette svg { width: 21px; height: 21px; }
 .shape-edit-palette .shape-palette-drag { min-height: 28px; padding: 1px; border: 0; background: transparent; cursor: grab; touch-action: none; }
@@ -2349,8 +2349,8 @@ textarea,
 .shape-edit-grid > button:nth-child(2) { border-radius: 0 9px 0 0; }
 .shape-edit-grid > button:nth-child(3) { border-radius: 0 0 0 9px; }
 .shape-edit-grid > button:last-child { border-radius: 0 0 9px 0; }
-.shape-colour-controls { display: grid; padding: 7px; gap: 7px; border: 1px solid #b9a587; border-radius: 10px; background: #fffdf8; }
-.shape-colour-controls label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font-weight: 750; }
+.shape-colour-controls { display: grid; padding: 7px; gap: 7px; border: 1px solid #8f7758; border-radius: 10px; background: #f5ead8; }
+.shape-colour-controls label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font-size: 14px; font-weight: 400; letter-spacing: normal; }
 .shape-colour-controls input[type="color"] { width: 48px; height: 40px; }
 .shape-colour-controls input[type="range"] { grid-column: 1 / -1; width: 100%; }
 .shape-edit-palette .shape-edit-delete { border-color: #a92d24; background: #f8d7d4; color: #8c211a; }
@@ -2888,7 +2888,7 @@ textarea,
 .delete-dialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: 2000;
   display: grid;
   place-items: center;
   padding: 20px;
