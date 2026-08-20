@@ -67,7 +67,7 @@ import {
   type SketchSurfaceHandle,
 } from "../sketch/SketchSurface";
 import { NativeSketchPreview } from "../sketch/NativeSketchPreview";
-import { nativeDrawingPreservesShapeStack } from "../sketch/nativeDrawingLayering";
+import { nativeOverlayShapes } from "../sketch/nativeDrawingLayering";
 import type { SketchTool } from "../sketch/types";
 import { browserFileToAsset, readImageSize } from "../utils/assets";
 import { localDateKey } from "../utils/date";
@@ -339,7 +339,7 @@ export function PageWorkspace({
 
   const { overlayActive, overlayReady, suspendOverlay } = useNativeDrawingOverlay({
     documentId: page.drawingDocumentId,
-    enabled: hasNativePencilKit() && nativeDrawingPreservesShapeStack(page.objects.filter((object): object is ShapeObject => object.type === "shape")) && polygonDraft === null && !freeformDraft && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested && !voiceDialogOpen && !shareChooserOpen && !shareChooserRequested && !shareInProgress,
+    enabled: hasNativePencilKit() && polygonDraft === null && !freeformDraft && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested && !voiceDialogOpen && !shareChooserOpen && !shareChooserRequested && !shareInProgress,
     tool,
     color: penSettings.color,
     nib: penSettings.nib,
@@ -350,6 +350,7 @@ export function PageWorkspace({
       : penSettings.fingerDrawing !== false,
     twoFingerUndo: twoFingerUndoEnabled,
     grid: drawingGrid,
+    overlayShapes: nativeOverlayShapes(page.objects.filter((object): object is ShapeObject => object.type === "shape")),
     paperRef,
     protectedHeaderRef: pageHeaderRef,
     toolPaletteRef,
@@ -573,7 +574,7 @@ export function PageWorkspace({
       id: createId(), type: "shape", shapeKind, pageId: page.id,
       position: { x: 0.38, y: 0.34 }, frame: { width: 0.24, height: 0.24 },
       fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3,
-      layer: "above-sketch", revision: 0, createdAt: new Date().toISOString(),
+      layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString(),
     };
     if (!await commit({ type: "page-object-add", pageId: page.id, object: shape })) return;
     setPenHudOpen(false); setTool("arrange"); setSelectedObjectId(shape.id);
@@ -599,7 +600,7 @@ export function PageWorkspace({
       id: createId(), type: "shape", shapeKind: "freeform", pageId: page.id, position, frame,
       points: anchors.map(({ x, y }) => ({ x: (x - position.x) / frame.width, y: (y - position.y) / frame.height })),
       fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3,
-      layer: "above-sketch", revision: 0, createdAt: new Date().toISOString(),
+      layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString(),
     };
     if (await commit({ type: "page-object-add", pageId: page.id, object: shape })) {
       actionTimelineRef.current.push({ kind: "create", objects: [shape] });
@@ -617,7 +618,7 @@ export function PageWorkspace({
       id: createId(), type: "shape", shapeKind: "polygon", pageId: page.id, position, frame,
       points: polygonDraft.map(({ x, y }) => ({ x: (x - position.x) / frame.width, y: (y - position.y) / frame.height })),
       fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3,
-      layer: "above-sketch", revision: 0, createdAt: new Date().toISOString(),
+      layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString(),
     };
     if (await commit({ type: "page-object-add", pageId: page.id, object: shape })) {
       actionTimelineRef.current.push({ kind: "create", objects: [shape] });

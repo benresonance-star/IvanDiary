@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ShapeObject } from "../domain/models";
-import { nativeDrawingPreservesShapeStack } from "./nativeDrawingLayering";
+import { nativeOverlayShapes } from "./nativeDrawingLayering";
 
 function shape(layer?: ShapeObject["layer"]): ShapeObject {
   return {
@@ -18,21 +18,13 @@ function shape(layer?: ShapeObject["layer"]): ShapeObject {
   };
 }
 
-describe("nativeDrawingPreservesShapeStack", () => {
-  it("allows native drawing when there are no shapes", () => {
-    expect(nativeDrawingPreservesShapeStack([])).toBe(true);
-  });
-
-  it("allows native drawing when every shape is behind the sketch", () => {
-    expect(
-      nativeDrawingPreservesShapeStack([shape("behind-sketch")]),
-    ).toBe(true);
-  });
-
-  it("uses web drawing for explicit and default above-sketch shapes", () => {
-    expect(nativeDrawingPreservesShapeStack([shape("above-sketch")])).toBe(
-      false,
-    );
-    expect(nativeDrawingPreservesShapeStack([shape()])).toBe(false);
+describe("nativeOverlayShapes", () => {
+  it("mirrors only above-sketch shapes into the native overlay", () => {
+    const mirrored = nativeOverlayShapes([
+      shape("behind-sketch"),
+      { ...shape("above-sketch"), id: "shape-two" },
+    ]);
+    expect(mirrored).toHaveLength(1);
+    expect(mirrored[0]).toMatchObject({ kind: "circle", fillColor: undefined });
   });
 });

@@ -275,6 +275,19 @@ export interface AppOrientationPlugin {
   setLandscapeLocked(options: { locked: boolean }): Promise<void>;
 }
 
+export type NativeOverlayShape = {
+  kind: "circle" | "polygon" | "freeform";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotationDegrees: number;
+  points: Array<{ x: number; y: number }>;
+  fillColor?: string;
+  outlineColor?: string;
+  outlineWidth: number;
+};
+
 export interface PencilKitPlugin {
   addListener(
     eventName: "drawingChanged",
@@ -317,6 +330,7 @@ export interface PencilKitPlugin {
     gridPageHeight?: number;
     gridDocumentWidth?: number;
     gridDocumentHeight?: number;
+    overlayShapes?: NativeOverlayShape[];
   }): Promise<{ visible: boolean; importedLegacyStrokes?: boolean }>;
   updateOverlay(options: {
     color?: string;
@@ -333,6 +347,7 @@ export interface PencilKitPlugin {
     gridOriginY?: number;
     gridPageWidth?: number;
     gridPageHeight?: number;
+    overlayShapes?: NativeOverlayShape[];
     gridDocumentWidth?: number;
     gridDocumentHeight?: number;
   }): Promise<{ visible: boolean }>;

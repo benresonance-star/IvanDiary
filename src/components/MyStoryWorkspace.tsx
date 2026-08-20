@@ -64,7 +64,7 @@ import {
   type SketchSurfaceHandle,
 } from "../sketch/SketchSurface";
 import { NativeSketchPreview } from "../sketch/NativeSketchPreview";
-import { nativeDrawingPreservesShapeStack } from "../sketch/nativeDrawingLayering";
+import { nativeOverlayShapes } from "../sketch/nativeDrawingLayering";
 import { browserFileToAsset, readImageSize } from "../utils/assets";
 import { readableTextColour } from "../utils/colour";
 import { createId } from "../utils/id";
@@ -359,7 +359,7 @@ export function MyStoryWorkspace({
   const placeShape = async (shapeKind: Exclude<ShapeKind, "polygon" | "freeform">) => {
     const shape: ShapeObject = { id: createId(), type: "shape", shapeKind, pageId: page.id,
       position: { x: 0.38, y: 0.34 }, frame: { width: 0.24, height: 0.24 }, fillColor: penSettings.color,
-      outlineColor: "#3f3528", outlineWidth: 3, layer: "above-sketch", revision: 0, createdAt: new Date().toISOString() };
+      outlineColor: "#3f3528", outlineWidth: 3, layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString() };
     if (await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id })) {
       setPenHudOpen(false); onToolChange("arrange"); setSelectedShapeId(shape.id); setSelection(undefined); setSelectedRecordingId(undefined);
     }
@@ -380,7 +380,7 @@ export function MyStoryWorkspace({
     const clamped = clampPosition(position, frame);
     const shape: ShapeObject = { id: createId(), type: "shape", shapeKind: "freeform", pageId: page.id, position: clamped, frame,
       points: anchors.map(({ x, y }) => ({ x: (x - clamped.x) / frame.width, y: (y - clamped.y) / frame.height })),
-      fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3, layer: "above-sketch", revision: 0, createdAt: new Date().toISOString() };
+      fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3, layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString() };
     if (await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id })) {
       setFreeformDraft(false); setNotice(undefined); onToolChange("arrange"); setSelectedShapeId(shape.id);
     }
@@ -393,7 +393,7 @@ export function MyStoryWorkspace({
     const clamped = clampPosition(position, frame);
     const shape: ShapeObject = { id: createId(), type: "shape", shapeKind: "polygon", pageId: page.id, position: clamped, frame,
       points: polygonDraft.map(({ x, y }) => ({ x: (x - clamped.x) / frame.width, y: (y - clamped.y) / frame.height })),
-      fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3, layer: "above-sketch", revision: 0, createdAt: new Date().toISOString() };
+      fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3, layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString() };
     if (await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id })) {
       setPolygonDraft(null); setNotice(undefined); onToolChange("arrange"); setSelectedShapeId(shape.id);
     }
@@ -470,7 +470,6 @@ export function MyStoryWorkspace({
   }, [page.drawingDocumentId, tool]);
 
   const overlayEnabled =
-    nativeDrawingPreservesShapeStack(page.shapes ?? []) &&
     !navigationObscured &&
     !penHudOpen &&
     !shareChooserOpen &&
@@ -495,6 +494,7 @@ export function MyStoryWorkspace({
       ? penSettings.fingerErasing === true
       : penSettings.fingerDrawing !== false,
       twoFingerUndo: twoFingerUndoEnabled,
+      overlayShapes: nativeOverlayShapes(page.shapes ?? []),
       paperRef,
       protectedHeaderRef: headerRef,
       toolPaletteRef,

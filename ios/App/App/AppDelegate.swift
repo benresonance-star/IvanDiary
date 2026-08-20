@@ -151,6 +151,7 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         let legacyInk = legacyInkDocument(from: call)
         let clipToCircle = call.getString("clipShape") == "circle"
         let grid = drawingGrid(from: call)
+        let overlayShapes = nativeOverlayShapes(from: call)
 
         Task { @MainActor [weak self] in
             guard let self else {
@@ -176,7 +177,8 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
                     grid: grid,
                     frame: frame,
                     clipToCircle: clipToCircle,
-                    legacyInk: legacyInk
+                    legacyInk: legacyInk,
+                    overlayShapes: overlayShapes
                 )
                 call.resolve([
                     "visible": true,
@@ -204,6 +206,9 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
             : webViewRect(from: call)
         let clipToCircle = call.getString("clipShape").map { $0 == "circle" }
         let grid = call.getObject("grid") == nil ? nil : drawingGrid(from: call)
+        let overlayShapes = call.getArray("overlayShapes") == nil
+            ? nil
+            : nativeOverlayShapes(from: call)
 
         Task { @MainActor [weak self] in
             guard let self else {
@@ -221,14 +226,15 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
                 tool: tool,
                 grid: grid,
                 frame: frame,
-                clipToCircle: clipToCircle
+                clipToCircle: clipToCircle,
+                overlayShapes: overlayShapes
             )
             call.resolve(["visible": overlay.isPresented])
         }
     }
 
     private func drawingGrid(from call: CAPPluginCall) -> DrawingGridSettings {
-        guard let value = call.getObject("grid") else { return .off }
+        let value = call.getObject("grid") ?? [:]
         let enabled = value["enabled"] as? Bool ?? false
         let snapToGrid = value["snapToGrid"] as? Bool ?? true
         let spacing = value["spacing"] as? Double ?? 60
@@ -255,6 +261,35 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
             type: type,
             colorHex: colorHex
         )
+    }
+
+    private func nativeOverlayShapes(from call: CAPPluginCall) -> [NativeOverlayShape] {
+        (call.getArray("overlayShapes", JSObject.self) ?? []).compactMap { value in
+            guard let kindValue = value["kind"] as? String,
+                  let kind = NativeOverlayShape.Kind(rawValue: kindValue),
+                  let x = doubleValue(value["x"]),
+                  let y = doubleValue(value["y"]),
+                  let width = doubleValue(value["width"]),
+                  let height = doubleValue(value["height"]),
+                  width > 0, height > 0 else {
+                return nil
+            }
+            let points = (value["points"] as? [Any] ?? []).compactMap { rawPoint -> CGPoint? in
+                guard let point = rawPoint as? JSObject,
+                      let pointX = doubleValue(point["x"]),
+                      let pointY = doubleValue(point["y"]) else { return nil }
+                return CGPoint(x: pointX, y: pointY)
+            }
+            return NativeOverlayShape(
+                kind: kind,
+                frame: CGRect(x: x, y: y, width: width, height: height),
+                rotationDegrees: CGFloat(doubleValue(value["rotationDegrees"]) ?? 0),
+                points: points,
+                fillColorHex: value["fillColor"] as? String,
+                outlineColorHex: value["outlineColor"] as? String,
+                outlineWidth: CGFloat(doubleValue(value["outlineWidth"]) ?? 0)
+            )
+        }
     }
 
     @objc public func hideOverlay(_ call: CAPPluginCall) {

@@ -7,6 +7,7 @@ import {
 import { toLegacyInkDocument } from "../sketch/legacyInk";
 import type { SketchRepository } from "../sketch/types";
 import type { PenNib } from "../sketch/types";
+import type { NativeOverlayShape } from "../native/contracts";
 import type { OverlayRect } from "../sketch/drawingOverlayLayout";
 
 export type NativeDrawingOverlayRequest = {
@@ -28,6 +29,7 @@ export type NativeDrawingOverlayRequest = {
   gridPageHeight?: number;
   gridDocumentWidth?: number;
   gridDocumentHeight?: number;
+  overlayShapes?: NativeOverlayShape[];
   sketchRepository: SketchRepository;
   onError?: (message: string) => void;
 };
@@ -70,6 +72,7 @@ const defaultOperations: NativeDrawingOverlayOperations = {
       gridPageHeight: request.gridPageHeight,
       gridDocumentWidth: request.gridDocumentWidth,
       gridDocumentHeight: request.gridDocumentHeight,
+      overlayShapes: request.overlayShapes,
     }),
   update: (request) =>
     updateNativeDrawingOverlay({
@@ -89,6 +92,7 @@ const defaultOperations: NativeDrawingOverlayOperations = {
       gridPageHeight: request.gridPageHeight,
       gridDocumentWidth: request.gridDocumentWidth,
       gridDocumentHeight: request.gridDocumentHeight,
+      overlayShapes: request.overlayShapes,
     }),
 };
 

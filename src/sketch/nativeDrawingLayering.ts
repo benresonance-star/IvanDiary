@@ -1,13 +1,20 @@
 import type { ShapeObject } from "../domain/models";
+import type { NativeOverlayShape } from "../native/contracts";
+import { shapeBoundaryVertices } from "../components/shapeGeometry";
 
-/**
- * PencilKit is hosted above the WebView while it is accepting input. It can
- * therefore preserve the canvas stack only when every shape belongs behind
- * the sketch layer. Above-sketch shapes use the web drawing surface so their
- * visual order stays the same in Draw, Edit, and View modes.
- */
-export function nativeDrawingPreservesShapeStack(
-  shapes: readonly ShapeObject[],
-): boolean {
-  return shapes.every((shape) => shape.layer === "behind-sketch");
+export function nativeOverlayShapes(shapes: readonly ShapeObject[]): NativeOverlayShape[] {
+  return shapes
+    .filter((shape) => shape.layer !== "behind-sketch")
+    .map((shape) => ({
+      kind: shape.shapeKind === "circle" ? "circle" : shape.shapeKind === "freeform" ? "freeform" : "polygon",
+      x: shape.position.x,
+      y: shape.position.y,
+      width: shape.frame?.width ?? .24,
+      height: shape.frame?.height ?? .24,
+      rotationDegrees: shape.rotationDegrees ?? 0,
+      points: shapeBoundaryVertices(shape),
+      fillColor: shape.fillColor,
+      outlineColor: shape.outlineColor,
+      outlineWidth: shape.outlineWidth,
+    }));
 }

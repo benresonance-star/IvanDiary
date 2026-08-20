@@ -22,4 +22,16 @@ describe("freeform geometry", () => {
   it("rejects a tiny accidental gesture", () => {
     expect(simplifyFreeformStroke([{ x: .5, y: .5 }, { x: .501, y: .501 }, { x: .502, y: .502 }], 1000, 800)).toEqual([]);
   });
+
+  it("retains a distinctive corner without increasing the node limit", () => {
+    const points = [
+      ...Array.from({ length: 30 }, (_, index) => ({ x: .2 + index * .02, y: .2 })),
+      { x: .82, y: .5 },
+      ...Array.from({ length: 30 }, (_, index) => ({ x: .78 - index * .02, y: .8 })),
+      { x: .18, y: .5 },
+    ];
+    const anchors = simplifyFreeformStroke(points, 1000, 800);
+    expect(anchors.length).toBeLessThanOrEqual(12);
+    expect(anchors.some(({ x, y }) => x > .8 && Math.abs(y - .5) < .02)).toBe(true);
+  });
 });

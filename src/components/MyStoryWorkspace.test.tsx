@@ -157,7 +157,7 @@ describe("MyStoryWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Triangle" }));
     await waitFor(() => expect(commit).toHaveBeenCalledWith(expect.objectContaining({
       type: "my-story-shape-add",
-      shape: expect.objectContaining({ type: "shape", shapeKind: "triangle", fillColor: "#171410" }),
+      shape: expect.objectContaining({ type: "shape", shapeKind: "triangle", fillColor: "#171410", layer: "behind-sketch" }),
     })));
   });
 

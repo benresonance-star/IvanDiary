@@ -29,4 +29,17 @@ describe("FreeformDraftEditor", () => {
     fireEvent.keyDown(screen.getByRole("application"), { key: "Enter" });
     expect(onFinish.mock.calls[0]?.[0]).toHaveLength(8);
   });
+
+  it("does not stroke a closing line while the outline is being drawn", () => {
+    const page = document.createElement("div");
+    vi.spyOn(page, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800, toJSON: () => ({}) });
+    const view = render(<FreeformDraftEditor color="#335577" onCancel={vi.fn()} onFinish={vi.fn()} onInvalid={vi.fn()} pageRef={{ current: page }} />);
+    const surface = screen.getByRole("application");
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 41, clientX: 200, clientY: 200 });
+    fireEvent.pointerMove(surface, { pointerId: 41, clientX: 500, clientY: 200 });
+    fireEvent.pointerMove(surface, { pointerId: 41, clientX: 500, clientY: 500 });
+
+    expect(view.container.querySelector("path")).not.toBeInTheDocument();
+    expect(view.container.querySelector("polyline")).toHaveAttribute("fill", "none");
+  });
 });

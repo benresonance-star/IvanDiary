@@ -11,6 +11,7 @@ import { measureDrawingOverlayLayout } from "../sketch/drawingOverlayLayout";
 import type { SketchRepository } from "../sketch/types";
 import type { PenNib } from "../sketch/types";
 import type { DrawingGridSettings } from "../domain/models";
+import type { NativeOverlayShape } from "../native/contracts";
 import {
   nativeDrawingOverlayCoordinator,
   type NativeDrawingOverlayState,
@@ -53,6 +54,7 @@ export function useNativeDrawingOverlay({
   onError,
   clipShape,
   grid,
+  overlayShapes,
 }: {
   documentId: string;
   enabled: boolean;
@@ -70,6 +72,7 @@ export function useNativeDrawingOverlay({
   onError?: (message: string) => void;
   clipShape?: "circle";
   grid?: DrawingGridSettings;
+  overlayShapes?: NativeOverlayShape[];
 }) {
   const ownerRef = useRef(Symbol("native-drawing-overlay-owner"));
   const onErrorRef = useRef(onError);
@@ -226,6 +229,7 @@ export function useNativeDrawingOverlay({
       gridPageHeight: gridPageSize.height,
       gridDocumentWidth: gridDocumentSize.width,
       gridDocumentHeight: gridDocumentSize.height,
+      overlayShapes,
       sketchRepository,
       onError: (message) => onErrorRef.current?.(message),
     });
@@ -246,6 +250,7 @@ export function useNativeDrawingOverlay({
     fingerDrawing,
     twoFingerUndo,
     overlayRect,
+    overlayShapes,
     sketchRepository,
     tool,
     width,

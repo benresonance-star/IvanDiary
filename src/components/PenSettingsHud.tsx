@@ -109,8 +109,9 @@ export function PenSettingsHud({
             role="tab"
             type="button"
           >
-            Pen
+            Pens
           </button> : null}
+          {onShapeSelect ? <button aria-controls="shape-settings-panel" aria-selected={activePanel === "shapes"} data-help-topic="shape-tab" id="shape-settings-tab" onClick={() => setActivePanel("shapes")} role="tab" type="button">Shapes</button> : null}
           <button
             aria-controls="grid-settings-panel"
             aria-selected={activePanel === "grid"}
@@ -120,9 +121,8 @@ export function PenSettingsHud({
             role="tab"
             type="button"
           >
-            Grid
+            Grids
           </button>
-          {onShapeSelect ? <button aria-controls="shape-settings-panel" aria-selected={activePanel === "shapes"} id="shape-settings-tab" onClick={() => setActivePanel("shapes")} role="tab" type="button">Shapes</button> : null}
         </div>
       ) : null}
 

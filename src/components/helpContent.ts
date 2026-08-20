@@ -89,12 +89,16 @@ export const HELP_TIPS = {
     body: "Create another page for this date or sketchbook.",
   },
   "pen-tab": {
-    title: "Pen settings",
+    title: "Pens",
     body: "Choose how your pen looks and whether you can draw with a finger.",
   },
   "grid-tab": {
-    title: "Grid settings",
+    title: "Grids",
     body: "Show and adjust a guide for straight drawing.",
+  },
+  "shape-tab": {
+    title: "Shapes",
+    body: "Choose a ready-made shape, custom polygon, or freeform filled shape to add to the canvas.",
   },
   "finger-drawing": {
     title: "Draw with finger",

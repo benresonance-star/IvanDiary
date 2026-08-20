@@ -218,7 +218,7 @@ describe("PageWorkspace share", () => {
     fireEvent.click(screen.getByRole("button", { name: "Circle" }));
     await waitFor(() => expect(commit).toHaveBeenCalledWith({
       type: "page-object-add", pageId: page.id,
-      object: expect.objectContaining({ type: "shape", shapeKind: "circle", frame: { width: 0.24, height: 0.24 } }),
+      object: expect.objectContaining({ type: "shape", shapeKind: "circle", frame: { width: 0.24, height: 0.24 }, fillColor: "#171410", layer: "behind-sketch" }),
     }));
   });
 

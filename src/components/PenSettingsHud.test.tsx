@@ -4,6 +4,25 @@ import { describe, expect, it, vi } from "vitest";
 import { PenSettingsHud } from "./PenSettingsHud";
 
 describe("PenSettingsHud", () => {
+  it("orders the drawing sections as Pens, Shapes, Grids", () => {
+    render(
+      <PenSettingsHud
+        grid={{ enabled: false, snapToGrid: false, spacing: 60, rotationDegrees: 0, type: "lines", color: "#435b70" }}
+        onChange={vi.fn()}
+        onDone={vi.fn()}
+        onGridChange={vi.fn()}
+        onShapeSelect={vi.fn()}
+        settings={{ color: "#171410", width: 4.2, opacity: 1 }}
+      />,
+    );
+
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Pens",
+      "Shapes",
+      "Grids",
+    ]);
+  });
+
   it("keeps finger erasing off by default and changes it independently", () => {
     const onChange = vi.fn();
     render(
@@ -233,7 +252,7 @@ describe("PenSettingsHud", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Grid" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Grids" }));
     fireEvent.click(screen.getByRole("switch", { name: /Drawing grid.*Off/i }));
     expect(onGridChange).toHaveBeenCalledWith({
       enabled: true,
@@ -264,7 +283,7 @@ describe("PenSettingsHud", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Grid" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Grids" }));
     fireEvent.click(
       screen.getByRole("switch", { name: /Snap pen to grid.*On/i }),
     );
@@ -302,13 +321,13 @@ describe("PenSettingsHud", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Grid" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Grids" }));
 
     expect(onChange).not.toHaveBeenCalled();
     expect(
       screen.queryByRole("switch", { name: "Draw with finger" }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "Pen" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Pens" }));
     expect(
       screen.getByRole("switch", { name: "Draw with finger" }),
     ).toHaveAttribute("aria-checked", "true");
@@ -333,7 +352,7 @@ describe("PenSettingsHud", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Grid" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Grids" }));
     fireEvent.click(screen.getByRole("button", { name: "Large" }));
     expect(onGridChange).toHaveBeenCalledWith({
       enabled: true,
@@ -383,7 +402,7 @@ describe("PenSettingsHud", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Grid" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Grids" }));
     expect(
       screen.getByRole("group", { name: "Grid rotation" }),
     ).toBeInTheDocument();

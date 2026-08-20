@@ -5,6 +5,7 @@ import type {
   PencilKitOverlayRect,
   PencilKitPlugin,
   PencilKitPreview,
+  NativeOverlayShape,
 } from "./contracts";
 import type { DrawingGridSettings } from "../domain/models";
 
@@ -88,6 +89,7 @@ export async function showNativeDrawingOverlay(options: {
   gridPageHeight?: number;
   gridDocumentWidth?: number;
   gridDocumentHeight?: number;
+  overlayShapes?: NativeOverlayShape[];
 }): Promise<{ importedLegacyStrokes: boolean }> {
   lastUpdateKey = rectKey(options.rect);
   const result = await enqueueOverlayCall(() =>
@@ -115,6 +117,7 @@ export async function updateNativeDrawingOverlay(options: {
   gridPageHeight?: number;
   gridDocumentWidth?: number;
   gridDocumentHeight?: number;
+  overlayShapes?: NativeOverlayShape[];
 }): Promise<void> {
   const key = [
     options.color ?? "",
@@ -137,6 +140,7 @@ export async function updateNativeDrawingOverlay(options: {
     options.gridPageHeight ?? "",
     options.gridDocumentWidth ?? "",
     options.gridDocumentHeight ?? "",
+    JSON.stringify(options.overlayShapes ?? []),
     rectKey(options.rect),
   ].join("|");
   if (key === lastUpdateKey) {

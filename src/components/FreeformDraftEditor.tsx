@@ -1,7 +1,7 @@
 import { useRef, useState, type PointerEvent, type RefObject } from "react";
 
 import type { Position } from "../domain/models";
-import { freeformPath, simplifyFreeformStroke } from "./freeformGeometry";
+import { simplifyFreeformStroke } from "./freeformGeometry";
 
 export function FreeformDraftEditor({ color, onCancel, onFinish, onInvalid, pageRef }: {
   color: string;
@@ -74,7 +74,14 @@ export function FreeformDraftEditor({ color, onCancel, onFinish, onInvalid, page
       tabIndex={0}
     >
       <svg aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 100 100">
-        {points.length >= 3 ? <path d={freeformPath(points)} fill={color} fillOpacity=".42" stroke={color} strokeWidth=".5" /> : null}
+        {points.length >= 2 ? <polyline
+          fill="none"
+          points={points.map(({ x, y }) => `${x * 100},${y * 100}`).join(" ")}
+          stroke={color}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth=".5"
+        /> : null}
       </svg>
     </div>
     {/* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}

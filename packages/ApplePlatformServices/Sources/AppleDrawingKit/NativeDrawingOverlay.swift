@@ -2,6 +2,27 @@
 import PencilKit
 import UIKit
 
+public struct NativeOverlayShape: Sendable {
+    public enum Kind: String, Sendable { case circle, polygon, freeform }
+    public let kind: Kind
+    public let frame: CGRect
+    public let rotationDegrees: CGFloat
+    public let points: [CGPoint]
+    public let fillColorHex: String?
+    public let outlineColorHex: String?
+    public let outlineWidth: CGFloat
+
+    public init(kind: Kind, frame: CGRect, rotationDegrees: CGFloat, points: [CGPoint], fillColorHex: String?, outlineColorHex: String?, outlineWidth: CGFloat) {
+        self.kind = kind
+        self.frame = frame
+        self.rotationDegrees = rotationDegrees
+        self.points = points
+        self.fillColorHex = fillColorHex
+        self.outlineColorHex = outlineColorHex
+        self.outlineWidth = outlineWidth
+    }
+}
+
 @MainActor
 public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGestureRecognizerDelegate {
     public private(set) var documentID: String?
@@ -21,6 +42,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
     private let canvasView = PKCanvasView()
     private let gridGuideView = DrawingGridGuideView()
     private let gridInputView = GridStrokeInputView()
+    private let shapeOverlayView = UIView()
     private let store: any PencilDrawingStore
     private lazy var twoFingerUndoRecognizer: UITapGestureRecognizer = {
         let recognizer = UITapGestureRecognizer(
@@ -109,6 +131,10 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         gridInputView.translatesAutoresizingMaskIntoConstraints = false
         gridInputView.isUserInteractionEnabled = false
         addSubview(gridInputView)
+        shapeOverlayView.translatesAutoresizingMaskIntoConstraints = false
+        shapeOverlayView.isUserInteractionEnabled = false
+        shapeOverlayView.backgroundColor = .clear
+        addSubview(shapeOverlayView)
         NSLayoutConstraint.activate([
             gridGuideView.leadingAnchor.constraint(equalTo: leadingAnchor),
             gridGuideView.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -121,7 +147,11 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
             gridInputView.leadingAnchor.constraint(equalTo: leadingAnchor),
             gridInputView.trailingAnchor.constraint(equalTo: trailingAnchor),
             gridInputView.topAnchor.constraint(equalTo: topAnchor),
-            gridInputView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            gridInputView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            shapeOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            shapeOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            shapeOverlayView.topAnchor.constraint(equalTo: topAnchor),
+            shapeOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
         gridInputView.onStroke = { [weak self] points in
             self?.commitGridStroke(points)
@@ -155,7 +185,8 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         grid: DrawingGridSettings = .off,
         frame: CGRect,
         clipToCircle: Bool = false,
-        legacyInk: LegacyInkDocument? = nil
+        legacyInk: LegacyInkDocument? = nil,
+        overlayShapes: [NativeOverlayShape] = []
     ) throws -> Bool {
         pendingSave?.cancel()
         let previousDocumentID = self.documentID
@@ -175,6 +206,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         layoutIfNeeded()
         applyClipping(circle: clipToCircle)
         apply(tool: tool)
+        renderOverlayShapes(overlayShapes, grid: grid)
         if !isPresented || previousDocumentID != documentID {
             try loadDrawing(documentID: documentID)
         }
@@ -221,7 +253,8 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         tool: NativeDrawingTool?,
         grid: DrawingGridSettings? = nil,
         frame: CGRect?,
-        clipToCircle: Bool? = nil
+        clipToCircle: Bool? = nil,
+        overlayShapes: [NativeOverlayShape]? = nil
     ) {
         if let color {
             self.color = color
@@ -250,10 +283,60 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         if let clipToCircle {
             applyClipping(circle: clipToCircle)
         }
+        if let overlayShapes {
+            renderOverlayShapes(overlayShapes, grid: self.grid)
+        }
         if let tool {
             apply(tool: tool)
         } else if canvasView.tool is PKInkingTool {
             apply(tool: .pen)
+        }
+    }
+
+    private func renderOverlayShapes(_ shapes: [NativeOverlayShape], grid: DrawingGridSettings) {
+        shapeOverlayView.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+        let pageWidth = max(grid.pageSize.width, 1)
+        let pageHeight = max(grid.pageSize.height, 1)
+        for shape in shapes {
+            let layer = CAShapeLayer()
+            let frame = CGRect(
+                x: shape.frame.minX * pageWidth - grid.origin.x,
+                y: shape.frame.minY * pageHeight - grid.origin.y,
+                width: shape.frame.width * pageWidth,
+                height: shape.frame.height * pageHeight
+            )
+            layer.frame = frame
+            let path = UIBezierPath()
+            if shape.kind == .circle {
+                path.append(UIBezierPath(ovalIn: layer.bounds.insetBy(dx: layer.bounds.width * 0.04, dy: layer.bounds.height * 0.04)))
+            } else {
+                let points = shape.points.map { CGPoint(x: $0.x * layer.bounds.width, y: $0.y * layer.bounds.height) }
+                guard let first = points.first else { continue }
+                path.move(to: first)
+                if shape.kind == .freeform && points.count >= 3 {
+                    for index in points.indices {
+                        let previous = points[(index - 1 + points.count) % points.count]
+                        let current = points[index]
+                        let next = points[(index + 1) % points.count]
+                        let after = points[(index + 2) % points.count]
+                        path.addCurve(
+                            to: next,
+                            controlPoint1: CGPoint(x: current.x + (next.x - previous.x) / 6, y: current.y + (next.y - previous.y) / 6),
+                            controlPoint2: CGPoint(x: next.x - (after.x - current.x) / 6, y: next.y - (after.y - current.y) / 6)
+                        )
+                    }
+                } else {
+                    points.dropFirst().forEach { path.addLine(to: $0) }
+                }
+                path.close()
+            }
+            layer.path = path.cgPath
+            layer.fillColor = shape.fillColorHex.map { PencilInkColor.fromHexRGB($0).cgColor } ?? UIColor.clear.cgColor
+            layer.strokeColor = shape.outlineColorHex.map { PencilInkColor.fromHexRGB($0).cgColor } ?? UIColor.clear.cgColor
+            layer.lineWidth = shape.outlineColorHex == nil ? 0 : shape.outlineWidth
+            layer.lineJoin = .round
+            layer.setAffineTransform(CGAffineTransform(rotationAngle: shape.rotationDegrees * .pi / 180))
+            shapeOverlayView.layer.addSublayer(layer)
         }
     }
 
