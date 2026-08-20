@@ -424,7 +424,7 @@ export function DiaryPageStrip({
   return (
     <nav
       aria-label={collectionLabel}
-      className={arrange ? "diary-page-strip" : "story-page-strip"}
+      className={`page-strip ${arrange ? "diary-page-strip" : "story-page-strip"}`}
     >
       {arrange ? (
         <div className="diary-page-list" role="list">

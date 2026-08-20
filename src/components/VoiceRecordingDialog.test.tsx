@@ -7,8 +7,11 @@ import { VoiceRecordingDialog } from "./VoiceRecordingDialog";
 describe("VoiceRecordingDialog", () => {
   it("records, pauses, reviews, and places only after approval", async () => {
     const onPlace = vi.fn();
+    const audio = new BrowserJournalAudioMock();
+    const stopMonitoring = vi.spyOn(audio, "stopMonitoring");
+    const startRecording = vi.spyOn(audio, "start");
     render(<VoiceRecordingDialog
-      audio={new BrowserJournalAudioMock()}
+      audio={audio}
       files={new BrowserJournalFilesMock()}
       onCancel={vi.fn()}
       onPlace={onPlace}
@@ -17,6 +20,10 @@ describe("VoiceRecordingDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
     expect(await screen.findByRole("button", { name: "Pause recording" })).toBeVisible();
+    expect(stopMonitoring).toHaveBeenCalled();
+    expect(stopMonitoring.mock.invocationCallOrder[0]).toBeLessThan(
+      startRecording.mock.invocationCallOrder[0]!,
+    );
     expect(screen.getByRole("img", { name: "Microphone level" })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Pause recording" }));

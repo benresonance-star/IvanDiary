@@ -222,6 +222,20 @@ describe("PageWorkspace share", () => {
     }));
   });
 
+  it("creates an editable freeform shape from the accessible starter", async () => {
+    const commit = vi.fn(async () => true);
+    const page = diaryPage();
+    renderWorkspace({ commit, page, tool: "pen" });
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Shapes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Freeform" }));
+    fireEvent.keyDown(screen.getByRole("application", { name: /Draw a freeform shape outline/ }), { key: "Enter" });
+    await waitFor(() => expect(commit).toHaveBeenCalledWith({
+      type: "page-object-add", pageId: page.id,
+      object: expect.objectContaining({ type: "shape", shapeKind: "freeform", points: expect.any(Array) }),
+    }));
+  });
+
   it("blocks share while a recording is in progress", async () => {
     renderWorkspace();
     fireEvent.click(screen.getByRole("button", { name: "Voice" }));

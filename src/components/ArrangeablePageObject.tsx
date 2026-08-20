@@ -71,6 +71,7 @@ export function ArrangeablePageObject({
   frame,
   layer,
   maximumFrame,
+  minimumFrame,
   objectLabel,
   objectId,
   onCommit,
@@ -84,6 +85,7 @@ export function ArrangeablePageObject({
   position,
   selected,
   showShortcuts,
+  stackIndex,
 }: {
   arrange: boolean;
   canResize?: boolean;
@@ -95,6 +97,7 @@ export function ArrangeablePageObject({
   frame: Size;
   layer: "above-sketch" | "behind-sketch";
   maximumFrame?: Size;
+  minimumFrame?: Size;
   objectLabel: string;
   objectId: string;
   onCommit: (change: LayoutChange) => void;
@@ -108,6 +111,7 @@ export function ArrangeablePageObject({
   position: Position;
   selected: boolean;
   showShortcuts: boolean;
+  stackIndex?: number;
 }) {
   const activeRef = useRef<ActiveInteraction | undefined>(undefined);
   const [layout, setLayout] = useState<PageLayout>({ position, frame });
@@ -182,6 +186,7 @@ export function ArrangeablePageObject({
         {
           aspectRatio: aspectLock ? aspectRatio : undefined,
           maximum: maximumFrame,
+          minimum: minimumFrame,
         },
       ),
     );
@@ -221,6 +226,7 @@ export function ArrangeablePageObject({
     const next = resizeLayout(layout, delta, {
       aspectRatio: aspectLock ? aspectRatio : undefined,
       maximum: maximumFrame,
+      minimum: minimumFrame,
     });
     updateLayout(next);
     onCommit({ kind: "resize", before: layout, after: next });
@@ -276,6 +282,7 @@ export function ArrangeablePageObject({
     top: `${layout.position.y * 100}%`,
     width: `${layout.frame.width * 100}%`,
     height: `${layout.frame.height * 100}%`,
+    ...(stackIndex === undefined ? {} : { zIndex: 20 + stackIndex }),
   };
 
   return (
@@ -304,8 +311,8 @@ export function ArrangeablePageObject({
       tabIndex={arrange ? 0 : undefined}
     >
       {children}
-      {arrange && selected ? (
-        <>
+      {arrange && selected && portalTarget ? createPortal(
+        <div className="arrange-controller-overlay" style={style}>
           {onToggleAspectLock ? (
             <button
               aria-label={
@@ -446,7 +453,8 @@ export function ArrangeablePageObject({
               <p>Do you want to delete “{deleteDescription}”?</p>
             </ConfirmDialog>
           ) : null}
-        </>
+        </div>,
+        portalTarget,
       ) : null}
     </div>
   );

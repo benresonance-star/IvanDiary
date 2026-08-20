@@ -119,16 +119,17 @@ export type LinkObject = PageObjectBase & {
   previewAsset?: AssetRef;
 };
 
-export type ShapeKind = "circle" | "rectangle" | "triangle" | "cross" | "polygon";
+export type ShapeKind = "circle" | "rectangle" | "triangle" | "cross" | "polygon" | "freeform";
 
 export type ShapeObject = PageObjectBase & {
   type: "shape";
   shapeKind: ShapeKind;
-  /** Polygon vertices normalized to the shape frame. */
+  /** Polygon vertices or freeform curve anchors normalized to the shape frame. */
   points?: Position[];
   fillColor?: string;
   outlineColor?: string;
   outlineWidth: number;
+  rotationDegrees?: number;
 };
 
 export type PageObject =
@@ -213,6 +214,13 @@ export type MyStoryLink = {
   createdAt: IsoDateTime;
 };
 
+export type MyStoryRenderItemKind = "text" | "link" | "photo" | "recording" | "shape";
+
+export type MyStoryRenderItemRef = {
+  kind: MyStoryRenderItemKind;
+  id: EntityId;
+};
+
 export type MyStoryPage = {
   id: EntityId;
   drawingDocumentId: EntityId;
@@ -225,6 +233,7 @@ export type MyStoryPage = {
   links: MyStoryLink[];
   recordings: MyStoryVoiceRecording[];
   shapes?: ShapeObject[];
+  renderOrder?: MyStoryRenderItemRef[];
   revision: number;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
@@ -415,6 +424,7 @@ export type DocumentOperation = OperationBase &
       type: "page-object-add";
       pageId: EntityId;
       object: PageObject;
+      renderIndex?: number;
     }
     | {
       type: "page-drawing-grid-update";
@@ -532,10 +542,11 @@ export type DocumentOperation = OperationBase &
       pageId: EntityId;
       recordingId: EntityId;
     }
-    | { type: "my-story-shape-add"; pageId: EntityId; shape: ShapeObject }
+    | { type: "my-story-shape-add"; pageId: EntityId; shape: ShapeObject; renderIndex?: number }
     | { type: "my-story-shape-update"; pageId: EntityId; shape: ShapeObject }
     | { type: "my-story-shape-delete"; pageId: EntityId; shapeId: EntityId }
     | { type: "my-story-shapes-reorder"; pageId: EntityId; shapeIds: EntityId[] }
+    | { type: "my-story-render-order-update"; pageId: EntityId; renderOrder: MyStoryRenderItemRef[] }
     | {
       type: "my-story-link-add";
       pageId: EntityId;

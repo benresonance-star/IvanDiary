@@ -12,6 +12,7 @@ public final class JournalAudioRecorder: NSObject, AVAudioRecorderDelegate {
     private var recorder: AVAudioRecorder?
     private var monitorRecorder: AVAudioRecorder?
     private var monitorURL: URL?
+    private var monitoringGeneration = 0
     private var startedAt: Date?
 
     public init(fileManager: FileManager = .default) throws {
@@ -79,6 +80,8 @@ public final class JournalAudioRecorder: NSObject, AVAudioRecorderDelegate {
 
     public func startMonitoring() async throws {
         guard recorder == nil, monitorRecorder == nil else { return }
+        monitoringGeneration += 1
+        let requestedGeneration = monitoringGeneration
         let granted: Bool
         if #available(iOS 17.0, *) {
             granted = await AVAudioApplication.requestRecordPermission()
@@ -88,9 +91,16 @@ public final class JournalAudioRecorder: NSObject, AVAudioRecorderDelegate {
             }
         }
         guard granted else { throw NSError(domain: "JournalAudio", code: 1, userInfo: ["code": "PERMISSION_DENIED"]) }
+        // Permission requests suspend this MainActor method. A recording or a
+        // newer monitoring request may have started while it was suspended.
+        guard requestedGeneration == monitoringGeneration,
+              recorder == nil,
+              monitorRecorder == nil else { return }
         try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try session.setActive(true)
-        let url = temporaryRoot.appendingPathComponent("microphone-monitor-(UUID().uuidString)").appendingPathExtension("m4a")
+        let url = temporaryRoot
+            .appendingPathComponent("microphone-monitor-\(UUID().uuidString)")
+            .appendingPathExtension("m4a")
         let created = try AVAudioRecorder(url: url, settings: [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC), AVSampleRateKey: 22_050,
             AVNumberOfChannelsKey: 1, AVEncoderAudioQualityKey: AVAudioQuality.min.rawValue
@@ -102,6 +112,7 @@ public final class JournalAudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     public func stopMonitoring() {
+        monitoringGeneration += 1
         monitorRecorder?.stop()
         monitorRecorder = nil
         if let monitorURL { try? fileManager.removeItem(at: monitorURL) }

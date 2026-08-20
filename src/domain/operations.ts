@@ -11,6 +11,7 @@ import {
 } from "./models";
 import { isHexColor, readableTextColour } from "../utils/colour";
 import { webHttpUrl } from "../utils/webHttpUrl";
+import { normalizedStoryRenderOrder, renderItemKey } from "./storyRenderOrder";
 
 export class OperationConflictError extends Error {
   constructor(message: string) {
@@ -549,14 +550,13 @@ export function applyDocumentOperation(
       next = applyFavourite(snapshot, operation);
       break;
     case "page-object-add":
-      next = updatePage(snapshot, operation.pageId, (page) => ({
-        ...page,
-        objects: page.objects.some((object) => object.id === operation.object.id)
-          ? page.objects
-          : [...page.objects, operation.object],
-        revision: page.revision + 1,
-        updatedAt: operation.createdAt,
-      }));
+      next = updatePage(snapshot, operation.pageId, (page) => {
+        if (page.objects.some((object) => object.id === operation.object.id)) return page;
+        const objects = [...page.objects];
+        const index = operation.renderIndex === undefined ? objects.length : Math.max(0, Math.min(objects.length, operation.renderIndex));
+        objects.splice(index, 0, operation.object);
+        return { ...page, objects, revision: page.revision + 1, updatedAt: operation.createdAt };
+      });
       break;
     case "page-drawing-grid-update": {
       if (
@@ -939,7 +939,18 @@ export function applyDocumentOperation(
       }));
       break;
     case "my-story-shape-add":
-      next = updateStoryPage(snapshot, operation.pageId, (page) => ({ ...page, shapes: [...(page.shapes ?? []), operation.shape], revision: page.revision + 1, updatedAt: operation.createdAt }));
+      next = updateStoryPage(snapshot, operation.pageId, (page) => {
+        if ((page.shapes ?? []).some(({ id }) => id === operation.shape.id)) return page;
+        const withShape = { ...page, shapes: [...(page.shapes ?? []), operation.shape] };
+        const order = normalizedStoryRenderOrder(withShape);
+        const shapeKey = `shape:${operation.shape.id}`;
+        const withoutShape = order.filter((item) => renderItemKey(item) !== shapeKey);
+        const index = operation.renderIndex === undefined
+          ? withoutShape.length
+          : Math.max(0, Math.min(withoutShape.length, operation.renderIndex));
+        withoutShape.splice(index, 0, { kind: "shape", id: operation.shape.id });
+        return { ...withShape, renderOrder: withoutShape, revision: page.revision + 1, updatedAt: operation.createdAt };
+      });
       break;
     case "my-story-shape-update":
       next = updateStoryPage(snapshot, operation.pageId, (page) => ({ ...page, shapes: (page.shapes ?? []).map((shape) => shape.id === operation.shape.id ? operation.shape : shape), revision: page.revision + 1, updatedAt: operation.createdAt }));
@@ -952,6 +963,15 @@ export function applyDocumentOperation(
         const shapes = page.shapes ?? [];
         if (!isExactReorder(shapes.map(({ id }) => id), operation.shapeIds)) throw new OperationConflictError("Reordered story shapes must contain every shape exactly once.");
         return { ...page, shapes: operation.shapeIds.map((id) => shapes.find((shape) => shape.id === id)!), revision: page.revision + 1, updatedAt: operation.createdAt };
+      });
+      break;
+    case "my-story-render-order-update":
+      next = updateStoryPage(snapshot, operation.pageId, (page) => {
+        const current = normalizedStoryRenderOrder(page);
+        if (!isExactReorder(current.map(renderItemKey), operation.renderOrder.map(renderItemKey))) {
+          throw new OperationConflictError("Story render order must contain every canvas item exactly once.");
+        }
+        return { ...page, renderOrder: operation.renderOrder, revision: page.revision + 1, updatedAt: operation.createdAt };
       });
       break;
     case "my-story-link-add":

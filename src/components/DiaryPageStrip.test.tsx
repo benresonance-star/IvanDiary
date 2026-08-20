@@ -42,6 +42,7 @@ describe("DiaryPageStrip", () => {
       screen.getByRole("button", { name: "Page 2" }),
     ).toHaveAttribute("aria-current", "page");
     expect(container.querySelectorAll(".story-page-item")).toHaveLength(2);
+    expect(container.querySelector(".page-strip")).toHaveClass("story-page-strip");
     expect(container.querySelector(".page-preview-object")).not.toBeInTheDocument();
     expect(container.querySelector(".sketch-thumbnail")).not.toBeInTheDocument();
   });
@@ -149,6 +150,7 @@ describe("DiaryPageStrip", () => {
     const secondPage = screen.getByRole("button", {
       name: /Page 2\. Drag to reorder/i,
     });
+    expect(secondPage.closest(".page-strip")).toHaveClass("diary-page-strip");
     fireEvent.keyDown(secondPage, {
       key: "ArrowLeft",
       shiftKey: true,

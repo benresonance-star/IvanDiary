@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent, type RefObject } from "react";
+import { useEffect, useRef, type PointerEvent, type RefObject } from "react";
 
 import type { Position } from "../domain/models";
 
@@ -11,7 +11,7 @@ export function PolygonDraftEditor({ color, onCancel, onChange, onFinish, pageRe
   points: Position[];
 }) {
   const pointsRef = useRef(points);
-  pointsRef.current = points;
+  useEffect(() => { pointsRef.current = points; }, [points]);
   const activeRef = useRef<number | null>(null);
   const move = (event: PointerEvent<HTMLButtonElement>, index: number) => {
     const bounds = pageRef.current?.getBoundingClientRect();

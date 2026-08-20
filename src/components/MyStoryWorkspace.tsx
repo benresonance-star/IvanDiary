@@ -34,6 +34,7 @@ import type {
   ShapeKind,
   ShapeObject,
 } from "../domain/models";
+import { normalizedStoryRenderOrder, storyStackIndex } from "../domain/storyRenderOrder";
 import { useNativeDrawingOverlay } from "../hooks/useNativeDrawingOverlay";
 import { displayAssetUri } from "../utils/displayAssetUri";
 import {
@@ -63,6 +64,7 @@ import {
   type SketchSurfaceHandle,
 } from "../sketch/SketchSurface";
 import { NativeSketchPreview } from "../sketch/NativeSketchPreview";
+import { nativeDrawingPreservesShapeStack } from "../sketch/nativeDrawingLayering";
 import { browserFileToAsset, readImageSize } from "../utils/assets";
 import { readableTextColour } from "../utils/colour";
 import { createId } from "../utils/id";
@@ -74,8 +76,9 @@ import {
 } from "./ArrangeablePageObject";
 import { AudioCard } from "./AudioCard";
 import { clampPosition, defaultObjectFrame, VOICE_FRAME } from "./arrangeGeometry";
-import { ShapeCard } from "./ShapeCard";
+import { ShapeEditor } from "./ShapeEditor";
 import { PolygonDraftEditor } from "./PolygonDraftEditor";
+import { FreeformDraftEditor } from "./FreeformDraftEditor";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DiaryPageStrip } from "./DiaryPageStrip";
 import { LinkComposer } from "./LinkComposer";
@@ -267,6 +270,7 @@ export function MyStoryWorkspace({
   const [selectedRecordingId, setSelectedRecordingId] = useState<string>();
   const [selectedShapeId, setSelectedShapeId] = useState<string>();
   const [polygonDraft, setPolygonDraft] = useState<Position[] | null>(null);
+  const [freeformDraft, setFreeformDraft] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [penHudOpen, setPenHudOpen] = useState(false);
   const [shareChooserOpen, setShareChooserOpen] = useState(false);
@@ -300,8 +304,59 @@ export function MyStoryWorkspace({
     page.textBackgroundColor,
   );
   const textSelectionEnabled = tool === "arrange";
+  const renderOrder = normalizedStoryRenderOrder(page);
+  const stackFor = (kind: Parameters<typeof storyStackIndex>[1], id: string) =>
+    storyStackIndex(page, kind, id);
 
-  const placeShape = async (shapeKind: Exclude<ShapeKind, "polygon">) => {
+  const moveShapeInStack = (shape: ShapeObject, direction: -1 | 1) => {
+    const previous = renderOrder;
+    const index = previous.findIndex((item) => item.kind === "shape" && item.id === shape.id);
+    const target = index + direction;
+    if (direction === -1 && shape.layer !== "behind-sketch" && target < 0) {
+      const next = { ...shape, layer: "behind-sketch" as const, revision: shape.revision + 1 };
+      void commitWithUndo(
+        { type: "my-story-shape-update", pageId: page.id, shape: next },
+        { type: "my-story-shape-update", pageId: page.id, shape },
+      );
+      return;
+    }
+    if (direction === 1 && shape.layer === "behind-sketch") {
+      const next = { ...shape, layer: "above-sketch" as const, revision: shape.revision + 1 };
+      void commitWithUndo(
+        { type: "my-story-shape-update", pageId: page.id, shape: next },
+        { type: "my-story-shape-update", pageId: page.id, shape },
+      );
+      return;
+    }
+    if (index < 0 || target < 0 || target >= previous.length) return;
+    const next = [...previous];
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    void commitWithUndo(
+      { type: "my-story-render-order-update", pageId: page.id, renderOrder: next },
+      { type: "my-story-render-order-update", pageId: page.id, renderOrder: previous },
+    );
+  };
+
+  const duplicateShape = (shape: ShapeObject) => {
+    const frame = defaultObjectFrame(shape);
+    const offset = clampPosition({ x: shape.position.x + 0.03, y: shape.position.y + 0.03 }, frame);
+    const unchanged = offset.x === shape.position.x && offset.y === shape.position.y;
+    const duplicate: ShapeObject = {
+      ...shape,
+      id: createId(),
+      position: unchanged ? clampPosition({ x: shape.position.x - 0.03, y: shape.position.y - 0.03 }, frame) : offset,
+      points: shape.points?.map((point) => ({ ...point })),
+      revision: 0,
+      createdAt: new Date().toISOString(),
+    };
+    const sourceIndex = renderOrder.findIndex((item) => item.kind === "shape" && item.id === shape.id);
+    void commitWithUndo(
+      { type: "my-story-shape-add", pageId: page.id, shape: duplicate, renderIndex: sourceIndex + 1 },
+      { type: "my-story-shape-delete", pageId: page.id, shapeId: duplicate.id },
+    ).then((saved) => { if (saved) setSelectedShapeId(duplicate.id); });
+  };
+
+  const placeShape = async (shapeKind: Exclude<ShapeKind, "polygon" | "freeform">) => {
     const shape: ShapeObject = { id: createId(), type: "shape", shapeKind, pageId: page.id,
       position: { x: 0.38, y: 0.34 }, frame: { width: 0.24, height: 0.24 }, fillColor: penSettings.color,
       outlineColor: "#3f3528", outlineWidth: 3, layer: "above-sketch", revision: 0, createdAt: new Date().toISOString() };
@@ -310,9 +365,25 @@ export function MyStoryWorkspace({
     }
   };
   const startShapePlacement = (kind: ShapeKind) => {
+    if (kind === "freeform") {
+      setPenHudOpen(false); onToolChange("view"); setSelection(undefined); setSelectedRecordingId(undefined); setSelectedShapeId(undefined); setFreeformDraft(true);
+      setNotice("Draw one continuous outline, then release to fill the shape."); return;
+    }
     if (kind !== "polygon") { void placeShape(kind); return; }
     setPenHudOpen(false); onToolChange("view"); setSelection(undefined); setSelectedRecordingId(undefined); setSelectedShapeId(undefined);
     setPolygonDraft([]); setNotice("Tap at least three points, then choose Finish polygon.");
+  };
+  const finishFreeform = async (anchors: Position[]) => {
+    const xs = anchors.map(({ x }) => x); const ys = anchors.map(({ y }) => y);
+    const position = { x: Math.min(...xs), y: Math.min(...ys) };
+    const frame = { width: Math.max(0.08, Math.max(...xs) - position.x), height: Math.max(0.08, Math.max(...ys) - position.y) };
+    const clamped = clampPosition(position, frame);
+    const shape: ShapeObject = { id: createId(), type: "shape", shapeKind: "freeform", pageId: page.id, position: clamped, frame,
+      points: anchors.map(({ x, y }) => ({ x: (x - clamped.x) / frame.width, y: (y - clamped.y) / frame.height })),
+      fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3, layer: "above-sketch", revision: 0, createdAt: new Date().toISOString() };
+    if (await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id })) {
+      setFreeformDraft(false); setNotice(undefined); onToolChange("arrange"); setSelectedShapeId(shape.id);
+    }
   };
   const finishPolygon = async () => {
     if (!polygonDraft || polygonDraft.length < 3) return;
@@ -399,6 +470,7 @@ export function MyStoryWorkspace({
   }, [page.drawingDocumentId, tool]);
 
   const overlayEnabled =
+    nativeDrawingPreservesShapeStack(page.shapes ?? []) &&
     !navigationObscured &&
     !penHudOpen &&
     !shareChooserOpen &&
@@ -408,7 +480,7 @@ export function MyStoryWorkspace({
     linkEditing === undefined &&
     !textEditorRequested &&
     textEditing === undefined &&
-    polygonDraft === null &&
+    polygonDraft === null && !freeformDraft &&
     !voiceDialogOpen;
   const { overlayActive, overlayReady, suspendOverlay } =
     useNativeDrawingOverlay({
@@ -1414,7 +1486,11 @@ export function MyStoryWorkspace({
         <span>PAGE {pages.findIndex((candidate) => candidate.id === page.id) + 1}</span>
       </header>
 
+      {/* This coordinate-based drawing surface contains its own native buttons
+          and supplies equivalent keyboard actions while a polygon is active. */}
+      {/* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
       <div
+        aria-label={polygonDraft ? "Polygon drawing canvas" : "Story canvas"}
         className={`paper-page my-story-paper${
           tool === "pen" || tool === "eraser" ? " drawing-active" : ""
         }${tool === "arrange" ? " arranging" : ""}`}
@@ -1427,7 +1503,18 @@ export function MyStoryWorkspace({
             y: Math.min(0.96, Math.max(0.04, (event.clientY - bounds.top) / bounds.height)),
           }]);
         }}
+        onKeyDown={(event) => {
+          if (!polygonDraft) return;
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setPolygonDraft(null);
+          } else if ((event.key === "Enter" || event.key === " ") && polygonDraft.length === 0) {
+            event.preventDefault();
+            setPolygonDraft([{ x: 0.5, y: 0.5 }]);
+          }
+        }}
         ref={paperRef}
+        role="application"
         style={{
           gridTemplateColumns:
             page.textSide === "left"
@@ -1438,6 +1525,7 @@ export function MyStoryWorkspace({
                   tool === "arrange" ? "10px" : "0px"
                 } minmax(0, 1fr)`,
         }}
+        tabIndex={0}
       >
         <SketchSurface
           capabilities={
@@ -1472,6 +1560,7 @@ export function MyStoryWorkspace({
           <NativeSketchPreview documentId={page.drawingDocumentId} />
         )}
         {polygonDraft ? <PolygonDraftEditor color={penSettings.color} onCancel={() => { setPolygonDraft(null); setNotice(undefined); onToolChange("pen"); }} onChange={setPolygonDraft} onFinish={() => void finishPolygon()} pageRef={paperRef} points={polygonDraft} /> : null}
+        {freeformDraft ? <FreeformDraftEditor color={penSettings.color} onCancel={() => { setFreeformDraft(false); setNotice(undefined); onToolChange("pen"); }} onFinish={(anchors) => void finishFreeform(anchors)} onInvalid={() => setNotice("Draw a larger closed outline to create a freeform shape.")} pageRef={paperRef} /> : null}
 
         <section
           aria-label="Story text"
@@ -1555,12 +1644,13 @@ export function MyStoryWorkspace({
                   onPointerMove={updateTextLongPress}
                   onPointerUp={cancelTextLongPress}
                   role="button"
+                  style={{ zIndex: 20 + stackFor("text", block.id) }}
                   tabIndex={0}
                 >
                   <StoryTextContent block={block} color={pageTextColor} />
                 </div>
               ) : (
-                <div className="story-text-block" key={block.id}>
+                <div className="story-text-block" key={block.id} style={{ zIndex: 20 + stackFor("text", block.id) }}>
                   <StoryTextContent block={block} color={pageTextColor} />
                 </div>
               ),
@@ -1588,6 +1678,7 @@ export function MyStoryWorkspace({
                   openExternalUrl(link.url);
                 }
               }}
+              style={{ zIndex: 20 + stackFor("link", link.id) }}
               type="button"
             >
               <LinkIcon aria-hidden="true" />
@@ -1652,7 +1743,7 @@ export function MyStoryWorkspace({
                     count: page.photos.length,
                   });
                 }}
-                style={{ width: `${photo.width * 100}%` }}
+                style={{ width: `${photo.width * 100}%`, zIndex: 20 + stackFor("photo", photo.id) }}
                 type="button"
               >
                 <img
@@ -1664,7 +1755,7 @@ export function MyStoryWorkspace({
               <div
                 className="story-photo"
                 key={photo.id}
-                style={{ width: `${photo.width * 100}%` }}
+                style={{ width: `${photo.width * 100}%`, zIndex: 20 + stackFor("photo", photo.id) }}
               >
                 <img
                   alt={photo.altText ?? `Story image ${index + 1}`}
@@ -1702,6 +1793,7 @@ export function MyStoryWorkspace({
             }
             selected={selectedRecordingId === voice.id}
             showShortcuts={false}
+            stackIndex={stackFor("recording", voice.id)}
           >
             <AudioCard
               audio={audio}
@@ -1712,17 +1804,27 @@ export function MyStoryWorkspace({
           </ArrangeablePageObject>
         ))}
 
-        {(page.shapes ?? []).map((shape, index, shapes) => <ArrangeablePageObject
-          arrange={tool === "arrange"} className="page-object shape-object" deleteDescription={`${shape.shapeKind} shape`}
-          frame={defaultObjectFrame(shape)} key={shape.id} layer={shape.layer ?? "above-sketch"} objectLabel={`${shape.shapeKind} shape`}
-          objectId={shape.id} onCommit={(change) => { const next = change.kind === "move" ? { ...shape, position: change.after.position, revision: shape.revision + 1 } : { ...shape, frame: change.after.frame, revision: shape.revision + 1 }; void commitWithUndo({ type: "my-story-shape-update", pageId: page.id, shape: next }, { type: "my-story-shape-update", pageId: page.id, shape }); }}
-          onDelete={() => void commitWithUndo({ type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id }, { type: "my-story-shape-add", pageId: page.id, shape })}
-          onMoveBackward={() => { if (index === 0) return; const previous = shapes.map(({ id }) => id); const ids = [...previous]; [ids[index - 1], ids[index]] = [ids[index]!, ids[index - 1]!]; void commitWithUndo({ type: "my-story-shapes-reorder", pageId: page.id, shapeIds: ids }, { type: "my-story-shapes-reorder", pageId: page.id, shapeIds: previous }); }}
-          onMoveForward={() => { if (index === shapes.length - 1) return; const previous = shapes.map(({ id }) => id); const ids = [...previous]; [ids[index], ids[index + 1]] = [ids[index + 1]!, ids[index]!]; void commitWithUndo({ type: "my-story-shapes-reorder", pageId: page.id, shapeIds: ids }, { type: "my-story-shapes-reorder", pageId: page.id, shapeIds: previous }); }}
-          onSelect={() => { setSelection(undefined); setSelectedRecordingId(undefined); setSelectedShapeId(shape.id); }}
-          onToggleLayer={() => { const next = { ...shape, layer: shape.layer === "behind-sketch" ? "above-sketch" as const : "behind-sketch" as const, revision: shape.revision + 1 }; void commitWithUndo({ type: "my-story-shape-update", pageId: page.id, shape: next }, { type: "my-story-shape-update", pageId: page.id, shape }); }}
-          pageRef={paperRef} position={shape.position} selected={selectedShapeId === shape.id} showShortcuts={false}
-        ><ShapeCard arrange={tool === "arrange"} onUpdate={(next) => void commitWithUndo({ type: "my-story-shape-update", pageId: page.id, shape: next }, { type: "my-story-shape-update", pageId: page.id, shape })} selected={selectedShapeId === shape.id} shape={shape} /></ArrangeablePageObject>)}
+        {(page.shapes ?? []).map((shape) => {
+          const stackIndex = stackFor("shape", shape.id);
+          return <ShapeEditor
+            arrange={tool === "arrange"}
+            canMoveDown={shape.layer !== "behind-sketch"}
+            canMoveUp={shape.layer === "behind-sketch" || stackIndex < renderOrder.length - 1}
+            key={shape.id}
+            onDelete={() => { setSelectedShapeId(undefined); void commitWithUndo({ type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id }, { type: "my-story-shape-add", pageId: page.id, shape, renderIndex: stackIndex }); }}
+            onDeselect={() => setSelectedShapeId(undefined)}
+            onDuplicate={() => duplicateShape(shape)}
+            onMoveDown={() => moveShapeInStack(shape, -1)}
+            onMoveUp={() => moveShapeInStack(shape, 1)}
+            onSelect={() => { setSelection(undefined); setSelectedRecordingId(undefined); setSelectedShapeId(shape.id); }}
+            onUpdate={(next, previous) => void commitWithUndo({ type: "my-story-shape-update", pageId: page.id, shape: next }, { type: "my-story-shape-update", pageId: page.id, shape: previous })}
+            pageRef={paperRef}
+            selected={selectedShapeId === shape.id}
+            shape={shape}
+            snapShapes={(page.shapes ?? []).filter((candidate) => candidate.id !== shape.id)}
+            stackIndex={stackIndex}
+          />;
+        })}
 
 
         {selection && tool === "arrange" ? (
@@ -1789,6 +1891,7 @@ export function MyStoryWorkspace({
           />
         ) : null}
       </div>
+      {/* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
 
       <DiaryPageStrip
         activePageId={page.id}

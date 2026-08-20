@@ -1,4 +1,4 @@
-import { Circle, Grid3X3, Highlighter, Paintbrush, PenLine, Pencil, Pentagon, RectangleHorizontal, Triangle } from "lucide-react";
+import { Circle, Grid3X3, Highlighter, Paintbrush, PenLine, Pencil, Pentagon, RectangleHorizontal, Spline, Triangle } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 
 import {
@@ -270,7 +270,8 @@ export function PenSettingsHud({
               ["circle", "Circle", Circle], ["rectangle", "Rectangle", RectangleHorizontal],
               ["triangle", "Triangle", Triangle],
               ["polygon", "Custom polygon", Pentagon],
-            ] as const).map(([kind, label, Icon]) => <button key={kind} onClick={() => onShapeSelect(kind)} type="button"><Icon aria-hidden="true" /><span>{label}</span></button>)}
+              ["freeform", "Freeform", Spline],
+            ] as const).map(([kind, label, Icon]) => <button data-help-topic={kind === "freeform" ? "shape-freeform" : undefined} key={kind} onClick={() => onShapeSelect(kind)} type="button"><Icon aria-hidden="true" /><span>{label}</span></button>)}
           </div>
         </section>
       ) : activePanel === "grid" && grid && onGridChange ? (

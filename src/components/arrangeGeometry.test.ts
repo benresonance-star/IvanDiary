@@ -5,6 +5,8 @@ import {
   defaultPhotoFrame,
   MAXIMUM_FRAME,
   MAXIMUM_PHOTO_FRAME,
+  MAXIMUM_SHAPE_FRAME,
+  MINIMUM_SHAPE_FRAME,
   moveLayout,
   pageAspectFromImage,
   resizeLayout,
@@ -52,6 +54,21 @@ describe("arrange geometry", () => {
     expect(frame.width / frame.height).toBeCloseTo(
       pageAspectFromImage({ width: 16, height: 9 }),
     );
+  });
+
+  it("allows shapes to use the full editable size range", () => {
+    const start: PageLayout = {
+      position: { x: 0.03, y: 0.04 },
+      frame: { width: 0.24, height: 0.24 },
+    };
+    expect(resizeLayout(start, { width: -1, height: -1 }, {
+      maximum: MAXIMUM_SHAPE_FRAME,
+      minimum: MINIMUM_SHAPE_FRAME,
+    }).frame).toEqual(MINIMUM_SHAPE_FRAME);
+    expect(resizeLayout(start, { width: 2, height: 2 }, {
+      maximum: MAXIMUM_SHAPE_FRAME,
+      minimum: MINIMUM_SHAPE_FRAME,
+    }).frame).toEqual(MAXIMUM_SHAPE_FRAME);
   });
 
   it("keeps source proportions while scaling up to the photo limit", () => {

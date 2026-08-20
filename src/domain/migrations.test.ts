@@ -7,6 +7,24 @@ import {
 } from "./migrations";
 
 describe("journal migrations", () => {
+  it("preserves freeform shapes and their reduced anchors", () => {
+    const current = createInitialJournalSnapshot(new Date("2026-08-03T09:00:00.000Z"));
+    const freeform = {
+      id: "freeform-1", type: "shape", shapeKind: "freeform", pageId: current.pages[0]!.id,
+      position: { x: .2, y: .2 }, frame: { width: .3, height: .25 },
+      points: [{ x: 0, y: .4 }, { x: .4, y: 0 }, { x: 1, y: .5 }, { x: .5, y: 1 }],
+      fillColor: "#abcdef", outlineWidth: 3, layer: "above-sketch", revision: 0,
+      createdAt: "2026-08-03T09:00:00.000Z",
+    } as const;
+    const migrated = migrateJournalSnapshot({
+      ...current,
+      pages: [{ ...current.pages[0]!, objects: [freeform] }],
+      myStory: { pages: [{ id: "story-page", drawingDocumentId: "story-drawing", shapes: [{ ...freeform, id: "story-freeform", pageId: "story-page" }] }] },
+    });
+    expect(migrated.pages[0]!.objects[0]).toEqual(expect.objectContaining({ shapeKind: "freeform", points: freeform.points }));
+    expect(migrated.myStory?.pages[0]?.shapes).toEqual([expect.objectContaining({ id: "story-freeform", shapeKind: "freeform", points: freeform.points })]);
+  });
+
   it("adds safe accessibility defaults to version zero data", () => {
     const current = createInitialJournalSnapshot(
       new Date("2026-08-03T09:00:00.000Z"),
@@ -110,7 +128,7 @@ describe("journal migrations", () => {
 
   it("defaults two-finger undo on and preserves an explicit off setting", () => {
     const current = createInitialJournalSnapshot();
-    const { twoFingerUndoEnabled: _removed, ...legacySettings } = current.settings;
+    const { twoFingerUndoEnabled: removed, ...legacySettings } = current.settings;
     const migratedLegacy = migrateJournalSnapshot({
       ...current,
       settings: legacySettings,
@@ -120,6 +138,7 @@ describe("journal migrations", () => {
       settings: { ...current.settings, twoFingerUndoEnabled: false },
     });
 
+    expect(removed).toBe(true);
     expect(migratedLegacy.settings.twoFingerUndoEnabled).toBe(true);
     expect(migratedOff.settings.twoFingerUndoEnabled).toBe(false);
   });
@@ -244,7 +263,13 @@ describe("journal migrations", () => {
             position: { x: 0.2, y: 0.3 }, frame: { width: 0.3, height: 0.25 },
             fillColor: "#abcdef", outlineColor: "#123456", outlineWidth: 4,
             layer: "above-sketch", revision: 1,
+            rotationDegrees: 405,
           }],
+          renderOrder: [
+            { kind: "shape", id: "story-shape" },
+            { kind: "shape", id: "story-shape" },
+            { kind: "photo", id: "missing" },
+          ],
         }],
       },
     });
@@ -267,7 +292,12 @@ describe("journal migrations", () => {
           }),
         ],
         recordings: [],
-        shapes: [expect.objectContaining({ id: "story-shape", shapeKind: "triangle", fillColor: "#abcdef" })],
+        shapes: [expect.objectContaining({ id: "story-shape", shapeKind: "triangle", fillColor: "#abcdef", rotationDegrees: 45 })],
+        renderOrder: [
+          { kind: "shape", id: "story-shape" },
+          { kind: "text", id: "story-text" },
+          { kind: "link", id: "story-link" },
+        ],
       }),
     );
   });

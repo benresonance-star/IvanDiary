@@ -1,5 +1,5 @@
 import { Mic, Pause, Play, Square, Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { JournalAudioPlugin, JournalFilesPlugin, RecordingSnapshot } from "../native/contracts";
 import { finalizeStoppedRecording, recordingStorageAvailable } from "../native/durableAudio";
 
@@ -31,6 +31,14 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
   const [playing, setPlaying] = useState(false);
   const [previewLevel, setPreviewLevel] = useState(0);
   const [status, setStatus] = useState("Ready to record");
+  const autoFinalisingRef = useRef(false);
+
+  const end = useCallback(async () => {
+    setBusy(true); setStatus("Saving the recording…");
+    try { setRecording(await finalizeStoppedRecording(audio, files)); setStatus("Recording saved. Listen before placing it on the canvas."); }
+    catch { setStatus("The recording could not be finalized. It remains recoverable."); }
+    finally { setBusy(false); }
+  }, [audio, files]);
 
   useEffect(() => {
     if (recording || !audio.startMonitoring || !audio.monitorLevel || !audio.stopMonitoring) return;
@@ -55,18 +63,20 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
     if (recording?.state !== "recording") return;
     let disposed = false;
     const timer = window.setInterval(() => void audio.status().then((next) => {
-      if (!disposed) setRecording(next);
+      if (disposed) return;
+      if (next.state === "finalising") {
+        if (!autoFinalisingRef.current) {
+          autoFinalisingRef.current = true;
+          void end().finally(() => { autoFinalisingRef.current = false; });
+        }
+      } else {
+        setRecording(next);
+      }
     }).catch(() => {
       if (!disposed) setStatus("The microphone status is unavailable.");
     }), 120);
     return () => { disposed = true; window.clearInterval(timer); };
-  }, [audio, recording?.state]);
-
-  useEffect(() => {
-    if (recording?.state === "finalising" && !busy) void end();
-  // `end` deliberately follows the latest recording snapshot.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recording?.state]);
+  }, [audio, end, recording?.state]);
 
   useEffect(() => {
     let disposed = false;
@@ -80,6 +90,10 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
   const start = async () => {
     setBusy(true);
     try {
+      // Do not overlap the idle microphone preview with the real recorder.
+      // Native cleanup is also generation-guarded, but awaiting it here keeps
+      // the audio-session transition deterministic across the bridge.
+      await audio.stopMonitoring?.();
       if (!await recordingStorageAvailable(files)) { setStatus("Storage is too low to record safely."); return; }
       setRecording(await audio.start({ maximumDurationMs: recordingLimitMinutes === null ? undefined : recordingLimitMinutes * 60_000 }));
       setStatus("Recording. The microphone bars show that your voice is being heard.");
@@ -96,14 +110,6 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
       setRecording(next);
       setStatus(next.state === "paused" ? "Recording paused." : "Recording resumed.");
     } catch { setStatus("The recording could not be paused or resumed."); }
-    finally { setBusy(false); }
-  };
-
-  const end = async () => {
-    if (!recording) return;
-    setBusy(true); setStatus("Saving the recording…");
-    try { setRecording(await finalizeStoppedRecording(audio, files)); setStatus("Recording saved. Listen before placing it on the canvas."); }
-    catch { setStatus("The recording could not be finalized. It remains recoverable."); }
     finally { setBusy(false); }
   };
 

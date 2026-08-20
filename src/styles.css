@@ -560,6 +560,13 @@ textarea,
   visibility: hidden !important;
 }
 
+.page-strip {
+  box-sizing: border-box;
+  flex: 0 0 62px;
+  height: 62px;
+  min-height: 62px;
+}
+
 .diary-page-strip {
   min-width: 0;
   overflow: hidden;
@@ -567,9 +574,10 @@ textarea,
 
 .diary-page-list {
   display: flex;
-  align-items: flex-end;
-  min-height: 76px;
-  padding: 2px 6px 4px;
+  align-items: center;
+  height: 62px;
+  min-height: 62px;
+  padding: 2px 6px;
   gap: 12px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -586,7 +594,7 @@ textarea,
   display: grid;
   justify-items: center;
   min-width: 78px;
-  min-height: 68px;
+  min-height: 54px;
   padding: 4px;
   gap: 0;
   border: 2px solid transparent;
@@ -675,7 +683,7 @@ textarea,
 .add-page-preview {
   position: relative;
   display: block;
-  width: 84px;
+  width: 80px;
   height: auto;
   aspect-ratio: var(--active-canvas-aspect);
   overflow: hidden;
@@ -1636,7 +1644,6 @@ textarea,
 .my-story-text-pane,
 .my-story-image-pane {
   position: relative;
-  z-index: 2;
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -2282,13 +2289,19 @@ textarea,
 .shape-object { width: 24%; }
 .canvas-shape { display: block; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .shape-vertex-handle,
-.polygon-point-handle {
+.polygon-point-handle,
+.shape-scale-handle {
   position: absolute; z-index: 28; width: 28px; height: 28px; padding: 0;
   border: 3px solid #fffaf0; border-radius: 50%; background: #365f79;
   box-shadow: 0 0 0 2px #223e50, 0 3px 8px rgba(30,22,14,.25);
   transform: translate(-50%, -50%); touch-action: none; cursor: grab;
 }
-.shape-vertex-handle:active, .polygon-point-handle:active { cursor: grabbing; }
+.shape-vertex-handle:active, .polygon-point-handle:active, .shape-scale-handle:active { cursor: grabbing; }
+.shape-vertex-handle.selected {
+  border-color: #fffdf7;
+  background: #d56a16;
+  box-shadow: 0 0 0 4px #6f2f08, 0 3px 9px rgba(30, 22, 14, .35);
+}
 .shape-appearance-button {
   position: absolute; top: -25px; left: -25px; z-index: 46; display: grid; place-items: center;
   width: 48px; height: 48px; padding: 0; border: 1px solid #7b674c; border-radius: 50%;
@@ -2302,6 +2315,50 @@ textarea,
 }
 .shape-appearance-popover label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; }
 .shape-appearance-popover button { min-height: 40px; }
+.shape-editor { border: 0; border-radius: 0; cursor: grab; pointer-events: none; touch-action: none; transform-origin: center; }
+.shape-editor .canvas-shape > * { pointer-events: visibleFill; }
+.shape-editor .shape-vertex-handle, .shape-editor .shape-edge-handle, .shape-editor .shape-scale-handle { pointer-events: auto; }
+.shape-editor:focus-visible { outline: 4px solid #17120c; outline-offset: 5px; }
+.shape-editor.selected-object { cursor: grab; }
+.shape-edit-palette {
+  position: fixed; z-index: 1100; display: grid; box-sizing: border-box; width: 174px; max-height: calc(100vh - 24px);
+  padding: 7px; gap: 5px; overflow-y: auto; scrollbar-gutter: stable; border: 2px solid #6f5b40; border-radius: 14px;
+  background: #fffaf0; box-shadow: 0 8px 26px rgba(53,39,21,.28);
+}
+.shape-edit-palette > button, .shape-edit-mode-group > button, .shape-edit-grid > button, .shape-colour-controls button {
+  display: flex; align-items: center; justify-content: center; min-height: 40px; padding: 5px 8px;
+  gap: 7px; border: 1px solid #8f7758; border-radius: 9px; background: #f5ead8; color: #33291d;
+  font: inherit; font-weight: 850; letter-spacing: .035em; cursor: pointer;
+}
+.shape-edit-palette button[aria-pressed="true"] { border-color: #244d65; background: #d9e8f0; box-shadow: inset 0 0 0 2px #244d65; }
+.shape-edit-palette button:disabled { opacity: .45; cursor: not-allowed; }
+.shape-edit-palette svg { width: 21px; height: 21px; }
+.shape-edit-palette .shape-palette-drag { min-height: 28px; padding: 1px; border: 0; background: transparent; cursor: grab; touch-action: none; }
+.shape-edit-palette .shape-palette-drag:active { cursor: grabbing; }
+.shape-edit-palette .shape-palette-drag svg { width: 54px; height: 22px; }
+.shape-edit-mode-group { display: grid; }
+.shape-edit-mode-group > button { border-radius: 0; }
+.shape-edit-mode-group > button + button { margin-top: -1px; }
+.shape-edit-mode-group > button:first-child { border-radius: 9px 9px 0 0; }
+.shape-edit-mode-group > button:last-child { border-radius: 0 0 9px 9px; }
+.shape-edit-grid { display: grid; grid-template-columns: 1fr 1fr; }
+.shape-edit-grid > button { min-width: 0; border-radius: 0; font-size: 1.25rem; }
+.shape-edit-grid > button:nth-child(even) { margin-left: -1px; }
+.shape-edit-grid > button:nth-child(n + 3) { margin-top: -1px; }
+.shape-edit-grid > button:first-child { border-radius: 9px 0 0 0; }
+.shape-edit-grid > button:nth-child(2) { border-radius: 0 9px 0 0; }
+.shape-edit-grid > button:nth-child(3) { border-radius: 0 0 0 9px; }
+.shape-edit-grid > button:last-child { border-radius: 0 0 9px 0; }
+.shape-colour-controls { display: grid; padding: 7px; gap: 7px; border: 1px solid #b9a587; border-radius: 10px; background: #fffdf8; }
+.shape-colour-controls label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font-weight: 750; }
+.shape-colour-controls input[type="color"] { width: 48px; height: 40px; }
+.shape-colour-controls input[type="range"] { grid-column: 1 / -1; width: 100%; }
+.shape-edit-palette .shape-edit-delete { border-color: #a92d24; background: #f8d7d4; color: #8c211a; }
+.shape-edge-handle {
+  position: absolute; z-index: 29; width: 32px; height: 32px; padding: 0; border: 2px solid #fffaf0;
+  border-radius: 50%; background: #4f7b3d; color: white; box-shadow: 0 0 0 2px #315226;
+  transform: translate(-50%, -50%); font-size: 20px; font-weight: 900;
+}
 .arrange-order { position: absolute; z-index: 25; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid #7b674c; border-radius: 50%; background: #fffaf0; color: #33291d; }
 .arrange-order-forward { right: -23px; top: 20%; }
 .arrange-order-backward { right: -23px; top: calc(20% + 50px); }
@@ -2310,6 +2367,9 @@ textarea,
 .polygon-draft-layer polyline { stroke: #3f3528; stroke-width: .55; stroke-dasharray: 1.5 1; }
 .polygon-draft-layer .polygon-point-handle { pointer-events: auto; }
 .polygon-draft-actions { position: absolute; z-index: 45; right: 4%; bottom: 4%; display: flex; align-items: center; padding: 10px; gap: 10px; border: 1px solid #8f7758; border-radius: 14px; background: #fffaf0; }
+.freeform-draft-layer { position: absolute; inset: 0; z-index: 44; cursor: crosshair; touch-action: none; }
+.freeform-draft-layer svg { width: 100%; height: 100%; pointer-events: none; }
+.freeform-draft-actions { z-index: 45; }
 .shape-picker { padding: 12px; }
 .shape-picker > p { margin: 0 0 12px; }
 .shape-picker-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
@@ -2622,13 +2682,25 @@ textarea,
   touch-action: none;
 }
 
-.page-object.arrangeable.selected-object:not(.behind-sketch) {
-  z-index: 30;
+.page-object.arrangeable.selected-object:not(.behind-sketch):not(.shape-editor) {
   border-color: #7b674c;
   box-shadow: 0 0 0 4px rgba(255, 253, 247, 0.88);
 }
 
-.page-object.arrangeable.selected-object.behind-sketch::after {
+.arrange-controller-overlay {
+  position: absolute;
+  z-index: 900 !important;
+  pointer-events: none;
+}
+
+.arrange-controller-overlay button,
+.arrange-controller-overlay .arrange-nudge-controls {
+  pointer-events: auto;
+}
+
+.shape-controller-overlay { position: absolute; z-index: 850 !important; pointer-events: none; }
+
+.page-object.arrangeable.selected-object.behind-sketch:not(.shape-editor)::after {
   position: absolute;
   inset: -2px;
   z-index: 24;

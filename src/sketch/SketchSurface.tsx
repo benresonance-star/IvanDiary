@@ -215,7 +215,7 @@ function SketchSurfaceComponent(
     if (activeStrokeRef.current) {
       drawStroke(context, activeStrokeRef.current);
     }
-  }, [configureContext, grid]);
+  }, [configureContext]);
 
   const scheduleSceneRender = useCallback(() => {
     if (frameRef.current !== undefined) {

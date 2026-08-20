@@ -11,11 +11,13 @@ import {
   type MyStoryPhoto,
   type MyStoryTextBlock,
   type MyStoryVoiceRecording,
+  type MyStoryRenderItemRef,
   type MyWord,
   type PageObject,
   type ShapeObject,
   type Size,
 } from "./models";
+import { normalizedStoryRenderOrder } from "./storyRenderOrder";
 import { webHttpUrl } from "../utils/webHttpUrl";
 
 const DEFAULT_SETTINGS: JournalSettings = {
@@ -300,7 +302,16 @@ function migratePageFrames(
       ...(drawingGrid ? { drawingGrid } : {}),
       objects: page.objects.map((object) => {
         const frame = object.frame ?? defaultFrame(object);
-        return frame ? { ...object, frame } : object;
+        const migrated = frame ? { ...object, frame } : object;
+        return migrated.type === "shape"
+          ? {
+              ...migrated,
+              rotationDegrees:
+                typeof migrated.rotationDegrees === "number" && Number.isFinite(migrated.rotationDegrees)
+                  ? ((migrated.rotationDegrees % 360) + 360) % 360
+                  : 0,
+            }
+          : migrated;
       }),
     };
   });
@@ -508,10 +519,10 @@ function migrateMyStory(value: unknown, timestamp: string): MyStory {
     const shapes = Array.isArray(candidate.shapes)
       ? candidate.shapes.flatMap((value): ShapeObject[] => {
           if (!isRecord(value) || typeof value.id !== "string" ||
-              !["circle", "rectangle", "triangle", "cross", "polygon"].includes(String(value.shapeKind)) ||
+              !["circle", "rectangle", "triangle", "cross", "polygon", "freeform"].includes(String(value.shapeKind)) ||
               !isRecord(value.position) || typeof value.position.x !== "number" || typeof value.position.y !== "number") return [];
           const points = Array.isArray(value.points) ? value.points.flatMap((point) => isRecord(point) && typeof point.x === "number" && typeof point.y === "number" ? [{ x: Math.min(1, Math.max(0, point.x)), y: Math.min(1, Math.max(0, point.y)) }] : []) : undefined;
-          if (value.shapeKind === "polygon" && (!points || points.length < 3)) return [];
+          if ((value.shapeKind === "polygon" || value.shapeKind === "freeform") && (!points || points.length < 3)) return [];
           const frame = isRecord(value.frame) && typeof value.frame.width === "number" && typeof value.frame.height === "number"
             ? { width: Math.min(0.94, Math.max(0.18, value.frame.width)), height: Math.min(0.92, Math.max(0.12, value.frame.height)) }
             : { width: 0.24, height: 0.24 };
@@ -521,6 +532,7 @@ function migrateMyStory(value: unknown, timestamp: string): MyStory {
             ...(typeof value.fillColor === "string" && /^#[0-9a-f]{6}$/i.test(value.fillColor) ? { fillColor: value.fillColor } : {}),
             ...(typeof value.outlineColor === "string" && /^#[0-9a-f]{6}$/i.test(value.outlineColor) ? { outlineColor: value.outlineColor } : {}),
             outlineWidth: typeof value.outlineWidth === "number" ? Math.min(12, Math.max(1, value.outlineWidth)) : 3,
+            rotationDegrees: typeof value.rotationDegrees === "number" && Number.isFinite(value.rotationDegrees) ? ((value.rotationDegrees % 360) + 360) % 360 : 0,
             layer: value.layer === "behind-sketch" ? "behind-sketch" : "above-sketch", revision: typeof value.revision === "number" ? value.revision : 0,
             createdAt: typeof value.createdAt === "string" ? value.createdAt : timestamp }];
         })
@@ -530,7 +542,7 @@ function migrateMyStory(value: unknown, timestamp: string): MyStory {
       Number.isFinite(candidate.splitRatio)
         ? Math.min(0.7, Math.max(0.3, candidate.splitRatio))
         : 0.5;
-    return [{
+    const migratedPage: MyStoryPage = {
       id: candidate.id,
       drawingDocumentId: candidate.drawingDocumentId,
       splitRatio,
@@ -550,6 +562,10 @@ function migrateMyStory(value: unknown, timestamp: string): MyStory {
       links,
       recordings,
       shapes,
+      renderOrder: Array.isArray(candidate.renderOrder) ? candidate.renderOrder.flatMap((item): MyStoryRenderItemRef[] =>
+        isRecord(item) && ["text", "link", "photo", "recording", "shape"].includes(String(item.kind)) && typeof item.id === "string"
+          ? [{ kind: item.kind as MyStoryRenderItemRef["kind"], id: item.id }]
+          : []) : undefined,
       revision:
         typeof candidate.revision === "number" ? candidate.revision : 0,
       createdAt:
@@ -560,7 +576,9 @@ function migrateMyStory(value: unknown, timestamp: string): MyStory {
         typeof candidate.updatedAt === "string"
           ? candidate.updatedAt
           : timestamp,
-    }];
+    };
+    migratedPage.renderOrder = normalizedStoryRenderOrder(migratedPage);
+    return [migratedPage];
   }).slice(0, 10);
   const migratedPages =
     pages.length > 0 ? pages : [defaultStoryPage(timestamp)];

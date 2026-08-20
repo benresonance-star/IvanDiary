@@ -32,9 +32,10 @@ describe("ArrangeablePageObject", () => {
       </div>,
     );
 
-    expect(
-      screen.getByRole("button", { name: "Drag to move text block" }),
-    ).toBeInTheDocument();
+    const moveControl = screen.getByRole("button", { name: "Drag to move text block" });
+    expect(moveControl).toBeInTheDocument();
+    expect(moveControl.closest(".arrange-controller-overlay")).toBeInTheDocument();
+    expect(moveControl.closest("[data-object-id='text-one']")).toBeNull();
     expect(
       screen.getByRole("button", { name: "Drag to resize text block" }),
     ).toBeInTheDocument();

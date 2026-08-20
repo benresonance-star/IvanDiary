@@ -8,6 +8,7 @@ export const PAGE_LAYOUT_BOUNDS = {
 } as const;
 
 export const MINIMUM_FRAME = { width: 0.18, height: 0.12 } as const;
+export const MINIMUM_SHAPE_FRAME = { width: 0.08, height: 0.08 } as const;
 export const VOICE_FRAME = MINIMUM_FRAME;
 export const MAXIMUM_FRAME = { width: 0.6, height: 0.55 } as const;
 
@@ -18,6 +19,7 @@ export const MAXIMUM_PHOTO_FRAME = {
   width: PAGE_LAYOUT_BOUNDS.right - PAGE_LAYOUT_BOUNDS.left,
   height: PAGE_LAYOUT_BOUNDS.bottom - PAGE_LAYOUT_BOUNDS.top,
 } as const;
+export const MAXIMUM_SHAPE_FRAME = MAXIMUM_PHOTO_FRAME;
 
 export type AlignmentGuides = {
   horizontal: boolean;
@@ -32,6 +34,7 @@ export type PageLayout = {
 export type ResizeOptions = {
   aspectRatio?: number;
   maximum?: Size;
+  minimum?: Size;
 };
 
 function clamp(value: number, minimum: number, maximum: number): number {
@@ -163,6 +166,7 @@ export function resizeLayout(
   options: ResizeOptions = {},
 ): PageLayout {
   const maximum = options.maximum ?? MAXIMUM_FRAME;
+  const minimum = options.minimum ?? MINIMUM_FRAME;
   const maximumWidth = Math.min(
     maximum.width,
     PAGE_LAYOUT_BOUNDS.right - start.position.x,
@@ -180,37 +184,37 @@ export function resizeLayout(
     if (widthLed) {
       width = clamp(
         start.frame.width + delta.width,
-        MINIMUM_FRAME.width,
+        minimum.width,
         maximumWidth,
       );
       height = width / aspectRatio;
       if (height > maximumHeight) {
         height = maximumHeight;
         width = height * aspectRatio;
-      } else if (height < MINIMUM_FRAME.height) {
-        height = MINIMUM_FRAME.height;
+      } else if (height < minimum.height) {
+        height = minimum.height;
         width = height * aspectRatio;
       }
     } else {
       height = clamp(
         start.frame.height + delta.height,
-        MINIMUM_FRAME.height,
+        minimum.height,
         maximumHeight,
       );
       width = height * aspectRatio;
       if (width > maximumWidth) {
         width = maximumWidth;
         height = width / aspectRatio;
-      } else if (width < MINIMUM_FRAME.width) {
-        width = MINIMUM_FRAME.width;
+      } else if (width < minimum.width) {
+        width = minimum.width;
         height = width / aspectRatio;
       }
     }
     return {
       position: start.position,
       frame: {
-        width: clamp(width, MINIMUM_FRAME.width, maximumWidth),
-        height: clamp(height, MINIMUM_FRAME.height, maximumHeight),
+        width: clamp(width, minimum.width, maximumWidth),
+        height: clamp(height, minimum.height, maximumHeight),
       },
     };
   }
@@ -220,12 +224,12 @@ export function resizeLayout(
     frame: {
       width: clamp(
         start.frame.width + delta.width,
-        MINIMUM_FRAME.width,
+        minimum.width,
         maximumWidth,
       ),
       height: clamp(
         start.frame.height + delta.height,
-        MINIMUM_FRAME.height,
+        minimum.height,
         maximumHeight,
       ),
     },
