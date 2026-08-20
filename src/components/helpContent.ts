@@ -182,7 +182,7 @@ export const HELP_TIPS = {
   "shape-freeform": { title: "Freeform shape", body: "Draw one continuous outline and release to fill it. The app smooths the outline into a small set of editable points." },
   "shape-move": { title: "Move shape", body: "Choose MOVE, then drag the shape. Arrow keys make small moves." },
   "shape-rotate": { title: "Rotate shape", body: "Choose ROTATE, then drag around the shape’s centre. The shape gently snaps near 15 degree angles." },
-  "shape-scale": { title: "Scale shape", body: "Choose SCALE, then drag towards or away from the centre. The shape keeps its proportions." },
+  "shape-scale": { title: "Scale shape", body: "Choose Scale, then drag towards or away from the centre. Circles also have horizontal and vertical stretch nodes; double-tap a node to make the shape round using that node’s dimension as the diameter." },
   "shape-colour": { title: "Shape look", body: "Open the fill and outline controls. You can change colours, remove either part, and adjust outline thickness." },
   "shape-add-vertex": { title: "Add a vertex", body: "Tap plus, then tap a plus marker on the edge where you want a new corner. Circles cannot have vertices." },
   "shape-delete-vertex": { title: "Delete a vertex", body: "Select a vertex, then tap minus. A shape must keep at least three vertices." },

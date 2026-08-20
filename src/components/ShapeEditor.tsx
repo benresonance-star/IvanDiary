@@ -28,6 +28,7 @@ type DragState = {
   centreY: number;
   startDistance: number;
   startAngle: number;
+  scaleAxis?: "horizontal" | "vertical";
 };
 type PalettePosition = { left: number; top: number };
 
@@ -342,7 +343,7 @@ export function ShapeEditor({
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Continue while pointer events arrive. */ }
   };
 
-  const beginCircleScale = (event: PointerEvent<HTMLButtonElement>) => {
+  const beginCircleScale = (event: PointerEvent<HTMLButtonElement>, scaleAxis: "horizontal" | "vertical") => {
     if (!arrange || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
@@ -353,7 +354,7 @@ export function ShapeEditor({
     const centreY = bounds.top + (current.position.y + frame.height / 2) * bounds.height;
     dragRef.current = {
       pointerId: event.pointerId, mode: "scale", start: current, startX: event.clientX, startY: event.clientY,
-      centreX, centreY, startDistance: Math.max(1, distance(event.clientX, event.clientY, centreX, centreY)),
+      centreX, centreY, startDistance: Math.max(1, distance(event.clientX, event.clientY, centreX, centreY)), scaleAxis,
       startAngle: 0,
     };
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Continue while pointer events arrive. */ }
@@ -376,6 +377,23 @@ export function ShapeEditor({
       preview({ ...active.start, rotationDegrees: snapRotation((active.start.rotationDegrees ?? 0) + delta) });
     } else {
       const centre = { x: active.start.position.x + startFrame.width / 2, y: active.start.position.y + startFrame.height / 2 };
+      if (active.scaleAxis) {
+        const radians = (active.start.rotationDegrees ?? 0) * Math.PI / 180;
+        const deltaX = event.clientX - active.centreX;
+        const deltaY = event.clientY - active.centreY;
+        const localDistance = Math.abs(active.scaleAxis === "horizontal"
+          ? deltaX * Math.cos(radians) + deltaY * Math.sin(radians)
+          : -deltaX * Math.sin(radians) + deltaY * Math.cos(radians));
+        const requested = 2 * localDistance / (active.scaleAxis === "horizontal" ? bounds.width : bounds.height);
+        const limit = active.scaleAxis === "horizontal"
+          ? PAGE_LAYOUT_BOUNDS.right - PAGE_LAYOUT_BOUNDS.left
+          : PAGE_LAYOUT_BOUNDS.bottom - PAGE_LAYOUT_BOUNDS.top;
+        const nextFrame = active.scaleAxis === "horizontal"
+          ? { ...startFrame, width: Math.max(.08, Math.min(limit, requested)) }
+          : { ...startFrame, height: Math.max(.08, Math.min(limit, requested)) };
+        preview({ ...active.start, frame: nextFrame, position: clampPosition({ x: centre.x - nextFrame.width / 2, y: centre.y - nextFrame.height / 2 }, nextFrame) });
+        return;
+      }
       const rawFactor = distance(event.clientX, event.clientY, active.centreX, active.centreY) / active.startDistance;
       const minimumFactor = Math.max(0.08 / startFrame.width, 0.08 / startFrame.height);
       const maximumFactor = Math.min((PAGE_LAYOUT_BOUNDS.right - PAGE_LAYOUT_BOUNDS.left) / startFrame.width, (PAGE_LAYOUT_BOUNDS.bottom - PAGE_LAYOUT_BOUNDS.top) / startFrame.height);
@@ -436,18 +454,31 @@ export function ShapeEditor({
     }
   };
 
-  const keyboardCircleScale = (event: KeyboardEvent<HTMLButtonElement>) => {
+  const keyboardCircleScale = (event: KeyboardEvent<HTMLButtonElement>, scaleAxis: "horizontal" | "vertical") => {
     if (!event.key.startsWith("Arrow")) return;
     event.preventDefault();
     event.stopPropagation();
     const grow = event.key === "ArrowUp" || event.key === "ArrowRight";
     const requestedFactor = grow ? 1 + (event.shiftKey ? 0.15 : 0.05) : 1 - (event.shiftKey ? 0.15 : 0.05);
     const centre = { x: current.position.x + frame.width / 2, y: current.position.y + frame.height / 2 };
-    const minimumFactor = Math.max(0.08 / frame.width, 0.08 / frame.height);
-    const maximumFactor = Math.min((PAGE_LAYOUT_BOUNDS.right - PAGE_LAYOUT_BOUNDS.left) / frame.width, (PAGE_LAYOUT_BOUNDS.bottom - PAGE_LAYOUT_BOUNDS.top) / frame.height);
-    const factor = Math.max(minimumFactor, Math.min(maximumFactor, requestedFactor));
-    const nextFrame = { width: frame.width * factor, height: frame.height * factor };
-    commit({ ...current, frame: nextFrame, position: clampPosition({ x: centre.x - nextFrame.width / 2, y: centre.y - nextFrame.height / 2 }, nextFrame) }, "Circle scaled");
+    const limit = scaleAxis === "horizontal" ? PAGE_LAYOUT_BOUNDS.right - PAGE_LAYOUT_BOUNDS.left : PAGE_LAYOUT_BOUNDS.bottom - PAGE_LAYOUT_BOUNDS.top;
+    const nextFrame = scaleAxis === "horizontal"
+      ? { ...frame, width: Math.max(.08, Math.min(limit, frame.width * requestedFactor)) }
+      : { ...frame, height: Math.max(.08, Math.min(limit, frame.height * requestedFactor)) };
+    commit({ ...current, frame: nextFrame, position: clampPosition({ x: centre.x - nextFrame.width / 2, y: centre.y - nextFrame.height / 2 }, nextFrame) }, `Circle stretched ${scaleAxis === "horizontal" ? "horizontally" : "vertically"}`);
+  };
+
+  const restoreRoundCircle = (scaleAxis: "horizontal" | "vertical") => {
+    const bounds = pageRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const centre = { x: current.position.x + frame.width / 2, y: current.position.y + frame.height / 2 };
+    const maximumDiameter = Math.min(
+      (PAGE_LAYOUT_BOUNDS.right - PAGE_LAYOUT_BOUNDS.left) * bounds.width,
+      (PAGE_LAYOUT_BOUNDS.bottom - PAGE_LAYOUT_BOUNDS.top) * bounds.height,
+    );
+    const diameter = Math.min(maximumDiameter, scaleAxis === "horizontal" ? frame.width * bounds.width : frame.height * bounds.height);
+    const nextFrame = { width: diameter / bounds.width, height: diameter / bounds.height };
+    commit({ ...current, frame: nextFrame, position: clampPosition({ x: centre.x - nextFrame.width / 2, y: centre.y - nextFrame.height / 2 }, nextFrame) }, "Circle restored to round");
   };
 
   const keyboardVertex = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -537,19 +568,33 @@ export function ShapeEditor({
 
   const controllers = selected && arrange && controllerTarget ? createPortal(
     <div aria-label={`${shape.shapeKind} shape editing points`} className="shape-controller-overlay shape-editor" style={{ ...shapeStyle(current, stackIndex), zIndex: 850 }}>
-      {current.shapeKind === "circle" && activeMode === "scale" ? <button
-        aria-label="Scale circle"
+      {current.shapeKind === "circle" && activeMode === "scale" ? <><button
+        aria-label="Stretch circle horizontally. Double-tap to make round"
         className="shape-scale-handle"
         data-help-topic="shape-scale"
-        onKeyDown={keyboardCircleScale}
+        onDoubleClick={() => restoreRoundCircle("horizontal")}
+        onKeyDown={(event) => keyboardCircleScale(event, "horizontal")}
         onLostPointerCapture={finishTransform}
         onPointerCancel={cancelTransform}
-        onPointerDown={beginCircleScale}
+        onPointerDown={(event) => beginCircleScale(event, "horizontal")}
         onPointerMove={updateTransform}
         onPointerUp={finishTransform}
         style={{ left: "96%", top: "50%" }}
         type="button"
-      /> : null}
+      /><button
+        aria-label="Stretch circle vertically. Double-tap to make round"
+        className="shape-scale-handle"
+        data-help-topic="shape-scale"
+        onDoubleClick={() => restoreRoundCircle("vertical")}
+        onKeyDown={(event) => keyboardCircleScale(event, "vertical")}
+        onLostPointerCapture={finishTransform}
+        onPointerCancel={cancelTransform}
+        onPointerDown={(event) => beginCircleScale(event, "vertical")}
+        onPointerMove={updateTransform}
+        onPointerUp={finishTransform}
+        style={{ left: "50%", top: "96%" }}
+        type="button"
+      /></> : null}
       {vertices.map((point, index) => <button
         aria-label={`Vertex ${index + 1}`}
         aria-pressed={selectedVertex === index}

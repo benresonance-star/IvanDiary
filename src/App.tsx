@@ -823,6 +823,7 @@ export default function App() {
             navigationObscured={
               navigationMenuOpen || navigationMenuOpening || helpModeActive
             }
+            shapeEditingObscured={navigationMenuOpen || navigationMenuOpening}
             recordingLimitMinutes={snapshot.settings.recordingLimitMinutes}
             textEditorPreference={snapshot.settings.textEditorPreference}
             share={share}
@@ -856,6 +857,7 @@ export default function App() {
           navigationObscured={
             navigationMenuOpen || navigationMenuOpening || helpModeActive
           }
+          shapeEditingObscured={navigationMenuOpen || navigationMenuOpening}
           onAddPage={createStoryPage}
           onDeletePage={deleteStoryPage}
           onDrawingHealthChange={setDrawingHealth}
@@ -934,6 +936,7 @@ export default function App() {
             navigationObscured={
               navigationMenuOpen || navigationMenuOpening || helpModeActive
             }
+            shapeEditingObscured={navigationMenuOpen || navigationMenuOpening}
             recordingLimitMinutes={snapshot.settings.recordingLimitMinutes}
             textEditorPreference={snapshot.settings.textEditorPreference}
             share={share}

@@ -193,6 +193,7 @@ export function MyStoryWorkspace({
   health,
   myWords,
   navigationObscured,
+  shapeEditingObscured = false,
   onAddPage,
   onDeletePage,
   onDrawingHealthChange,
@@ -225,6 +226,7 @@ export function MyStoryWorkspace({
   health: SaveHealth;
   myWords: MyWord[];
   navigationObscured: boolean;
+  shapeEditingObscured?: boolean;
   onAddPage: () => Promise<boolean>;
   onDeletePage: (pageId: string) => Promise<boolean>;
   onDrawingHealthChange: (health: SaveHealth) => void;
@@ -1807,7 +1809,7 @@ export function MyStoryWorkspace({
         {(page.shapes ?? []).map((shape) => {
           const stackIndex = stackFor("shape", shape.id);
           return <ShapeEditor
-            arrange={tool === "arrange" && !navigationObscured}
+            arrange={tool === "arrange" && !shapeEditingObscured}
             canMoveDown={shape.layer !== "behind-sketch"}
             canMoveUp={shape.layer === "behind-sketch" || stackIndex < renderOrder.length - 1}
             key={shape.id}

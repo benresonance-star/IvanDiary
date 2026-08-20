@@ -222,6 +222,7 @@ export function PageWorkspace({
   penWidth,
   myWords,
   navigationObscured = false,
+  shapeEditingObscured = false,
   recordingLimitMinutes,
   textEditorPreference,
   share,
@@ -257,6 +258,7 @@ export function PageWorkspace({
   penWidth: number;
   myWords: MyWord[];
   navigationObscured?: boolean;
+  shapeEditingObscured?: boolean;
   recordingLimitMinutes: 2 | 5 | 10 | 30 | null;
   textEditorPreference: "native" | "standard";
   share: NativeSharePlugin;
@@ -1687,7 +1689,7 @@ export function PageWorkspace({
             }
             case "shape":
               return <ShapeEditor
-                arrange={tool === "arrange" && !navigationObscured}
+                arrange={tool === "arrange" && !shapeEditingObscured}
                 canMoveDown={object.layer !== "behind-sketch"}
                 canMoveUp={object.layer === "behind-sketch" || index < page.objects.length - 1}
                 key={object.id}

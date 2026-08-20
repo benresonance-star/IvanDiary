@@ -221,13 +221,20 @@ describe("ShapeEditor", () => {
     expect(screen.getByRole("button", { name: "Add a vertex" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Delete selected vertex" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: /Vertex 1/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Scale circle" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Stretch circle horizontally/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Scale" }));
-    const scale = screen.getByRole("button", { name: "Scale circle" });
-    fireEvent.pointerDown(scale, { button: 0, pointerId: 12, clientX: 430, clientY: 256 });
-    fireEvent.pointerMove(scale, { pointerId: 12, clientX: 540, clientY: 256 });
-    fireEvent.pointerUp(scale, { pointerId: 12, clientX: 540, clientY: 256 });
+    const horizontal = screen.getByRole("button", { name: /Stretch circle horizontally/ });
+    const vertical = screen.getByRole("button", { name: /Stretch circle vertically/ });
+    fireEvent.pointerDown(horizontal, { button: 0, pointerId: 12, clientX: 440, clientY: 256 });
+    fireEvent.pointerMove(horizontal, { pointerId: 12, clientX: 560, clientY: 256 });
+    fireEvent.pointerUp(horizontal, { pointerId: 12, clientX: 560, clientY: 256 });
     expect(onUpdate.mock.calls[0]?.[0].frame.width).toBeGreaterThan(shape.frame!.width);
+    expect(onUpdate.mock.calls[0]?.[0].frame.height).toBe(shape.frame!.height);
+
+    fireEvent.doubleClick(vertical);
+    const rounded = onUpdate.mock.calls.at(-1)?.[0] as ShapeObject;
+    expect(rounded.frame!.width * 1000).toBeCloseTo(rounded.frame!.height * 800);
+    expect(rounded.frame!.height).toBeCloseTo(shape.frame!.height);
   });
 
   it("uses two opposite corners to resize a rectangle without converting it to a polygon", () => {
