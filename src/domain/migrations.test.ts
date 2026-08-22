@@ -18,11 +18,12 @@ describe("journal migrations", () => {
     } as const;
     const migrated = migrateJournalSnapshot({
       ...current,
+      stories: undefined,
       pages: [{ ...current.pages[0]!, objects: [freeform] }],
       myStory: { pages: [{ id: "story-page", drawingDocumentId: "story-drawing", shapes: [{ ...freeform, id: "story-freeform", pageId: "story-page" }] }] },
     });
     expect(migrated.pages[0]!.objects[0]).toEqual(expect.objectContaining({ shapeKind: "freeform", points: freeform.points }));
-    expect(migrated.myStory?.pages[0]?.shapes).toEqual([expect.objectContaining({ id: "story-freeform", shapeKind: "freeform", points: freeform.points })]);
+    expect(migrated.stories[0]?.pages[0]?.shapes).toEqual([expect.objectContaining({ id: "story-freeform", shapeKind: "freeform", points: freeform.points })]);
   });
 
   it("adds safe accessibility defaults to version zero data", () => {
@@ -217,11 +218,11 @@ describe("journal migrations", () => {
     const current = createInitialJournalSnapshot(
       new Date("2026-08-03T09:00:00.000Z"),
     );
-    const withoutStory = { ...current, myStory: undefined };
+    const withoutStory = { ...current, stories: undefined, myStory: undefined };
     const migratedDefault = migrateJournalSnapshot(withoutStory);
 
-    expect(migratedDefault.myStory?.pages).toHaveLength(1);
-    expect(migratedDefault.myStory?.pages[0]).toEqual(
+    expect(migratedDefault.stories[0]?.pages).toHaveLength(1);
+    expect(migratedDefault.stories[0]?.pages[0]).toEqual(
       expect.objectContaining({
         splitRatio: 0.5,
         textSide: "left",
@@ -234,9 +235,10 @@ describe("journal migrations", () => {
 
     const migratedInvalid = migrateJournalSnapshot({
       ...current,
+      stories: undefined,
       myStory: {
         pages: [{
-          ...current.myStory!.pages[0]!,
+          ...current.stories[0]!.pages[0]!,
           splitRatio: 0.99,
           textSide: "invalid",
           textBackgroundColor: "invalid",
@@ -273,7 +275,7 @@ describe("journal migrations", () => {
         }],
       },
     });
-    expect(migratedInvalid.myStory?.pages[0]).toEqual(
+    expect(migratedInvalid.stories[0]?.pages[0]).toEqual(
       expect.objectContaining({
         splitRatio: 0.7,
         textSide: "left",
@@ -300,6 +302,15 @@ describe("journal migrations", () => {
         ],
       }),
     );
+  });
+
+  it("preserves multiple stories and migrates a legacy single story", () => {
+    const current = createInitialJournalSnapshot(new Date("2026-08-03T09:00:00.000Z"));
+    const multiple = migrateJournalSnapshot({ ...current, stories: [current.stories[0], { ...current.stories[0], id: "story-two", name: "Travels" }] });
+    expect(multiple.stories.map((story) => story.name)).toEqual(["My Story", "Travels"]);
+    const legacy = migrateJournalSnapshot({ ...current, stories: undefined, myStory: { defaultTextColor: "#171410", pages: current.stories[0]!.pages } });
+    expect(legacy.stories).toHaveLength(1);
+    expect(legacy.stories[0]).toEqual(expect.objectContaining({ id: "story-my-story", name: "My Story" }));
   });
 
 });

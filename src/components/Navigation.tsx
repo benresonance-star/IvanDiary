@@ -20,7 +20,7 @@ export type AppSection =
 
 const NAVIGATION_ITEMS = [
   { id: "diary", label: "My Journal", Icon: BookOpen },
-  { id: "story", label: "My Story", Icon: Book },
+  { id: "story", label: "My Stories", Icon: Book },
   { id: "sketchbooks", label: "My Sketchbooks", Icon: NotebookTabs },
   { id: "favourites", label: "My Favourites", Icon: ThumbsUp },
   { id: "settings", label: "My Settings", Icon: Settings },

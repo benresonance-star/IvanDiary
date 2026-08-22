@@ -128,6 +128,20 @@ describe("document operations", () => {
     );
   });
 
+  it("creates, renames, favourites, reorders, and deletes stories", () => {
+    const timestamp = "2026-08-03T10:00:00.000Z";
+    const second = { ...initial.stories[0]!, id: "story-two", name: "Travels", favourite: false, pages: [], createdAt: timestamp, updatedAt: timestamp };
+    const created = applyDocumentOperation(initial, { id: "create-story", type: "story-create", journalId: initial.id, baseRevision: 0, resultingRevision: 1, createdAt: timestamp, story: second });
+    const renamed = applyDocumentOperation(created, { id: "rename-story", type: "story-rename", journalId: initial.id, baseRevision: 1, resultingRevision: 2, createdAt: timestamp, storyId: second.id, name: "Our Travels" });
+    const favourited = applyDocumentOperation(renamed, { id: "favourite-story", type: "favourite-set", journalId: initial.id, baseRevision: 2, resultingRevision: 3, createdAt: timestamp, targetType: "story", targetId: second.id, favourite: true });
+    const reordered = applyDocumentOperation(favourited, { id: "reorder-stories", type: "stories-reorder", journalId: initial.id, baseRevision: 3, resultingRevision: 4, createdAt: timestamp, storyIds: [second.id, initial.stories[0]!.id] });
+    const deleted = applyDocumentOperation(reordered, { id: "delete-story", type: "story-delete", journalId: initial.id, baseRevision: 4, resultingRevision: 5, createdAt: timestamp, storyId: second.id });
+    expect(favourited.stories[1]).toEqual(expect.objectContaining({ name: "Our Travels", favourite: true }));
+    expect(reordered.stories[0]?.id).toBe(second.id);
+    expect(deleted.stories.map((story) => story.id)).toEqual([initial.stories[0]!.id]);
+    expect(deleted.favourites).not.toContainEqual(expect.objectContaining({ targetId: second.id }));
+  });
+
   it("favourites a later diary page without marking the whole day", () => {
     const day = initial.days[0]!;
     const page = emptyPage(day.id);
@@ -703,7 +717,7 @@ describe("document operations", () => {
   });
 
   it("updates structured My Story content and layout durably", () => {
-    const storyPage = initial.myStory!.pages[0]!;
+    const storyPage = initial.stories[0]!.pages[0]!;
     const withText = applyDocumentOperation(initial, {
       id: "add-story-heading",
       type: "my-story-text-add",
@@ -735,8 +749,8 @@ describe("document operations", () => {
       textColor: "#171410",
     });
 
-    expect(withText.myStory?.defaultTextColor).toBe("#245b8a");
-    expect(resized.myStory?.pages[0]).toEqual(
+    expect(withText.stories[0]?.defaultTextColor).toBe("#245b8a");
+    expect(resized.stories[0]?.pages[0]).toEqual(
       expect.objectContaining({
         splitRatio: 0.6,
         textSide: "right",
@@ -751,7 +765,7 @@ describe("document operations", () => {
         ],
       }),
     );
-    expect(resized.myStory?.defaultTextColor).toBe("#171410");
+    expect(resized.stories[0]?.defaultTextColor).toBe("#171410");
 
     const contrastAdjusted = applyDocumentOperation(withText, {
       id: "adjust-story-contrast",
@@ -763,7 +777,7 @@ describe("document operations", () => {
       pageId: storyPage.id,
       textBackgroundColor: "#245b8a",
     });
-    expect(contrastAdjusted.myStory?.pages[0]).toEqual(
+    expect(contrastAdjusted.stories[0]?.pages[0]).toEqual(
       expect.objectContaining({
         textBackgroundColor: "#245b8a",
         textColor: "#ffffff",
@@ -796,13 +810,13 @@ describe("document operations", () => {
         createdAt: "2026-08-03T10:02:00.000Z",
       },
     });
-    expect(withRecording.myStory?.pages[0]?.recordings).toEqual([
+    expect(withRecording.stories[0]?.pages[0]?.recordings).toEqual([
       expect.objectContaining({ id: "story-recording" }),
     ]);
   });
 
   it("adds and updates durable My Story links", () => {
-    const storyPage = initial.myStory!.pages[0]!;
+    const storyPage = initial.stories[0]!.pages[0]!;
     const link = {
       id: "story-link",
       url: "https://example.com/memory",
@@ -831,7 +845,7 @@ describe("document operations", () => {
       link: { ...link, title: "Updated archive", revision: 1 },
     });
 
-    expect(updated.myStory?.pages[0]?.links).toEqual([
+    expect(updated.stories[0]?.pages[0]?.links).toEqual([
       expect.objectContaining({
         id: "story-link",
         title: "Updated archive",

@@ -17,6 +17,7 @@ import type {
 import type { SketchRepository } from "../sketch/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PagePreview } from "./DiaryPageStrip";
+import { SketchThumbnail } from "./SketchThumbnail";
 import { FavouriteConfirmation } from "./FavouriteConfirmation";
 import { displayDate, moveItem } from "./libraryViewHelpers";
 
@@ -81,6 +82,9 @@ export function FavouritesView({
                 favourite.targetType === "sketchbook" &&
                 candidate.id === favourite.targetId,
             );
+            const story = snapshot.stories.find(
+              (candidate) => favourite.targetType === "story" && candidate.id === favourite.targetId,
+            );
             const day = snapshot.days.find(
               (candidate) =>
                 favourite.targetType === "journal-day" &&
@@ -122,7 +126,7 @@ export function FavouritesView({
                   ? pageSketchbook.pageIds.indexOf(favouritePage.id) + 1
                   : undefined;
             const title =
-              sketchbook?.name ??
+              story?.name ?? sketchbook?.name ??
               (day
                 ? displayDate(day.date)
                 : pageDay
@@ -146,7 +150,9 @@ export function FavouritesView({
                   tabIndex={arranging ? -1 : undefined}
                   type="button"
                 >
-                  {previewPage ? (
+                  {story?.pages[0] ? (
+                    <span aria-hidden="true" className="diary-page-preview paper-clean-paper favourite-page-preview"><SketchThumbnail documentId={story.pages[0].drawingDocumentId} repository={sketchRepository} /></span>
+                  ) : previewPage ? (
                     <PagePreview
                       className="favourite-page-preview"
                       page={previewPage}
@@ -168,6 +174,8 @@ export function FavouritesView({
                         ? "Diary day"
                         : favourite.targetType === "sketchbook"
                           ? "Sketchbook"
+                          : favourite.targetType === "story"
+                            ? "Story"
                           : pageSketchbook
                             ? "Sketchbook page"
                             : "Diary page"}

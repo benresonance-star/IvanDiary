@@ -49,10 +49,9 @@ export function reconcileCloudRestore(
             : object,
       ),
     })),
-    myStory: snapshot.myStory
-      ? {
-          ...snapshot.myStory,
-          pages: snapshot.myStory.pages.map((page) => ({
+    stories: snapshot.stories.map((story) => ({
+          ...story,
+          pages: story.pages.map((page) => ({
             ...page,
             photos: page.photos.map((photo) => ({
               ...photo,
@@ -63,8 +62,7 @@ export function reconcileCloudRestore(
               asset: updateAsset(recording.asset),
             })),
           })),
-        }
-      : undefined,
+        })),
     settings: {
       ...snapshot.settings,
       myWords: snapshot.settings.myWords.map((word) =>

@@ -83,7 +83,7 @@ describe("pageShare helpers", () => {
     const snapshot = createInitialJournalSnapshot(
       new Date("2026-08-14T09:00:00.000Z"),
     );
-    const page = snapshot.myStory!.pages[0]!;
+    const page = snapshot.stories[0]!.pages[0]!;
     page.recordings = [{
       id: "story-voice",
       asset: {
@@ -193,7 +193,7 @@ describe("pageShare helpers", () => {
     const snapshot = createInitialJournalSnapshot(
       new Date("2026-08-14T09:00:00.000Z"),
     );
-    const page = snapshot.myStory!.pages[0]!;
+    const page = snapshot.stories[0]!.pages[0]!;
     page.links = [{
       id: "story-link",
       url: "https://example.com/memory",

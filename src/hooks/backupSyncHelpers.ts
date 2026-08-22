@@ -87,7 +87,7 @@ export function backupContentToken(snapshot: JournalSnapshot): string {
     pages: snapshot.pages,
     sketchbooks: snapshot.sketchbooks,
     favourites: snapshot.favourites,
-    myStory: snapshot.myStory,
+    stories: snapshot.stories,
     settings: recordableSettings,
   }, (key, value) => key === "localUri" ? undefined : value);
 }

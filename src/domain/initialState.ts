@@ -89,7 +89,16 @@ export function createInitialJournalSnapshot(
       },
     ],
     favourites: [],
-    myStory: { defaultTextColor: "#171410", pages: [storyPage] },
+    stories: [{
+      id: "story-my-story",
+      name: "My Story",
+      favourite: false,
+      defaultTextColor: "#171410",
+      pages: [storyPage],
+      revision: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }],
     settings: {
       displayName: "Ivan",
       lastSettingsTab: "about",

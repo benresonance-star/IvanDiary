@@ -2,7 +2,13 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -38,7 +44,7 @@ jobs:
 
   ios:
     name: iOS simulator build
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

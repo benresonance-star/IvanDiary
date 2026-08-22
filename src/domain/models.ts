@@ -240,13 +240,19 @@ export type MyStoryPage = {
 };
 
 export type MyStory = {
+  id: EntityId;
+  name: string;
+  favourite: boolean;
   defaultTextColor: string;
   pages: MyStoryPage[];
+  revision: number;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
 };
 
 export type Favourite = {
   id: EntityId;
-  targetType: "journal-day" | "page" | "sketchbook";
+  targetType: "journal-day" | "page" | "sketchbook" | "story";
   targetId: EntityId;
   createdAt: IsoDateTime;
 };
@@ -343,7 +349,7 @@ export type JournalSnapshot = {
   pages: Page[];
   sketchbooks: Sketchbook[];
   favourites: Favourite[];
-  myStory?: MyStory;
+  stories: MyStory[];
   settings: JournalSettings;
   appliedOperationIds: EntityId[];
   revision: number;
@@ -468,15 +474,35 @@ export type DocumentOperation = OperationBase &
       settings: Partial<JournalSettings>;
     }
     | {
+      type: "story-create";
+      story: MyStory;
+    }
+    | {
+      type: "story-rename";
+      storyId: EntityId;
+      name: string;
+    }
+    | {
+      type: "story-delete";
+      storyId: EntityId;
+    }
+    | {
+      type: "stories-reorder";
+      storyIds: EntityId[];
+    }
+    | {
       type: "my-story-page-create";
+      storyId: EntityId;
       page: MyStoryPage;
     }
     | {
       type: "my-story-pages-reorder";
+      storyId: EntityId;
       pageIds: EntityId[];
     }
     | {
       type: "my-story-page-delete";
+      storyId: EntityId;
       pageId: EntityId;
     }
     | {

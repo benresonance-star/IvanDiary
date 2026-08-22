@@ -673,6 +673,12 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
     }
 
     private func selectInputMethod(_ method: NativeTextInputMethod) {
+        guard method != state.inputMethod else {
+            if method == .keyboard, !textView.isFirstResponder {
+                textView.becomeFirstResponder()
+            }
+            return
+        }
         let selection = textView.selectedRange
         state.selectInputMethod(method)
         for action in NativeKeyboardSessionCoordinator.transition(to: method) {
@@ -685,6 +691,8 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
                 textView.inputView = nil
             case .reloadInputViews:
                 textView.reloadInputViews()
+            case .setEditable(let editable):
+                textView.isEditable = editable
             case .becomeFirstResponder:
                 textView.becomeFirstResponder()
             case .restoreSelection:

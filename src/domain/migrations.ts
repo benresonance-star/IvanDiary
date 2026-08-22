@@ -336,11 +336,22 @@ function defaultStoryPage(timestamp: string): MyStoryPage {
   };
 }
 
-function migrateMyStory(value: unknown, timestamp: string): MyStory {
+function migrateMyStory(
+  value: unknown,
+  timestamp: string,
+  index = 0,
+): MyStory {
+  const fallbackId = index === 0 ? "story-my-story" : `story-${index + 1}`;
   if (!isRecord(value) || !Array.isArray(value.pages)) {
     return {
+      id: fallbackId,
+      name: index === 0 ? "My Story" : `Story ${index + 1}`,
+      favourite: false,
       defaultTextColor: "#171410",
       pages: [defaultStoryPage(timestamp)],
+      revision: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
     };
   }
   const pages = value.pages.flatMap((candidate): MyStoryPage[] => {
@@ -586,13 +597,30 @@ function migrateMyStory(value: unknown, timestamp: string): MyStory {
     .flatMap((page) => page.textBlocks)
     .at(-1)?.color;
   return {
+    id: typeof value.id === "string" ? value.id : fallbackId,
+    name: typeof value.name === "string" && value.name.trim()
+      ? value.name.trim().slice(0, 80)
+      : index === 0 ? "My Story" : `Story ${index + 1}`,
+    favourite: value.favourite === true,
     defaultTextColor:
       typeof value.defaultTextColor === "string" &&
       /^#[0-9a-f]{6}$/i.test(value.defaultTextColor)
         ? value.defaultTextColor
         : latestTextColor ?? "#171410",
     pages: migratedPages,
+    revision: typeof value.revision === "number" ? value.revision : 0,
+    createdAt: typeof value.createdAt === "string" ? value.createdAt : timestamp,
+    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : timestamp,
   };
+}
+
+function migrateStories(value: Record<string, unknown>, timestamp: string): MyStory[] {
+  if (Array.isArray(value.stories) && value.stories.length > 0) {
+    return value.stories
+      .slice(0, 50)
+      .map((story, index) => migrateMyStory(story, timestamp, index));
+  }
+  return [migrateMyStory(value.myStory, timestamp)];
 }
 
 export function migrateJournalSnapshot(value: unknown): JournalSnapshot {
@@ -616,7 +644,7 @@ export function migrateJournalSnapshot(value: unknown): JournalSnapshot {
     return {
       ...(value as unknown as JournalSnapshot),
       pages: migratePageFrames(value.pages),
-      myStory: migrateMyStory(value.myStory, value.updatedAt),
+      stories: migrateStories(value, value.updatedAt),
       settings: migrateSettings(value.settings),
     };
   }
@@ -637,7 +665,7 @@ export function migrateJournalSnapshot(value: unknown): JournalSnapshot {
       pages: migratePageFrames(value.pages),
       sketchbooks: value.sketchbooks,
       favourites: Array.isArray(value.favourites) ? value.favourites : [],
-      myStory: migrateMyStory(value.myStory, value.updatedAt),
+      stories: migrateStories(value, value.updatedAt),
       settings: migrateSettings(value.settings),
       appliedOperationIds: Array.isArray(value.appliedOperationIds)
         ? value.appliedOperationIds.filter(

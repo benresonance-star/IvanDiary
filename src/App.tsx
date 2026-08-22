@@ -5,6 +5,7 @@ import {
   EmptySketchbookView,
   FavouritesView,
   SketchbooksView,
+  StoriesView,
 } from "./components/LibraryViews";
 import {
   Navigation,
@@ -152,6 +153,8 @@ export default function App() {
   const [storageBlocked, setStorageBlocked] = useState(false);
   const [activeDiaryPageId, setActiveDiaryPageId] = useState<string>();
   const [activeStoryPageId, setActiveStoryPageId] = useState<string>();
+  const [activeStoryId, setActiveStoryId] = useState<string>();
+  const [lastViewedStoryId, setLastViewedStoryId] = useState<string>();
 
   useEffect(() => {
     const standardAppAppearance =
@@ -404,7 +407,8 @@ export default function App() {
   const page =
     dayPages.find((candidate) => candidate.id === activeDiaryPageId) ??
     dayPages[0];
-  const storyPages = snapshot.myStory?.pages ?? [];
+  const activeStory = snapshot.stories.find((story) => story.id === activeStoryId);
+  const storyPages = activeStory?.pages ?? [];
   const storyPage =
     storyPages.find((candidate) => candidate.id === activeStoryPageId) ??
     storyPages[0];
@@ -452,6 +456,7 @@ export default function App() {
   };
 
   const createStoryPage = async (): Promise<boolean> => {
+    if (!activeStory) return false;
     if (storyPages.length >= MAX_PAGES_PER_COLLECTION) {
       return false;
     }
@@ -464,7 +469,7 @@ export default function App() {
       textBackgroundColor: storyPage?.textBackgroundColor ?? "#fffaf0",
       textColor:
         storyPage?.textColor ??
-        snapshot.myStory?.defaultTextColor ??
+        activeStory.defaultTextColor ??
         "#171410",
       textBlocks: [],
       photos: [],
@@ -476,6 +481,7 @@ export default function App() {
     };
     const saved = await commit({
       type: "my-story-page-create",
+      storyId: activeStory.id,
       page: newPage,
     });
     if (saved) {
@@ -502,18 +508,42 @@ export default function App() {
   };
 
   const deleteStoryPage = async (pageId: string): Promise<boolean> => {
+    if (!activeStory) return false;
     if (storyPages.length <= 1) return false;
     const deletedPage = storyPages.find((candidate) => candidate.id === pageId);
     if (!deletedPage) return false;
     const index = storyPages.indexOf(deletedPage);
     const nextPageId =
       storyPages[index + 1]?.id ?? storyPages[index - 1]?.id;
-    const saved = await commit({ type: "my-story-page-delete", pageId });
+    const saved = await commit({ type: "my-story-page-delete", storyId: activeStory.id, pageId });
     if (saved) {
       setActiveStoryPageId(nextPageId);
       await trashStoryPageAssets(deletedPage);
     }
     return saved;
+  };
+
+  const createStory = async (name: string): Promise<boolean> => {
+    const timestamp = new Date().toISOString();
+    const storyId = createId();
+    const page: MyStoryPage = {
+      id: createId(), drawingDocumentId: createId(), splitRatio: 0.5,
+      textSide: "left", textBackgroundColor: "#fffaf0", textColor: "#171410",
+      textBlocks: [], photos: [], links: [], recordings: [], revision: 0,
+      createdAt: timestamp, updatedAt: timestamp,
+    };
+    return (await commit({ type: "story-create", story: {
+      id: storyId, name, favourite: false, defaultTextColor: "#171410",
+      pages: [page], revision: 0, createdAt: timestamp, updatedAt: timestamp,
+    } })) !== false;
+  };
+
+  const deleteStory = async (storyId: string): Promise<boolean> => {
+    const story = snapshot.stories.find((candidate) => candidate.id === storyId);
+    if (!story) return false;
+    const saved = await commit({ type: "story-delete", storyId });
+    if (saved) await Promise.allSettled(story.pages.map(trashStoryPageAssets));
+    return saved !== false;
   };
 
   const openDiaryDate = async (dateKey: string) => {
@@ -735,6 +765,12 @@ export default function App() {
         setLastViewedSketchbookId(favourite.targetId);
         setActiveSection("sketchbooks");
         break;
+      case "story":
+        setActiveStoryId(favourite.targetId);
+        setActiveStoryPageId(undefined);
+        setLastViewedStoryId(favourite.targetId);
+        setActiveSection("story");
+        break;
       default: {
         const exhaustiveFavourite: never = favourite.targetType;
         throw new Error(
@@ -748,6 +784,10 @@ export default function App() {
     if (section === "sketchbooks") {
       setActiveSketchbookId(undefined);
       setActiveSketchbookPageId(undefined);
+    }
+    if (section === "story") {
+      setActiveStoryId(undefined);
+      setActiveStoryPageId(undefined);
     }
     setActiveSection(section);
   };
@@ -838,12 +878,12 @@ export default function App() {
         );
       break;
     case "story":
-      content = storyPage ? (
+      content = activeStory && storyPage ? (
         <MyStoryWorkspace
           audio={audio}
           commit={commit}
           defaultTextColor={
-            snapshot.myStory?.defaultTextColor ?? "#171410"
+            activeStory.defaultTextColor
           }
           displayName={snapshot.settings.displayName}
           favouritePenColours={snapshot.settings.favouritePenColours}
@@ -859,10 +899,14 @@ export default function App() {
           }
           shapeEditingObscured={navigationMenuOpen || navigationMenuOpening}
           onAddPage={createStoryPage}
+          onBack={() => {
+            setActiveStoryId(undefined);
+            setActiveStoryPageId(undefined);
+          }}
           onDeletePage={deleteStoryPage}
           onDrawingHealthChange={setDrawingHealth}
           onReorderPages={(pageIds) =>
-            commit({ type: "my-story-pages-reorder", pageIds })
+            commit({ type: "my-story-pages-reorder", storyId: activeStory.id, pageIds })
           }
           onSelectPage={setActiveStoryPageId}
           onToolChange={setActivePageTool}
@@ -879,11 +923,24 @@ export default function App() {
           textEditorPreference={snapshot.settings.textEditorPreference}
           tool={activePageTool}
           transcription={transcription}
+          storyName={activeStory.name}
         />
       ) : (
-        <section className="empty-library">
-          <h1>My Story is not ready.</h1>
-        </section>
+        <StoriesView
+          commit={commit}
+          lastViewedStoryId={lastViewedStoryId}
+          onCreateStory={createStory}
+          onDeleteStory={deleteStory}
+          onOpenStory={(storyId) => {
+            setActiveStoryId(storyId);
+            setActiveStoryPageId(undefined);
+            setLastViewedStoryId(storyId);
+          }}
+          onRenameStory={(storyId, name) => commit({ type: "story-rename", storyId, name }) as Promise<boolean>}
+          onReorderStories={(storyIds) => commit({ type: "stories-reorder", storyIds }) as Promise<boolean>}
+          sketchRepository={sketchRepository}
+          snapshot={snapshot}
+        />
       );
       break;
     case "sketchbooks":

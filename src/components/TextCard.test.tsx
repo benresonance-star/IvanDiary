@@ -53,7 +53,7 @@ describe("TextCard", () => {
     });
   });
 
-  it("blocks native editing while repositioning in Edit mode", () => {
+  it("renders text as read-only in View mode", () => {
     const onEdit = vi.fn();
     render(
       <TextCard

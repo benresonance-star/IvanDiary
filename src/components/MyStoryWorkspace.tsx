@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  ChevronLeft,
   Eraser,
   Eye,
   ImagePlus,
@@ -195,6 +196,7 @@ export function MyStoryWorkspace({
   navigationObscured,
   shapeEditingObscured = false,
   onAddPage,
+  onBack,
   onDeletePage,
   onDrawingHealthChange,
   onReorderPages,
@@ -216,6 +218,7 @@ export function MyStoryWorkspace({
   textEditorPreference,
   tool,
   transcription,
+  storyName,
 }: {
   audio: JournalAudioPlugin;
   commit: Commit;
@@ -228,6 +231,7 @@ export function MyStoryWorkspace({
   navigationObscured: boolean;
   shapeEditingObscured?: boolean;
   onAddPage: () => Promise<boolean>;
+  onBack: () => void;
   onDeletePage: (pageId: string) => Promise<boolean>;
   onDrawingHealthChange: (health: SaveHealth) => void;
   onReorderPages: (pageIds: string[]) => Promise<boolean>;
@@ -249,6 +253,7 @@ export function MyStoryWorkspace({
   textEditorPreference: "native" | "standard";
   tool: PageTool;
   transcription: AppleTranscriptionPlugin;
+  storyName: string;
 }) {
   const sketchRef = useRef<SketchSurfaceHandle>(null);
   const paperRef = useRef<HTMLDivElement>(null);
@@ -516,6 +521,7 @@ export function MyStoryWorkspace({
   };
 
   const openTextEditor = async (block?: MyStoryTextBlock) => {
+    if (block && tool !== "arrange") return;
     setSelection(undefined);
     setTextEditorRequested(true);
     const hidden = await suspendOverlay();
@@ -1484,7 +1490,8 @@ export function MyStoryWorkspace({
       />
 
       <header className="page-date story-page-header" ref={headerRef}>
-        <p>My Story</p>
+        <button className="back-action" onClick={onBack} type="button"><ChevronLeft aria-hidden="true" />All stories</button>
+        <p>{storyName}</p>
         <span>PAGE {pages.findIndex((candidate) => candidate.id === page.id) + 1}</span>
       </header>
 
@@ -1869,6 +1876,9 @@ export function MyStoryWorkspace({
               if (selection.kind === "link") {
                 void openLinkComposer(selection.link);
               }
+            }}
+            onEditText={() => {
+              if (selection.kind === "text") void openTextEditor(selection.block);
             }}
             onMove={moveSelection}
             onPhotoWidthChange={(width) =>

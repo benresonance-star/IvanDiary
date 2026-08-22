@@ -64,7 +64,7 @@ describe("accessible navigation and settings", () => {
       "aria-current",
       "page",
     );
-    expect(screen.getByRole("button", { name: "My Story" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "My Stories" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "My Favourites" }));
     expect(onSectionChange).toHaveBeenCalledWith("favourites");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

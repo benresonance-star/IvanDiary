@@ -121,7 +121,8 @@ function renderStory(
         health={HEALTH}
         myWords={[]}
         navigationObscured={false}
-        onAddPage={vi.fn(async () => true)}
+      onAddPage={vi.fn(async () => true)}
+      onBack={vi.fn()}
         onDeletePage={vi.fn(async () => true)}
         onDrawingHealthChange={vi.fn()}
         onReorderPages={vi.fn(async () => true)}
@@ -139,7 +140,8 @@ function renderStory(
         sketchRepository={new BrowserSketchRepository()}
         textEditorPreference="standard"
         tool={tool}
-        transcription={transcription}
+      transcription={transcription}
+      storyName="My Story"
       />
     );
   }
@@ -479,6 +481,12 @@ describe("MyStoryWorkspace", () => {
     const heading = screen.getByRole("button", { name: "Growing up" });
 
     fireEvent.doubleClick(heading);
+    expect(await screen.findByRole("dialog", { name: "Edit story text" }))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(heading);
+    fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
     expect(await screen.findByRole("dialog", { name: "Edit story text" }))
       .toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));

@@ -16,13 +16,17 @@ export const HELP_TIPS = {
     title: "My Journal",
     body: "Open your dated journal pages.",
   },
+  "nav-story": {
+    title: "My Stories",
+    body: "Create, open, rename, arrange, and favourite your stories.",
+  },
   "nav-sketchbooks": {
     title: "My Sketchbooks",
     body: "Open your free-form sketchbooks.",
   },
   "nav-favourites": {
     title: "My Favourites",
-    body: "See pages and sketchbooks you have marked with a thumbs-up.",
+    body: "See pages, sketchbooks, and stories you have marked with a thumbs-up.",
   },
   "nav-settings": {
     title: "My Settings",

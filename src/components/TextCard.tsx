@@ -46,6 +46,9 @@ export function TextCard({
         }
       }}
       onChange={(event) => setText(event.target.value)}
+      onKeyDown={(event) => {
+        if (!readOnly) event.stopPropagation();
+      }}
       placeholder="Write here, or use Apple dictation…"
       readOnly={readOnly}
       ref={editorRef}

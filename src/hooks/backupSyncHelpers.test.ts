@@ -62,14 +62,14 @@ describe("backupContentToken", () => {
     };
     const changedStory = {
       ...snapshot,
-      myStory: {
-        ...snapshot.myStory!,
-        pages: snapshot.myStory!.pages.map((page, index) =>
+      stories: snapshot.stories.map((story) => ({
+        ...story,
+        pages: story.pages.map((page, index) =>
           index === 0
             ? { ...page, textSide: "right" as const }
             : page,
         ),
-      },
+      })),
     };
 
     expect(backupContentToken(changedTab)).toBe(backupContentToken(snapshot));

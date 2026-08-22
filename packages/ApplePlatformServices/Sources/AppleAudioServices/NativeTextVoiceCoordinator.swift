@@ -42,6 +42,7 @@ private final class TieredLiveSpeechRecognizer:
         onEvent:
             @escaping @MainActor @Sendable (NativeTextLiveEvent) -> Void
     ) async throws {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             let modern = AppleModernLiveSpeechRecognizer()
             do {
@@ -57,6 +58,7 @@ private final class TieredLiveSpeechRecognizer:
                 modern.cancel()
             }
         }
+        #endif
         let legacy = AppleLiveSpeechRecognizer()
         try await legacy.start(
             sessionID: sessionID,

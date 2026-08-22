@@ -17,6 +17,7 @@ export function MyStoryInspector({
   onClose,
   onDelete,
   onEditLink,
+  onEditText,
   onMove,
   onPhotoWidthChange,
   onTextBackgroundChange,
@@ -29,6 +30,7 @@ export function MyStoryInspector({
   onClose: () => void;
   onDelete: () => void;
   onEditLink: () => void;
+  onEditText: () => void;
   onMove: (direction: -1 | 1) => void;
   onPhotoWidthChange: (width: MyStoryPhoto["width"]) => void;
   onTextBackgroundChange: (color: string) => void;
@@ -74,6 +76,10 @@ export function MyStoryInspector({
 
       {selection.kind === "text" ? (
         <>
+          <button onClick={onEditText} type="button">
+            <Pencil aria-hidden="true" />
+            Edit text
+          </button>
           <div
             aria-label="Text size"
             className="story-segmented-control"

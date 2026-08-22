@@ -616,7 +616,7 @@ describe("PageWorkspace favourites", () => {
       objects: [textObject],
     };
     const commit = vi.fn(async () => true);
-    renderWorkspace({ commit, page });
+    renderWorkspace({ commit, page, tool: "arrange" });
 
     fireEvent.click(
       screen.getByRole("button", { name: "Edit journal text" }),
@@ -633,5 +633,16 @@ describe("PageWorkspace favourites", () => {
         },
       }),
     );
+  });
+
+  it("keeps existing canvas text read-only in View mode", () => {
+    const textObject: TextObject = {
+      id: "text-view", type: "text", pageId: "page-1",
+      position: { x: 0.2, y: 0.3 }, createdAt: "2026-08-14T09:00:00.000Z",
+      revision: 0, text: "Read only words", textScale: 1,
+    };
+    renderWorkspace({ page: { ...diaryPage(), id: "page-1", objects: [textObject] } });
+    expect(screen.queryByRole("button", { name: "Edit journal text" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Journal text" })).toHaveAttribute("readonly");
   });
 });

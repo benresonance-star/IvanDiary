@@ -100,9 +100,9 @@ describe("reconcileCloudRestore", () => {
     };
     const snapshot = {
       ...current,
-      myStory: {
-        ...current.myStory!,
-        pages: current.myStory!.pages.map((page) => ({
+      stories: current.stories.map((story) => ({
+        ...story,
+        pages: story.pages.map((page) => ({
           ...page,
           textSide: "right" as const,
           photos: [{
@@ -122,7 +122,7 @@ describe("reconcileCloudRestore", () => {
             createdAt: current.updatedAt,
           }],
         })),
-      },
+      })),
     };
 
     const restored = reconcileCloudRestore(snapshot, {
@@ -130,12 +130,12 @@ describe("reconcileCloudRestore", () => {
       [storyAudio.id]: "file:///new-device/story.m4a",
     });
 
-    expect(restored.myStory?.pages[0]?.photos[0]?.asset.localUri).toBe(
+    expect(restored.stories[0]?.pages[0]?.photos[0]?.asset.localUri).toBe(
       "file:///new-device/story.jpg",
     );
-    expect(restored.myStory?.pages[0]?.recordings[0]?.asset.localUri).toBe(
+    expect(restored.stories[0]?.pages[0]?.recordings[0]?.asset.localUri).toBe(
       "file:///new-device/story.m4a",
     );
-    expect(restored.myStory?.pages[0]?.textSide).toBe("right");
+    expect(restored.stories[0]?.pages[0]?.textSide).toBe("right");
   });
 });

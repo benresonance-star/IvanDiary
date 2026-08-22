@@ -1,4 +1,4 @@
-#if canImport(AVFoundation) && canImport(Speech) && os(iOS)
+#if canImport(AVFoundation) && canImport(Speech) && os(iOS) && compiler(>=6.2)
 import AVFoundation
 import Foundation
 import Speech

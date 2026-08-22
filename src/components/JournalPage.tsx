@@ -682,6 +682,7 @@ export function PageWorkspace({
   };
 
   const editTextObjectNative = async (object: TextObject) => {
+    if (tool !== "arrange") return;
     setSelectedObjectId(undefined);
     try {
       const result = await openNativeTextEditor({
@@ -1680,7 +1681,7 @@ export function PageWorkspace({
                         });
                         setNotice(`“${text}” was added to My Words.`);
                       }}
-                      readOnly={tool === "arrange"}
+                      readOnly={tool !== "arrange"}
                       transcript={transcript}
                     />
                   ) : null}
@@ -1778,7 +1779,7 @@ export function PageWorkspace({
                         : undefined
                     }
                     onSave={updateObject}
-                    readOnly={tool === "arrange"}
+                    readOnly={tool !== "arrange"}
                   />
                 </ArrangeablePageObject>
               );

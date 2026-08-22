@@ -46,22 +46,32 @@ function updateStoryPage(
   pageId: string,
   update: (page: MyStoryPage) => MyStoryPage,
 ): JournalSnapshot {
-  const story = snapshot.myStory;
-  if (!story) {
-    throw new OperationConflictError("My Story is not available.");
-  }
   let found = false;
-  const pages = story.pages.map((page) => {
-    if (page.id !== pageId) {
-      return page;
-    }
-    found = true;
-    return update(page);
-  });
+  const stories = snapshot.stories.map((story) => ({
+    ...story,
+    pages: story.pages.map((page) => {
+      if (page.id !== pageId) return page;
+      found = true;
+      return update(page);
+    }),
+  }));
   if (!found) {
     throw new OperationConflictError(`My Story page ${pageId} does not exist.`);
   }
-  return { ...snapshot, myStory: { ...story, pages } };
+  return { ...snapshot, stories };
+}
+
+function updateStoryForPage(
+  snapshot: JournalSnapshot,
+  pageId: string,
+  update: (story: JournalSnapshot["stories"][number]) => JournalSnapshot["stories"][number],
+): JournalSnapshot {
+  return {
+    ...snapshot,
+    stories: snapshot.stories.map((story) =>
+      story.pages.some((page) => page.id === pageId) ? update(story) : story,
+    ),
+  };
 }
 
 function isExactReorder(currentIds: string[], nextIds: string[]): boolean {
@@ -115,6 +125,16 @@ function applyFavourite(
           sketchbook.id === operation.targetId
             ? { ...sketchbook, favourite: operation.favourite }
             : sketchbook,
+        ),
+        favourites,
+      };
+    case "story":
+      return {
+        ...snapshot,
+        stories: snapshot.stories.map((story) =>
+          story.id === operation.targetId
+            ? { ...story, favourite: operation.favourite }
+            : story,
         ),
         favourites,
       };
@@ -658,8 +678,42 @@ export function applyDocumentOperation(
         updatedAt: operation.createdAt,
       }));
       break;
+    case "story-create":
+      if (snapshot.stories.some((story) => story.id === operation.story.id)) {
+        throw new OperationConflictError(`Story ${operation.story.id} already exists.`);
+      }
+      next = { ...snapshot, stories: [...snapshot.stories, operation.story] };
+      break;
+    case "story-rename": {
+      const name = operation.name.trim();
+      if (!name) throw new OperationConflictError("A story name is required.");
+      next = { ...snapshot, stories: snapshot.stories.map((story) =>
+        story.id === operation.storyId
+          ? { ...story, name: name.slice(0, 80), revision: story.revision + 1, updatedAt: operation.createdAt }
+          : story) };
+      break;
+    }
+    case "story-delete": {
+      const story = snapshot.stories.find((candidate) => candidate.id === operation.storyId);
+      if (!story) throw new OperationConflictError(`Story ${operation.storyId} does not exist.`);
+      next = {
+        ...snapshot,
+        stories: snapshot.stories.filter((candidate) => candidate.id !== operation.storyId),
+        favourites: snapshot.favourites.filter((favourite) =>
+          !(favourite.targetType === "story" && favourite.targetId === operation.storyId)),
+      };
+      break;
+    }
+    case "stories-reorder":
+      if (!isExactReorder(snapshot.stories.map((story) => story.id), operation.storyIds)) {
+        throw new OperationConflictError("Reordered stories must contain every story exactly once.");
+      }
+      next = { ...snapshot, stories: operation.storyIds.map((id) => snapshot.stories.find((story) => story.id === id)!) };
+      break;
     case "my-story-page-create": {
-      const pages = snapshot.myStory?.pages ?? [];
+      const story = snapshot.stories.find((candidate) => candidate.id === operation.storyId);
+      if (!story) throw new OperationConflictError(`Story ${operation.storyId} does not exist.`);
+      const pages = story.pages;
       if (pages.length >= MAX_PAGES_PER_COLLECTION) {
         throw new OperationConflictError("My Story can contain no more than 10 pages.");
       }
@@ -670,16 +724,15 @@ export function applyDocumentOperation(
       }
       next = {
         ...snapshot,
-        myStory: {
-          defaultTextColor:
-            snapshot.myStory?.defaultTextColor ?? "#171410",
-          pages: [...pages, operation.page],
-        },
+        stories: snapshot.stories.map((candidate) => candidate.id === story.id
+          ? { ...candidate, pages: [...pages, operation.page], revision: candidate.revision + 1, updatedAt: operation.createdAt }
+          : candidate),
       };
       break;
     }
     case "my-story-pages-reorder": {
-      const pages = snapshot.myStory?.pages;
+      const story = snapshot.stories.find((candidate) => candidate.id === operation.storyId);
+      const pages = story?.pages;
       const currentIds = pages?.map((page) => page.id) ?? [];
       if (!pages || !isExactReorder(currentIds, operation.pageIds)) {
         throw new OperationConflictError(
@@ -688,19 +741,15 @@ export function applyDocumentOperation(
       }
       next = {
         ...snapshot,
-        myStory: {
-          ...snapshot.myStory,
-          defaultTextColor:
-            snapshot.myStory?.defaultTextColor ?? "#171410",
-          pages: operation.pageIds.map(
-            (pageId) => pages.find((page) => page.id === pageId)!,
-          ),
-        },
+        stories: snapshot.stories.map((candidate) => candidate.id === operation.storyId
+          ? { ...candidate, pages: operation.pageIds.map((pageId) => pages.find((page) => page.id === pageId)!), revision: candidate.revision + 1, updatedAt: operation.createdAt }
+          : candidate),
       };
       break;
     }
     case "my-story-page-delete": {
-      const pages = snapshot.myStory?.pages;
+      const story = snapshot.stories.find((candidate) => candidate.id === operation.storyId);
+      const pages = story?.pages;
       if (!pages?.some((page) => page.id === operation.pageId)) {
         throw new OperationConflictError(
           `My Story page ${operation.pageId} does not exist.`,
@@ -713,12 +762,9 @@ export function applyDocumentOperation(
       }
       next = {
         ...snapshot,
-        myStory: {
-          ...snapshot.myStory,
-          defaultTextColor:
-            snapshot.myStory?.defaultTextColor ?? "#171410",
-          pages: pages.filter((page) => page.id !== operation.pageId),
-        },
+        stories: snapshot.stories.map((candidate) => candidate.id === operation.storyId
+          ? { ...candidate, pages: pages.filter((page) => page.id !== operation.pageId), revision: candidate.revision + 1, updatedAt: operation.createdAt }
+          : candidate),
       };
       break;
     }
@@ -774,13 +820,10 @@ export function applyDocumentOperation(
         };
       });
       if (updatedTextColor !== undefined) {
-        next = {
-          ...next,
-          myStory: {
-            ...next.myStory!,
-            defaultTextColor: updatedTextColor,
-          },
-        };
+        next = updateStoryForPage(next, operation.pageId, (story) => ({
+          ...story,
+          defaultTextColor: updatedTextColor!,
+        }));
       }
       break;
     }
@@ -798,13 +841,10 @@ export function applyDocumentOperation(
         revision: page.revision + 1,
         updatedAt: operation.createdAt,
       }));
-      next = {
-        ...next,
-        myStory: {
-          ...next.myStory!,
-          defaultTextColor: operation.block.color,
-        },
-      };
+      next = updateStoryForPage(next, operation.pageId, (story) => ({
+        ...story,
+        defaultTextColor: operation.block.color,
+      }));
       break;
     case "my-story-text-update":
       if (!isHexColor(operation.block.color)) {
@@ -818,13 +858,10 @@ export function applyDocumentOperation(
         revision: page.revision + 1,
         updatedAt: operation.createdAt,
       }));
-      next = {
-        ...next,
-        myStory: {
-          ...next.myStory!,
-          defaultTextColor: operation.block.color,
-        },
-      };
+      next = updateStoryForPage(next, operation.pageId, (story) => ({
+        ...story,
+        defaultTextColor: operation.block.color,
+      }));
       break;
     case "my-story-text-delete":
       next = updateStoryPage(snapshot, operation.pageId, (page) => ({

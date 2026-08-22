@@ -73,7 +73,7 @@ export async function collectCloudBackupAssets(
       addAsset(word.sample, "audio");
     }
   }
-  for (const page of snapshot.myStory?.pages ?? []) {
+  for (const page of snapshot.stories.flatMap((story) => story.pages)) {
     for (const photo of page.photos) {
       addAsset(photo.asset, "photo");
     }
@@ -85,7 +85,9 @@ export async function collectCloudBackupAssets(
   if (hasNativePencilKit()) {
     const drawingIDs = new Set([
       ...snapshot.pages.map((page) => page.drawingDocumentId),
-      ...(snapshot.myStory?.pages.map((page) => page.drawingDocumentId) ?? []),
+      ...snapshot.stories.flatMap((story) =>
+        story.pages.map((page) => page.drawingDocumentId)
+      ),
       PROFILE_PORTRAIT_DOCUMENT_ID,
       WELCOME_DRAWING_DOCUMENT_ID,
     ]);

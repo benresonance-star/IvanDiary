@@ -52,9 +52,9 @@ export function readableDiaryText(snapshot: JournalSnapshot): string {
     });
   }
 
-  if (snapshot.myStory) {
-    lines.push("", "MY STORY");
-    snapshot.myStory.pages.forEach((page, index) => {
+  for (const story of snapshot.stories) {
+    lines.push("", `STORY — ${story.name}`);
+    story.pages.forEach((page, index) => {
       lines.push(`Page ${index + 1}`);
       for (const block of page.textBlocks) {
         if (block.text.trim()) lines.push(block.text.trim());

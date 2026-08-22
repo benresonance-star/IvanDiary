@@ -6,7 +6,7 @@ export function RestoreCompleteDialog({ onDismiss }: { onDismiss: () => void }) 
       <section aria-labelledby="restore-complete-heading" aria-modal="true" className="restore-complete-dialog" role="dialog">
         <CheckCircle2 aria-hidden="true" />
         <h2 id="restore-complete-heading">Diary restored</h2>
-        <p>Your Journal, Sketchbooks, My Story and available files have been restored from iCloud.</p>
+        <p>Your Journal, Sketchbooks, Stories and available files have been restored from iCloud.</p>
         <button onClick={onDismiss} type="button">Done</button>
       </section>
     </div>

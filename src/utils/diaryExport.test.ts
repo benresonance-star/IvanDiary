@@ -13,7 +13,7 @@ describe("readableDiaryText", () => {
     expect(text).toContain("WELCOME");
     expect(text).toContain("JOURNAL — 2026-08-18");
     expect(text).toContain("SKETCHBOOK — Favourite Places");
-    expect(text).toContain("MY STORY");
+    expect(text).toContain("STORY — My Story");
     expect(text).toContain("PencilKit drawings");
   });
 });

@@ -15,6 +15,7 @@ public enum NativeKeyboardSessionAction: Equatable, Sendable {
     case useHiddenInputView
     case useSystemInputView
     case reloadInputViews
+    case setEditable(Bool)
     case becomeFirstResponder
     case restoreSelection
 }
@@ -29,6 +30,7 @@ public enum NativeKeyboardSessionCoordinator {
                 ? .useSystemInputView
                 : .useHiddenInputView,
             .reloadInputViews,
+            .setEditable(inputMethod == .keyboard),
         ]
         if inputMethod == .keyboard {
             actions.append(.becomeFirstResponder)

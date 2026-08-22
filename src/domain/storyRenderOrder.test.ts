@@ -5,7 +5,7 @@ import { normalizedStoryRenderOrder } from "./storyRenderOrder";
 
 describe("My Story render order", () => {
   it("keeps valid cross-type order and removes duplicates and stale references", () => {
-    const page = createInitialJournalSnapshot().myStory!.pages[0]!;
+    const page = createInitialJournalSnapshot().stories[0]!.pages[0]!;
     const populated = {
       ...page,
       textBlocks: [{ id: "text", text: "Hello", role: "body" as const, color: "#171410", revision: 0, createdAt: "2026-08-20T00:00:00.000Z" }],

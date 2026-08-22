@@ -41,6 +41,9 @@ export function TranscriptEditor({
         }
       }}
       onChange={(event) => setText(event.target.value)}
+      onKeyDown={(event) => {
+        if (!readOnly) event.stopPropagation();
+      }}
       readOnly={readOnly}
       value={text}
     />

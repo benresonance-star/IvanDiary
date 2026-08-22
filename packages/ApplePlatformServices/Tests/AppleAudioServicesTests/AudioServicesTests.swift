@@ -284,6 +284,7 @@ import Testing
             .resignFirstResponder,
             .useSystemInputView,
             .reloadInputViews,
+            .setEditable(true),
             .becomeFirstResponder,
             .restoreSelection,
         ]
@@ -293,6 +294,7 @@ import Testing
             .resignFirstResponder,
             .useHiddenInputView,
             .reloadInputViews,
+            .setEditable(false),
             .restoreSelection,
         ]
     )
