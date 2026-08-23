@@ -396,6 +396,14 @@ export function PageWorkspace({
 
   const openTextComposerAboveSketch = async () => {
     setSelectedObjectId(undefined);
+    setTool("view");
+    setTextComposerRequested(true);
+    const hidden = await suspendOverlay();
+    if (!hidden) {
+      setTextComposerRequested(false);
+      setNotice("The drawing is still saving. Try Text again in a moment.");
+      return;
+    }
     if (
       textEditorPreference === "native" &&
       hasNativeTextEditor() &&
@@ -415,6 +423,7 @@ export function PageWorkspace({
               : recordingLimitMinutes * 60_000,
           localeIdentifier: "en-AU",
         });
+        setTextComposerRequested(false);
         if (result.cancelled) {
           return;
         }
@@ -432,15 +441,8 @@ export function PageWorkspace({
       }
     }
 
-    setTool("view");
-    setTextComposerRequested(true);
-    const hidden = await suspendOverlay();
     setTextComposerRequested(false);
-    if (hidden) {
-      setTextComposerOpen(true);
-    } else {
-      setNotice("The drawing is still saving. Try Text again in a moment.");
-    }
+    setTextComposerOpen(true);
   };
 
   const openShareChooser = async () => {

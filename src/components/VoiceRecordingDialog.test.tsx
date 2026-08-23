@@ -30,6 +30,7 @@ describe("VoiceRecordingDialog", () => {
     const stopMonitoring = vi.spyOn(audio, "stopMonitoring");
     const startMonitoring = vi.spyOn(audio, "startMonitoring");
     const startRecording = vi.spyOn(audio, "start");
+    const addPlaybackListener = vi.spyOn(audio, "addListener");
     render(<VoiceRecordingDialog
       audio={audio}
       files={new BrowserJournalFilesMock()}
@@ -40,6 +41,7 @@ describe("VoiceRecordingDialog", () => {
 
     expect(startMonitoring).not.toHaveBeenCalled();
     expect(startRecording).not.toHaveBeenCalled();
+    expect(addPlaybackListener).not.toHaveBeenCalled();
     expect(screen.getByRole("img", { name: "Microphone inactive" })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
@@ -52,6 +54,7 @@ describe("VoiceRecordingDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Pause recording" }));
     expect(await screen.findByRole("button", { name: "Resume recording" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Place recording" })).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent("Recording paused.");
     expect(screen.getByRole("img", { name: "Microphone inactive" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Resume recording" }));
@@ -59,8 +62,31 @@ describe("VoiceRecordingDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "End recording" }));
     expect(await screen.findByRole("button", { name: "Play recording" })).toBeVisible();
+    expect(addPlaybackListener).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Play recording" }));
+    await waitFor(() => expect(addPlaybackListener).toHaveBeenCalledOnce());
     expect(onPlace).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Place recording" }));
     await waitFor(() => expect(onPlace).toHaveBeenCalledWith(expect.objectContaining({ state: "saved", asset: expect.any(Object) })));
+  });
+
+  it("finalizes and places directly from the paused state", async () => {
+    const onPlace = vi.fn();
+    const audio = new BrowserJournalAudioMock();
+    render(<VoiceRecordingDialog
+      audio={audio}
+      files={new BrowserJournalFilesMock()}
+      onCancel={vi.fn()}
+      onPlace={onPlace}
+      recordingLimitMinutes={5}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pause recording" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Place recording" }));
+
+    await waitFor(() => expect(onPlace).toHaveBeenCalledWith(
+      expect.objectContaining({ state: "saved", asset: expect.any(Object) }),
+    ));
   });
 });

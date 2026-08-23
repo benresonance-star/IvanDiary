@@ -129,7 +129,10 @@ public final class JournalAudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     public func resume() throws -> JournalRecordingSnapshot {
-        guard let recorder, recorder.record() else { throw RecordingTransitionError.invalidTransition }
+        guard machine.snapshot.state == .paused,
+              let recorder else { throw RecordingTransitionError.invalidTransition }
+        try session.setActive(true)
+        guard recorder.record() else { throw RecordingTransitionError.invalidTransition }
         try machine.resume()
         try persistRecovery()
         return status()

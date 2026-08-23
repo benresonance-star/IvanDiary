@@ -33,6 +33,7 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
   const autoFinalisingRef = useRef(false);
   const cancelRequestedRef = useRef(false);
   const finalizationRef = useRef<Promise<RecordingSnapshot> | undefined>(undefined);
+  const playbackListenerRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   const finalize = useCallback(() => {
     finalizationRef.current ??= finalizeStoppedRecording(audio, files).finally(() => {
@@ -56,6 +57,19 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
     finally { setBusy(false); }
   }, [finalize, trashRecording]);
 
+  const finalizeAndPlace = useCallback(async () => {
+    setBusy(true); setStatus("Saving the recording…");
+    try {
+      const saved = await finalize();
+      if (cancelRequestedRef.current) await trashRecording(saved);
+      else onPlace(saved);
+    } catch {
+      setStatus("The recording could not be finalized. It remains recoverable.");
+    } finally {
+      setBusy(false);
+    }
+  }, [finalize, onPlace, trashRecording]);
+
   useEffect(() => {
     if (recording?.state !== "recording") return;
     let disposed = false;
@@ -75,14 +89,28 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
     return () => { disposed = true; window.clearInterval(timer); };
   }, [audio, end, recording?.state]);
 
-  useEffect(() => {
-    let disposed = false;
-    let remove: (() => Promise<void>) | undefined;
-    void audio.addListener("playbackEnded", () => setPlaying(false)).then((handle) => {
-      if (disposed) void handle.remove(); else remove = handle.remove;
-    });
-    return () => { disposed = true; if (remove) void remove(); };
-  }, [audio]);
+  useEffect(() => () => {
+    const remove = playbackListenerRef.current;
+    playbackListenerRef.current = undefined;
+    if (remove) void remove();
+  }, []);
+
+  const togglePlayback = async (assetUri: string) => {
+    if (playing) {
+      await audio.pausePlayback();
+      setPlaying(false);
+      return;
+    }
+    if (!playbackListenerRef.current) {
+      const handle = await audio.addListener(
+        "playbackEnded",
+        () => setPlaying(false),
+      );
+      playbackListenerRef.current = handle.remove;
+    }
+    await audio.play({ assetUri });
+    setPlaying(true);
+  };
 
   const start = async () => {
     setBusy(true);
@@ -136,7 +164,8 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
   };
   const reviewing = recording?.state === "saved" && Boolean(recording.asset);
   const active = recording?.state === "recording";
-  const paused = recording?.state === "paused" || recording?.state === "interrupted";
+  const paused = recording?.state === "paused";
+  const interrupted = recording?.state === "interrupted";
 
   return <div aria-labelledby="voice-recording-title" aria-modal="true" className="voice-recording-backdrop" role="dialog">
     <section className="voice-recording-dialog">
@@ -144,10 +173,11 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
       <MicrophoneMeter active={active} level={recording?.powerLevel ?? 0} />
       <strong className="voice-recording-time">{durationLabel(recording?.elapsedMs ?? 0)}</strong>
       {!reviewing ? <div className="voice-recording-actions">
-        {!recording ? <button className="large-action" disabled={busy} onClick={() => void start()} type="button"><Mic aria-hidden="true" />Start recording</button> : <button className="large-action" disabled={busy} onClick={() => void togglePause()} type="button">{active ? <Pause aria-hidden="true" /> : <Mic aria-hidden="true" />}{active ? "Pause recording" : "Resume recording"}</button>}
-        {active || paused ? <button className="voice-end-action" disabled={busy} onClick={() => void end()} type="button"><Square aria-hidden="true" />End recording</button> : null}
+        {!recording ? <button className="large-action" disabled={busy} onClick={() => void start()} type="button"><Mic aria-hidden="true" />Start recording</button> : active || paused ? <button className="large-action" disabled={busy} onClick={() => void togglePause()} type="button">{active ? <Pause aria-hidden="true" /> : <Mic aria-hidden="true" />}{active ? "Pause recording" : "Resume recording"}</button> : null}
+        {active ? <button className="voice-end-action" disabled={busy} onClick={() => void end()} type="button"><Square aria-hidden="true" />End recording</button> : null}
+        {paused || interrupted ? <button className="voice-end-action" disabled={busy} onClick={() => void finalizeAndPlace()} type="button"><Square aria-hidden="true" />Place recording</button> : null}
       </div> : <div className="voice-review">
-        <button className="voice-preview-action" onClick={() => void (playing ? audio.pausePlayback().then(() => setPlaying(false)) : audio.play({ assetUri: recording.asset!.localUri }).then(() => setPlaying(true)))} type="button">{playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}{playing ? "Pause preview" : "Play recording"}</button>
+        <button className="voice-preview-action" onClick={() => void togglePlayback(recording.asset!.localUri)} type="button">{playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}{playing ? "Pause preview" : "Play recording"}</button>
         <div className="voice-review-actions"><button className="secondary-action" onClick={() => void discard()} type="button"><Trash2 aria-hidden="true" />Record again</button><button className="large-action" onClick={() => onPlace(recording)} type="button">Place recording</button></div>
       </div>}
       <p aria-live="polite" className="voice-recording-status" role="status">{status}</p>

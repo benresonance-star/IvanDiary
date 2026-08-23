@@ -112,6 +112,11 @@ public struct NativeTextEditorState: Equatable, Sendable {
         clampSelection()
     }
 
+    public mutating func updateSelection(_ selection: NSRange) {
+        self.selection = selection
+        clampSelection()
+    }
+
     public mutating func beginRecording() {
         phase = .recording
     }

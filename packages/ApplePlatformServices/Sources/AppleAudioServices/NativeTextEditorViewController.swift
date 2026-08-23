@@ -642,11 +642,11 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
 
     public func textViewDidChange(_ textView: UITextView) {
         state.update(text: textView.text, selection: textView.selectedRange)
-        renderState()
+        updateSubmitAction()
     }
 
     public func textViewDidChangeSelection(_ textView: UITextView) {
-        state.update(text: textView.text, selection: textView.selectedRange)
+        state.updateSelection(textView.selectedRange)
     }
 
     public func textViewDidBeginEditing(_ textView: UITextView) {
@@ -892,8 +892,7 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
 
     private func renderState() {
         cancelButton.isEnabled = true
-        doneButton.isHidden = !state.shouldShowSubmitAction(for: mode)
-        doneButton.isEnabled = state.canSubmit
+        updateSubmitAction()
         methodControl.isUserInteractionEnabled = state.canCancel
         updateMethodButtonSelection()
         textView.isEditable =
@@ -996,6 +995,17 @@ public final class NativeTextEditorViewController: UIViewController, UITextViewD
            status != lastAnnouncedStatus {
             lastAnnouncedStatus = status
             UIAccessibility.post(notification: .announcement, argument: status)
+        }
+    }
+
+    private func updateSubmitAction() {
+        let shouldHide = !state.shouldShowSubmitAction(for: mode)
+        if doneButton.isHidden != shouldHide {
+            doneButton.isHidden = shouldHide
+        }
+        let shouldEnable = state.canSubmit
+        if doneButton.isEnabled != shouldEnable {
+            doneButton.isEnabled = shouldEnable
         }
     }
 
