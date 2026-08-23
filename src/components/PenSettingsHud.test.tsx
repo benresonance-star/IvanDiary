@@ -23,6 +23,28 @@ describe("PenSettingsHud", () => {
     ]);
   });
 
+  it("shows Pens and Shapes in Story without exposing an unavailable Grids panel", () => {
+    render(
+      <PenSettingsHud
+        onChange={vi.fn()}
+        onDone={vi.fn()}
+        onShapeSelect={vi.fn()}
+        settings={{ color: "#171410", width: 4.2, opacity: 1 }}
+      />,
+    );
+
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Pens",
+      "Shapes",
+    ]);
+    expect(screen.getByRole("tabpanel", { name: "Pens" })).toBeVisible();
+    fireEvent.click(screen.getByRole("tab", { name: "Shapes" }));
+    expect(screen.getByRole("tabpanel", { name: "Shapes" })).toBeVisible();
+    fireEvent.click(screen.getByRole("tab", { name: "Pens" }));
+    expect(screen.getByRole("switch", { name: "Draw with finger" })).toBeVisible();
+    expect(screen.queryByRole("tab", { name: "Grids" })).not.toBeInTheDocument();
+  });
+
   it("keeps finger erasing off by default and changes it independently", () => {
     const onChange = vi.fn();
     render(

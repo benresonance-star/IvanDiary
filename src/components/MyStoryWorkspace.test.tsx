@@ -199,6 +199,7 @@ describe("MyStoryWorkspace", () => {
   it("uses the existing tools and renders semantic structured text", () => {
     renderStory();
 
+    expect(screen.getByRole("button", { name: "All stories" })).toHaveClass("back-action");
     const toolbar = screen.getByLabelText("My Story tools");
     for (const name of [
       "View",

@@ -69,6 +69,8 @@ export function PenSettingsHud({
   } as CSSProperties;
   const fingerDrawingActive = settings.fingerDrawing !== false;
   const fingerErasingActive = settings.fingerErasing === true;
+  const hasGridPanel = Boolean(grid && onGridChange);
+  const hasSectionTabs = Boolean(onShapeSelect || hasGridPanel);
 
   function changeSettings(next: PenSettings) {
     const nib = next.nib ?? activeNib;
@@ -98,9 +100,9 @@ export function PenSettingsHud({
           Done
         </button>
       </div>
-      {tool === "pen" && ((grid && onGridChange) || onShapeSelect) ? (
+      {tool === "pen" && hasSectionTabs ? (
         <div aria-label="Draw settings section" className="pen-panel-tabs" role="tablist">
-          {grid && onGridChange ? <button
+          <button
             aria-controls="pen-settings-panel"
             aria-selected={activePanel === "pen"}
             data-help-topic="pen-tab"
@@ -110,9 +112,9 @@ export function PenSettingsHud({
             type="button"
           >
             Pens
-          </button> : null}
+          </button>
           {onShapeSelect ? <button aria-controls="shape-settings-panel" aria-selected={activePanel === "shapes"} data-help-topic="shape-tab" id="shape-settings-tab" onClick={() => setActivePanel("shapes")} role="tab" type="button">Shapes</button> : null}
-          <button
+          {hasGridPanel ? <button
             aria-controls="grid-settings-panel"
             aria-selected={activePanel === "grid"}
             data-help-topic="grid-tab"
@@ -122,7 +124,7 @@ export function PenSettingsHud({
             type="button"
           >
             Grids
-          </button>
+          </button> : null}
         </div>
       ) : null}
 
@@ -145,10 +147,10 @@ export function PenSettingsHud({
         </div>
       ) : activePanel === "pen" || ((!grid || !onGridChange) && !onShapeSelect) ? (
         <div
-          aria-labelledby={grid ? "pen-settings-tab" : undefined}
+          aria-labelledby={hasSectionTabs ? "pen-settings-tab" : undefined}
           className="pen-settings-panel"
           id="pen-settings-panel"
-          role={grid ? "tabpanel" : undefined}
+          role={hasSectionTabs ? "tabpanel" : undefined}
         >
           <button
             aria-checked={fingerDrawingActive}
