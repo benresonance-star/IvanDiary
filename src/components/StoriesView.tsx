@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { DocumentOperationInput, JournalSnapshot, MyStory } from "../domain/models";
 import type { SketchRepository } from "../sketch/types";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { SketchThumbnail } from "./SketchThumbnail";
+import { StoryPagePreview } from "./StoryPagePreview";
 import { FavouriteConfirmation } from "./FavouriteConfirmation";
 import { moveItem } from "./libraryViewHelpers";
 
@@ -48,7 +48,7 @@ export function StoriesView({ commit, lastViewedStoryId, onCreateStory, onDelete
     </header>
     <div className="book-grid sketchbook-grid">{snapshot.stories.map((story, index) => <article className={`book-card sketchbook-card${editing ? " editing" : ""}${lastViewedStoryId === story.id ? " last-viewed" : ""}`} key={story.id}>
       <button aria-label={editing ? `${story.name}. Use the edit controls.` : `Open ${story.name}`} className="sketchbook-card-link" onClick={() => { if (!editing) onOpenStory(story.id); }} type="button">
-        {story.pages[0] ? <span aria-hidden="true" className="diary-page-preview paper-clean-paper sketchbook-page-preview"><SketchThumbnail documentId={story.pages[0].drawingDocumentId} repository={sketchRepository} /></span> : <div className="book-cover"><BookOpen aria-hidden="true" /></div>}
+        {story.pages[0] ? <StoryPagePreview className="sketchbook-page-preview" page={story.pages[0]} sketchRepository={sketchRepository} /> : <div className="book-cover"><BookOpen aria-hidden="true" /></div>}
         <div><h2>{story.name}</h2><p>{story.pages.length === 1 ? "1 page" : `${story.pages.length} pages`}</p></div>
       </button>
       {editing ? <div className="sketchbook-edit-controls">

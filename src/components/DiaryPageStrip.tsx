@@ -21,15 +21,18 @@ import type { SketchRepository } from "../sketch/types";
 import { displayAssetUri } from "../utils/displayAssetUri";
 import { defaultObjectFrame } from "./arrangeGeometry";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ShapeCard } from "./ShapeCard";
 import { SketchThumbnail } from "./SketchThumbnail";
 
-function previewStyle(object: PageObject): CSSProperties {
+function previewStyle(object: PageObject, stackIndex: number): CSSProperties {
   const frame = defaultObjectFrame(object);
   return {
     left: `${object.position.x * 100}%`,
     top: `${object.position.y * 100}%`,
     width: `${frame.width * 100}%`,
     height: `${frame.height * 100}%`,
+    transform: object.type === "shape" ? `rotate(${object.rotationDegrees ?? 0}deg)` : undefined,
+    zIndex: object.layer === "behind-sketch" ? 0 : 10 + stackIndex,
   };
 }
 
@@ -42,69 +45,45 @@ export function PagePreview({
   page: Page;
   sketchRepository?: SketchRepository;
 }) {
+  const renderObject = (object: PageObject, stackIndex: number) => {
+    switch (object.type) {
+      case "photo":
+        return object.asset.localUri.startsWith("demo://") ? (
+          <span className="page-preview-object preview-photo demo-photo" key={object.id} style={previewStyle(object, stackIndex)} />
+        ) : (
+          <img alt="" className="page-preview-object preview-photo" key={object.id} src={displayAssetUri(object.asset.localUri)} style={previewStyle(object, stackIndex)} />
+        );
+      case "voice":
+        return <span className="page-preview-object preview-voice" key={object.id} style={previewStyle(object, stackIndex)} />;
+      case "text":
+        return <span className="page-preview-object preview-text" key={object.id} style={previewStyle(object, stackIndex)}>{object.text}</span>;
+      case "link":
+        return <span className="page-preview-object preview-link" key={object.id} style={previewStyle(object, stackIndex)}>{object.title}</span>;
+      case "shape":
+        return <span className="page-preview-object preview-shape" key={object.id} style={previewStyle(object, stackIndex)}><ShapeCard shape={object} /></span>;
+      case "transcript":
+        return null;
+      default: {
+        const exhaustiveObject: never = object;
+        throw new Error(`Unsupported page preview: ${exhaustiveObject}`);
+      }
+    }
+  };
+  const behindSketch = page.objects.filter((object) => object.layer === "behind-sketch");
+  const aboveSketch = page.objects.filter((object) => object.layer !== "behind-sketch");
   return (
     <span
       aria-hidden="true"
       className={`diary-page-preview paper-${page.paperStyle} ${className}`}
     >
+      {behindSketch.map((object) => renderObject(object, page.objects.indexOf(object)))}
       {sketchRepository ? (
         <SketchThumbnail
           documentId={page.drawingDocumentId}
           repository={sketchRepository}
         />
       ) : null}
-      {page.objects.map((object) => {
-        switch (object.type) {
-          case "photo":
-            return object.asset.localUri.startsWith("demo://") ? (
-              <span
-                className="page-preview-object preview-photo demo-photo"
-                key={object.id}
-                style={previewStyle(object)}
-              />
-            ) : (
-              <img
-                alt=""
-                className="page-preview-object preview-photo"
-                key={object.id}
-                src={displayAssetUri(object.asset.localUri)}
-                style={previewStyle(object)}
-              />
-            );
-          case "voice":
-            return (
-              <span
-                className="page-preview-object preview-voice"
-                key={object.id}
-                style={previewStyle(object)}
-              />
-            );
-          case "text":
-            return (
-              <span
-                className="page-preview-object preview-text"
-                key={object.id}
-                style={previewStyle(object)}
-              />
-            );
-          case "link":
-            return (
-              <span
-                className="page-preview-object preview-link"
-                key={object.id}
-                style={previewStyle(object)}
-              />
-            );
-          case "shape":
-            return <span className="page-preview-object preview-shape" key={object.id} style={{ ...previewStyle(object), backgroundColor: object.fillColor ?? "transparent", borderColor: object.outlineColor ?? "transparent" }} />;
-          case "transcript":
-            return null;
-          default: {
-            const exhaustiveObject: never = object;
-            throw new Error(`Unsupported page preview: ${exhaustiveObject}`);
-          }
-        }
-      })}
+      {aboveSketch.map((object) => renderObject(object, page.objects.indexOf(object)))}
     </span>
   );
 }

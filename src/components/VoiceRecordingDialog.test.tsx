@@ -5,6 +5,25 @@ import { BrowserJournalAudioMock, BrowserJournalFilesMock } from "../native/brow
 import { VoiceRecordingDialog } from "./VoiceRecordingDialog";
 
 describe("VoiceRecordingDialog", () => {
+  it("uses a visible Cancel action and dismisses immediately while recorder cleanup continues", async () => {
+    const onCancel = vi.fn();
+    const audio = new BrowserJournalAudioMock();
+    const files = new BrowserJournalFilesMock();
+    const originalStop = audio.stop.bind(audio);
+    let finishStop: ((snapshot: Awaited<ReturnType<typeof audio.stop>>) => void) | undefined;
+    render(<VoiceRecordingDialog audio={audio} files={files} onCancel={onCancel} onPlace={vi.fn()} recordingLimitMinutes={5} />);
+    expect(screen.getByRole("button", { name: "Cancel voice recording" })).toHaveTextContent("Cancel");
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    expect(await screen.findByRole("button", { name: "Pause recording" })).toBeVisible();
+    vi.spyOn(audio, "stop").mockImplementation(() => new Promise((resolve) => { finishStop = resolve; }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel voice recording" }));
+    expect(onCancel).toHaveBeenCalledOnce();
+    await waitFor(() => expect(audio.stop).toHaveBeenCalledOnce());
+
+    finishStop?.(await originalStop());
+  });
+
   it("records, pauses, reviews, and places only after approval", async () => {
     const onPlace = vi.fn();
     const audio = new BrowserJournalAudioMock();

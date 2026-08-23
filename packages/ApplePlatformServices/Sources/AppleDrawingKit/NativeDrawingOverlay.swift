@@ -207,7 +207,11 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         applyClipping(circle: clipToCircle)
         apply(tool: tool)
         renderOverlayShapes(overlayShapes, grid: grid)
-        if !isPresented || previousDocumentID != documentID {
+        // Hiding the overlay already persists the current drawing. Reopening
+        // the same document for a tool/settings change can reuse the in-memory
+        // PKDrawing instead of synchronously decoding it from disk again.
+        // A different document or a failed load must still perform a reload.
+        if previousDocumentID != documentID || loadError != nil {
             try loadDrawing(documentID: documentID)
         }
         var importedLegacyStrokes = false

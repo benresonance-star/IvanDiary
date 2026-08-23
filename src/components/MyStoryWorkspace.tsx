@@ -367,8 +367,13 @@ export function MyStoryWorkspace({
     const shape: ShapeObject = { id: createId(), type: "shape", shapeKind, pageId: page.id,
       position: { x: 0.38, y: 0.34 }, frame: { width: 0.24, height: 0.24 }, fillColor: penSettings.color,
       outlineColor: "#3f3528", outlineWidth: 3, layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString() };
-    if (await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id })) {
-      setPenHudOpen(false); onToolChange("arrange"); setSelectedShapeId(shape.id); setSelection(undefined); setSelectedRecordingId(undefined);
+    setPenHudOpen(false); onToolChange("arrange"); setSelectedShapeId(shape.id); setSelection(undefined); setSelectedRecordingId(undefined);
+    const saved = await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id });
+    if (!saved) {
+      setSelectedShapeId(undefined);
+      onToolChange("pen");
+      setPenHudOpen(true);
+      setNotice("The shape could not be saved. Choose it again to retry.");
     }
   };
   const startShapePlacement = (kind: ShapeKind) => {

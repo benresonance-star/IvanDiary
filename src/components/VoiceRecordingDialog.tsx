@@ -1,4 +1,4 @@
-import { Mic, Pause, Play, Square, Trash2, X } from "lucide-react";
+import { Mic, Pause, Play, Square, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { JournalAudioPlugin, JournalFilesPlugin, RecordingSnapshot } from "../native/contracts";
 import { finalizeStoppedRecording, recordingStorageAvailable } from "../native/durableAudio";
@@ -32,13 +32,30 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
   const [previewLevel, setPreviewLevel] = useState(0);
   const [status, setStatus] = useState("Ready to record");
   const autoFinalisingRef = useRef(false);
+  const cancelRequestedRef = useRef(false);
+  const finalizationRef = useRef<Promise<RecordingSnapshot> | undefined>(undefined);
+
+  const finalize = useCallback(() => {
+    finalizationRef.current ??= finalizeStoppedRecording(audio, files).finally(() => {
+      finalizationRef.current = undefined;
+    });
+    return finalizationRef.current;
+  }, [audio, files]);
+
+  const trashRecording = useCallback(async (snapshot?: RecordingSnapshot) => {
+    if (snapshot?.asset) await files.removeToTrash({ assetId: snapshot.asset.id }).catch(() => undefined);
+  }, [files]);
 
   const end = useCallback(async () => {
     setBusy(true); setStatus("Saving the recording…");
-    try { setRecording(await finalizeStoppedRecording(audio, files)); setStatus("Recording saved. Listen before placing it on the canvas."); }
+    try {
+      const saved = await finalize();
+      if (cancelRequestedRef.current) await trashRecording(saved);
+      else { setRecording(saved); setStatus("Recording saved. Listen before placing it on the canvas."); }
+    }
     catch { setStatus("The recording could not be finalized. It remains recoverable."); }
     finally { setBusy(false); }
-  }, [audio, files]);
+  }, [finalize, trashRecording]);
 
   useEffect(() => {
     if (recording || !audio.startMonitoring || !audio.monitorLevel || !audio.stopMonitoring) return;
@@ -95,7 +112,13 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
       // the audio-session transition deterministic across the bridge.
       await audio.stopMonitoring?.();
       if (!await recordingStorageAvailable(files)) { setStatus("Storage is too low to record safely."); return; }
-      setRecording(await audio.start({ maximumDurationMs: recordingLimitMinutes === null ? undefined : recordingLimitMinutes * 60_000 }));
+      const started = await audio.start({ maximumDurationMs: recordingLimitMinutes === null ? undefined : recordingLimitMinutes * 60_000 });
+      if (cancelRequestedRef.current) {
+        const saved = await finalize().catch(() => undefined);
+        await trashRecording(saved);
+        return;
+      }
+      setRecording(started);
       setStatus("Recording. The microphone bars show that your voice is being heard.");
     } catch { setStatus("Recording could not start. Check microphone permission and storage."); }
     finally { setBusy(false); }
@@ -117,10 +140,19 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
     if (recording?.asset) await files.removeToTrash({ assetId: recording.asset.id }).catch(() => undefined);
     setRecording(undefined); setPlaying(false); setStatus("Ready to record");
   };
-  const cancel = async () => {
-    if (recording?.state === "recording" || recording?.state === "paused" || recording?.state === "interrupted") { await end(); return; }
-    if (recording?.asset) await files.removeToTrash({ assetId: recording.asset.id }).catch(() => undefined);
+  const cancel = () => {
+    if (cancelRequestedRef.current) return;
+    cancelRequestedRef.current = true;
     onCancel();
+    setPlaying(false);
+    if (playing) void audio.pausePlayback().catch(() => undefined);
+    void (async () => {
+      if (recording?.asset) { await trashRecording(recording); return; }
+      if (recording || busy) {
+        const saved = await finalize().catch(() => undefined);
+        await trashRecording(saved);
+      }
+    })();
   };
   const reviewing = recording?.state === "saved" && Boolean(recording.asset);
   const active = recording?.state === "recording";
@@ -128,7 +160,7 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
 
   return <div aria-labelledby="voice-recording-title" aria-modal="true" className="voice-recording-backdrop" role="dialog">
     <section className="voice-recording-dialog">
-      <header><div><h2 id="voice-recording-title">Voice recording</h2><p>Record, listen, then place it on your canvas.</p></div><button aria-label="Close voice recording" className="secondary-action" disabled={busy} onClick={() => void cancel()} type="button"><X aria-hidden="true" /></button></header>
+      <header><div><h2 id="voice-recording-title">Voice recording</h2><p>Record, listen, then place it on your canvas.</p></div><button aria-label="Cancel voice recording" className="secondary-action" onClick={cancel} type="button">Cancel</button></header>
       <MicrophoneMeter active={active || (!recording && previewLevel > 0)} level={recording?.powerLevel ?? previewLevel} />
       <strong className="voice-recording-time">{durationLabel(recording?.elapsedMs ?? 0)}</strong>
       {!reviewing ? <div className="voice-recording-actions">

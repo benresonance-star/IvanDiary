@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createInitialJournalSnapshot } from "../domain/initialState";
 import type { Page } from "../domain/models";
-import { DiaryPageStrip } from "./DiaryPageStrip";
+import { DiaryPageStrip, PagePreview } from "./DiaryPageStrip";
 
 function pages(): Page[] {
   const first = createInitialJournalSnapshot(
@@ -21,6 +21,23 @@ function pages(): Page[] {
 }
 
 describe("DiaryPageStrip", () => {
+  it("preserves object placement, shape geometry, rotation, and sketch layering in previews", () => {
+    const page = pages()[0]!;
+    const previewPage: Page = { ...page, objects: [{
+      id: "shape", pageId: page.id, type: "shape", shapeKind: "triangle", position: { x: .12, y: .18 },
+      frame: { width: .22, height: .3 }, fillColor: "#abcdef", outlineColor: "#123456", outlineWidth: 4,
+      rotationDegrees: 45, layer: "behind-sketch", revision: 0, createdAt: page.createdAt,
+    }, {
+      id: "text", pageId: page.id, type: "text", text: "Canvas words", textScale: 1, position: { x: .4, y: .5 },
+      frame: { width: .3, height: .2 }, layer: "above-sketch", revision: 0, createdAt: page.createdAt,
+    }] };
+    const { container } = render(<PagePreview page={previewPage} />);
+    expect(screen.getByText("Canvas words")).toBeInTheDocument();
+    expect(container.querySelector(".preview-shape")).toHaveStyle({ left: "12%", top: "18%", width: "22%", height: "30%", transform: "rotate(45deg)", zIndex: 0 });
+    expect(container.querySelector(".preview-shape polygon")).toHaveAttribute("fill", "#abcdef");
+    expect(container.querySelector(".preview-text")).toHaveStyle({ zIndex: 11 });
+  });
+
   it("shows ordered visual pages and exposes the current page", () => {
     const { container } = render(
       <DiaryPageStrip

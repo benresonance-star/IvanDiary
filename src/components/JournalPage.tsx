@@ -578,8 +578,15 @@ export function PageWorkspace({
       fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3,
       layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString(),
     };
-    if (!await commit({ type: "page-object-add", pageId: page.id, object: shape })) return;
     setPenHudOpen(false); setTool("arrange"); setSelectedObjectId(shape.id);
+    const saved = await commit({ type: "page-object-add", pageId: page.id, object: shape });
+    if (!saved) {
+      setSelectedObjectId(undefined);
+      setTool("pen");
+      setPenHudOpen(true);
+      setNotice("The shape could not be saved. Choose it again to retry.");
+      return;
+    }
     actionTimelineRef.current.push({ kind: "create", objects: [shape] });
   };
 

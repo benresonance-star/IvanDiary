@@ -163,6 +163,22 @@ describe("MyStoryWorkspace", () => {
     })));
   });
 
+  it("closes Draw and activates Edit before a selected shape finishes saving", async () => {
+    let finishSave: ((saved: boolean) => void) | undefined;
+    const commit = vi.fn(() => new Promise<boolean>((resolve) => { finishSave = resolve; }));
+    renderStory(commit);
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Shapes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Triangle" }));
+
+    expect(screen.queryByRole("dialog", { name: "Draw settings" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit" })).toHaveAttribute("aria-pressed", "true");
+    expect(commit).toHaveBeenCalledOnce();
+    finishSave?.(true);
+    await waitFor(() => expect(commit).toHaveReturned());
+  });
+
   it("builds a custom polygon from canvas points", async () => {
     const { commit } = renderStory();
     fireEvent.click(screen.getByRole("button", { name: "Draw" }));

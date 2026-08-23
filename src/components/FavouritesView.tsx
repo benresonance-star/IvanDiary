@@ -17,7 +17,7 @@ import type {
 import type { SketchRepository } from "../sketch/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PagePreview } from "./DiaryPageStrip";
-import { SketchThumbnail } from "./SketchThumbnail";
+import { StoryPagePreview } from "./StoryPagePreview";
 import { FavouriteConfirmation } from "./FavouriteConfirmation";
 import { displayDate, moveItem } from "./libraryViewHelpers";
 
@@ -151,7 +151,7 @@ export function FavouritesView({
                   type="button"
                 >
                   {story?.pages[0] ? (
-                    <span aria-hidden="true" className="diary-page-preview paper-clean-paper favourite-page-preview"><SketchThumbnail documentId={story.pages[0].drawingDocumentId} repository={sketchRepository} /></span>
+                    <StoryPagePreview className="favourite-page-preview" page={story.pages[0]} sketchRepository={sketchRepository} />
                   ) : previewPage ? (
                     <PagePreview
                       className="favourite-page-preview"
