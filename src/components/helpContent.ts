@@ -12,8 +12,12 @@ export const HELP_TIPS = {
     title: "Open the App menu",
     body: "Use this menu to move between your journal, sketchbooks, favourites, and settings.",
   },
+  "canvas-background": {
+    title: "Canvas background",
+    body: "See this page’s background colour. Tap it in Edit mode to choose a colour or restore the paper’s default.",
+  },
   "nav-diary": {
-    title: "My Journal",
+    title: "My Daily Journal",
     body: "Open your dated journal pages.",
   },
   "nav-story": {

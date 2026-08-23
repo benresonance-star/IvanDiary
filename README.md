@@ -1,6 +1,6 @@
 # Ivan's Diary
 
-An accessible, voice-first journal for iPad and iPhone. The application uses a
+An accessible, voice-first journal for iPad. The application uses a
 React and TypeScript interface inside a Capacitor iOS shell. Drawing, page
 composition and local-first data contracts are kept independent from native
 audio, transcription and file services.
@@ -26,8 +26,10 @@ The Windows development foundation includes:
 - clearly labelled browser audio/transcription simulations; and
 - strict type checking, linting, unit tests and production builds.
 
-The browser repository is only for development. The production iOS repository
-will use SQLite and native durable files. Voice controls intentionally do not
+The browser repository is only for development. Production iOS stores the
+journal snapshot, checkpoint and pending operation log atomically in protected
+Application Support storage; recordings, photos and PencilKit drawings use
+native durable files. Voice controls in the browser intentionally do not
 access the microphone: browser recording and transcription are explicitly
 labelled demonstrations until the AVFoundation and Apple Speech bridges are
 installed and tested.
@@ -58,8 +60,8 @@ in-place PencilKit overlay aligned to the paper. Leaving Draw/Erase saves a
 PNG preview onto the page. The browser keeps the web canvas for Windows
 development.
 
-PencilKit uses the local package at `packages/ApplePlatformServices`. In
-Xcode, choose **File → Add Package Dependencies… → Add Local…**, select that
-folder, and add the `AppleDrawingKit` product to the **App** target. This
-one-time Xcode action records the package reference in the project. Do not
-edit `project.pbxproj` manually.
+The Apple services use the local package at `packages/ApplePlatformServices`.
+The checked-in Xcode project already links its `AppleDrawingKit` and
+`AppleAudioServices` products to the **App** target. If the package reference
+ever needs restoring, use **File → Add Package Dependencies… → Add Local…** in
+Xcode and select that folder. Do not edit `project.pbxproj` manually.

@@ -40,6 +40,13 @@ export function PolygonDraftEditor({ color, onCancel, onChange, onFinish, pageRe
         onPointerMove={(event) => { if (activeRef.current === index) move(event, index); }} onPointerUp={finishMove}
         style={{ left: `${x * 100}%`, top: `${y * 100}%` }} type="button" />)}
     </div>
-    <div className="polygon-draft-actions"><strong>{points.length} points</strong><button disabled={points.length < 3} onClick={(event) => { event.stopPropagation(); onFinish(); }} type="button">Finish polygon</button><button onClick={(event) => { event.stopPropagation(); onCancel(); }} type="button">Cancel</button></div>
+    <div className="polygon-draft-actions">
+      <span>Tap at least three points, then choose Finish polygon.</span>
+      <div className="polygon-draft-action-row">
+        <strong>{points.length} points</strong>
+        <button disabled={points.length < 3} onClick={(event) => { event.stopPropagation(); onFinish(); }} type="button">Finish polygon</button>
+        <button onClick={(event) => { event.stopPropagation(); onCancel(); }} type="button">Cancel</button>
+      </div>
+    </div>
   </>;
 }

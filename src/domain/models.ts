@@ -146,6 +146,7 @@ export type Page = {
   journalDayId?: EntityId;
   sketchbookId?: EntityId;
   paperStyle: PaperStyle;
+  backgroundColor?: string;
   drawingDocumentId: EntityId;
   drawingGrid?: DrawingGridSettings;
   objects: PageObject[];
@@ -468,6 +469,11 @@ export type DocumentOperation = OperationBase &
       type: "page-paper-update";
       pageId: EntityId;
       paperStyle: PaperStyle;
+    }
+    | {
+      type: "page-background-update";
+      pageId: EntityId;
+      backgroundColor?: string;
     }
     | {
       type: "settings-update";

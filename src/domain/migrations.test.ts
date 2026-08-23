@@ -7,6 +7,21 @@ import {
 } from "./migrations";
 
 describe("journal migrations", () => {
+  it("preserves valid page backgrounds and removes invalid values", () => {
+    const current = createInitialJournalSnapshot(new Date("2026-08-03T09:00:00.000Z"));
+    const valid = migrateJournalSnapshot({
+      ...current,
+      pages: [{ ...current.pages[0]!, backgroundColor: "#AABBCC" }],
+    });
+    expect(valid.pages[0]?.backgroundColor).toBe("#aabbcc");
+
+    const invalid = migrateJournalSnapshot({
+      ...current,
+      pages: [{ ...current.pages[0]!, backgroundColor: "transparent" }],
+    });
+    expect(invalid.pages[0]).not.toHaveProperty("backgroundColor");
+  });
+
   it("preserves freeform shapes and their reduced anchors", () => {
     const current = createInitialJournalSnapshot(new Date("2026-08-03T09:00:00.000Z"));
     const freeform = {

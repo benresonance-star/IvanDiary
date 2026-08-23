@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { PageWorkspace, type PageTool } from "./components/JournalPage";
 import {
@@ -11,9 +11,6 @@ import {
   Navigation,
   type AppSection,
 } from "./components/Navigation";
-import { SettingsView } from "./components/SettingsView";
-import { MyStoryWorkspace } from "./components/MyStoryWorkspace";
-import { ProfilePortraitEditor } from "./components/ProfilePortraitEditor";
 import { NewDeviceRecoveryDialog } from "./components/NewDeviceRecoveryDialog";
 import { RestoreCompleteDialog } from "./components/RestoreCompleteDialog";
 import { HelpMode } from "./components/HelpMode";
@@ -43,7 +40,7 @@ import {
   NATIVE_DRAWING_UPDATED_EVENT,
   subscribeNativeDrawingChanges,
 } from "./native/pencilKit";
-import { BrowserJournalRepository } from "./repository/browserJournalRepository";
+import { createJournalRepository } from "./repository/nativeJournalRepository";
 import { BrowserSketchRepository } from "./repository/browserSketchRepository";
 import type { SketchRepository } from "./sketch/types";
 import { localDateKey } from "./utils/date";
@@ -58,6 +55,16 @@ const INITIAL_DRAWING_HEALTH: SaveHealth = {
 
 const RESTORE_COMPLETE_KEY = "ivan-diary-restore-complete";
 
+const SettingsView = lazy(() =>
+  import("./components/SettingsView").then((module) => ({ default: module.SettingsView })),
+);
+const MyStoryWorkspace = lazy(() =>
+  import("./components/MyStoryWorkspace").then((module) => ({ default: module.MyStoryWorkspace })),
+);
+const ProfilePortraitEditor = lazy(() =>
+  import("./components/ProfilePortraitEditor").then((module) => ({ default: module.ProfilePortraitEditor })),
+);
+
 function reloadAfterRestore(): void {
   globalThis.sessionStorage?.setItem(RESTORE_COMPLETE_KEY, "true");
   globalThis.location.reload();
@@ -66,9 +73,9 @@ function reloadAfterRestore(): void {
 async function collectDiaryEntryDates(
   snapshot: JournalSnapshot,
   sketchRepository: SketchRepository,
+  nativeDrawingIds: ReadonlySet<string>,
 ): Promise<Set<string>> {
   const dates = new Set<string>();
-  const checkNative = hasNativePencilKit();
 
   for (const day of snapshot.days) {
     for (const pageId of day.pageIds) {
@@ -89,18 +96,9 @@ async function collectDiaryEntryDates(
         dates.add(day.date);
         break;
       }
-      if (checkNative) {
-        try {
-          const preview = await getNativeDrawingPreview(
-            pageCandidate.drawingDocumentId,
-          );
-          if (preview.available) {
-            dates.add(day.date);
-            break;
-          }
-        } catch {
-          // Ignore preview lookup failures while scanning the calendar.
-        }
+      if (nativeDrawingIds.has(pageCandidate.drawingDocumentId)) {
+        dates.add(day.date);
+        break;
       }
     }
   }
@@ -136,7 +134,7 @@ function combinedHealth(
 
 export default function App() {
   const journalRepository = useMemo(
-    () => new BrowserJournalRepository(),
+    () => createJournalRepository(),
     [],
   );
   const sketchRepository = useMemo(() => new BrowserSketchRepository(), []);
@@ -186,6 +184,8 @@ export default function App() {
   const flushEntryDatesOnTickRef = useRef(false);
   const todayOpeningRef = useRef<string | undefined>(undefined);
   const drawingBackupTickRef = useRef(0);
+  const nativeDrawingIdsRef = useRef<Set<string>>(new Set());
+  const nativeDrawingScanReadyRef = useRef(false);
   const {
     backupStatus,
     backUpJournalInformation,
@@ -276,7 +276,7 @@ export default function App() {
 
     let cancelled = false;
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = async (flushOverlay: boolean) => {
+    const refresh = async (flushOverlay: boolean, rescanNative: boolean) => {
       // Never flush on ordinary toolbar/draw traffic — that races PencilKit and
       // freezes the Capacitor bridge. Only flush when the calendar opens.
       if (flushOverlay && hasNativePencilKit()) {
@@ -289,7 +289,24 @@ export default function App() {
       if (cancelled) {
         return;
       }
-      const dates = await collectDiaryEntryDates(snapshot, sketchRepository);
+      if (rescanNative && hasNativePencilKit()) {
+        const drawingIds = new Set<string>();
+        for (const page of snapshot.pages) {
+          try {
+            const preview = await getNativeDrawingPreview(page.drawingDocumentId);
+            if (preview.available) drawingIds.add(page.drawingDocumentId);
+          } catch {
+            // Keep scanning; one damaged preview must not hide other diary dates.
+          }
+        }
+        nativeDrawingIdsRef.current = drawingIds;
+        nativeDrawingScanReadyRef.current = true;
+      }
+      const dates = await collectDiaryEntryDates(
+        snapshot,
+        sketchRepository,
+        nativeDrawingIdsRef.current,
+      );
       if (!cancelled) {
         setEntryDates(dates);
       }
@@ -297,16 +314,30 @@ export default function App() {
 
     const flushForCalendar = flushEntryDatesOnTickRef.current;
     flushEntryDatesOnTickRef.current = false;
-    void refresh(flushForCalendar);
+    const needsInitialNativeScan = !nativeDrawingScanReadyRef.current;
+    void refresh(flushForCalendar, flushForCalendar || needsInitialNativeScan);
 
-    const handleNativeUpdate = () => {
+    const handleNativeUpdate = (event: Event) => {
       drawingBackupTickRef.current += 1;
       setDrawingBackupTick(drawingBackupTickRef.current);
       if (debounceTimer !== undefined) {
         clearTimeout(debounceTimer);
       }
       debounceTimer = setTimeout(() => {
-        void refresh(false);
+        const documentId = (event as CustomEvent<{ documentId?: string }>).detail?.documentId;
+        if (!documentId) {
+          void refresh(false, true);
+          return;
+        }
+        void getNativeDrawingPreview(documentId)
+          .then((preview) => {
+            const next = new Set(nativeDrawingIdsRef.current);
+            if (preview.available) next.add(documentId);
+            else next.delete(documentId);
+            nativeDrawingIdsRef.current = next;
+          })
+          .catch(() => undefined)
+          .then(() => refresh(false, false));
       }, 400);
     };
     globalThis.addEventListener(
@@ -1182,7 +1213,9 @@ export default function App() {
           }}
         />
       ) : null}
-      {content}
+      <Suspense fallback={<div aria-busy="true" aria-label="Opening section" role="status" />}>
+        {content}
+      </Suspense>
       {portraitEditorOpen ? (
         <ProfilePortraitEditor
           initialPenSettings={{

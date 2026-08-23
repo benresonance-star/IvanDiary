@@ -591,6 +591,63 @@ private enum AppOrientationPolicy {
     static var landscapeLocked = true
 }
 
+@objc(NativeJournalStorePlugin)
+@MainActor
+public final class NativeJournalStorePlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin {
+    public let identifier = "NativeJournalStorePlugin"
+    public let jsName = "NativeJournalStore"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "read", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "write", returnType: CAPPluginReturnPromise)
+    ]
+
+    private var storeURL: URL {
+        get throws {
+            let root = try FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            ).appendingPathComponent("IvanDiary", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: root,
+                withIntermediateDirectories: true,
+                attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+            )
+            return root.appendingPathComponent("journal-envelope.json")
+        }
+    }
+
+    @objc public func read(_ call: CAPPluginCall) {
+        do {
+            let url = try storeURL
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                call.resolve(["available": false])
+                return
+            }
+            let contents = try String(contentsOf: url, encoding: .utf8)
+            call.resolve(["available": true, "contents": contents])
+        } catch {
+            call.reject("Protected journal storage could not be read.", nil, error)
+        }
+    }
+
+    @objc public func write(_ call: CAPPluginCall) {
+        guard let contents = call.getString("contents"),
+              let data = contents.data(using: .utf8) else {
+            call.reject("Valid journal contents are required.")
+            return
+        }
+        do {
+            let url = try storeURL
+            try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            call.resolve()
+        } catch {
+            call.reject("Protected journal storage could not be written.", nil, error)
+        }
+    }
+}
+
 @objc(AppOrientationPlugin)
 @MainActor
 public final class AppOrientationPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin {
@@ -643,6 +700,7 @@ final class AppViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(PencilKitPlugin())
         bridge?.registerPluginInstance(NativeTextEditorPlugin())
         bridge?.registerPluginInstance(AppOrientationPlugin())
+        bridge?.registerPluginInstance(NativeJournalStorePlugin())
         bridge?.registerPluginInstance(JournalAudioPlugin())
         bridge?.registerPluginInstance(AppleTranscriptionPlugin())
         bridge?.registerPluginInstance(JournalFilesPlugin())

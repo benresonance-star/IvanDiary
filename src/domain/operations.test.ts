@@ -103,6 +103,44 @@ describe("document operations", () => {
     ).toHaveLength(1);
   });
 
+  it("sets and restores a page background colour", () => {
+    const coloured = applyDocumentOperation(initial, {
+      id: "set-page-background",
+      type: "page-background-update",
+      journalId: initial.id,
+      baseRevision: 0,
+      resultingRevision: 1,
+      createdAt: "2026-08-03T10:00:00.000Z",
+      pageId: initial.pages[0]!.id,
+      backgroundColor: "#AABBCC",
+    });
+    expect(coloured.pages[0]?.backgroundColor).toBe("#aabbcc");
+
+    const restored = applyDocumentOperation(coloured, {
+      id: "restore-page-background",
+      type: "page-background-update",
+      journalId: initial.id,
+      baseRevision: 1,
+      resultingRevision: 2,
+      createdAt: "2026-08-03T10:01:00.000Z",
+      pageId: initial.pages[0]!.id,
+    });
+    expect(restored.pages[0]).not.toHaveProperty("backgroundColor");
+  });
+
+  it("rejects an invalid page background colour", () => {
+    expect(() => applyDocumentOperation(initial, {
+      id: "invalid-page-background",
+      type: "page-background-update",
+      journalId: initial.id,
+      baseRevision: 0,
+      resultingRevision: 1,
+      createdAt: "2026-08-03T10:00:00.000Z",
+      pageId: initial.pages[0]!.id,
+      backgroundColor: "not-a-colour",
+    })).toThrow(OperationConflictError);
+  });
+
   it("rejects an operation based on stale state", () => {
     expect(() =>
       applyDocumentOperation(initial, textOperation(4, "stale-operation")),

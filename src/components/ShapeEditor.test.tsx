@@ -53,6 +53,47 @@ describe("ShapeEditor", () => {
     expect(Number(toolbar.style.left.replace("px", ""))).toBeGreaterThan(before);
   });
 
+  it("uses the title area as the move handle while keeping Done separate", () => {
+    const { onDeselect } = renderEditor();
+    const toolbar = screen.getByRole("toolbar", { name: "Shape editing commands" });
+    const titleHandle = screen.getByRole("button", { name: "Move shape editing palette" });
+    const done = screen.getByRole("button", { name: "Finish editing shape" });
+
+    expect(titleHandle).toHaveClass("shape-palette-heading-drag");
+    expect(titleHandle).toHaveTextContent("triangle shape selected");
+    expect(done).not.toBe(titleHandle);
+    fireEvent.click(done);
+    expect(onDeselect).toHaveBeenCalledOnce();
+    expect(toolbar).toContainElement(titleHandle);
+  });
+
+  it("moves the palette with a transform and commits its position on release", () => {
+    renderEditor();
+    const toolbar = screen.getByRole("toolbar", { name: "Shape editing commands" });
+    const handle = screen.getByRole("button", { name: "Move shape editing palette" });
+    vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue({
+      x: 100, y: 100, left: 100, top: 100, right: 368, bottom: 500,
+      width: 268, height: 400, toJSON: () => ({}),
+    });
+    const animationFrame = vi
+      .spyOn(globalThis, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        callback(0);
+        return 1;
+      });
+
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 7, clientX: 120, clientY: 120 });
+    const leftBeforeMove = toolbar.style.left;
+    fireEvent.pointerMove(handle, { pointerId: 7, clientX: 180, clientY: 155 });
+    expect(toolbar.style.left).toBe(leftBeforeMove);
+    expect(toolbar.style.transform).toBe("translate3d(60px, 35px, 0)");
+    fireEvent.pointerUp(handle, { pointerId: 7, clientX: 180, clientY: 155 });
+    expect(toolbar.style.transform).toBe("");
+    expect(toolbar.style.left).toBe("160px");
+    expect(toolbar.style.top).toBe("135px");
+    animationFrame.mockRestore();
+  });
+
   it("uses the user-set palette position when switching between mounted shapes", () => {
     const page = document.createElement("div");
     vi.spyOn(page, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800, toJSON: () => ({}) });
@@ -150,6 +191,21 @@ describe("ShapeEditor", () => {
     expect(onUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ rotationDegrees: 5 }), shape);
   });
 
+  it("keeps each appearance colour and its toggle in a compact row", () => {
+    renderEditor();
+    fireEvent.click(screen.getByRole("button", { name: "Appearance Show" }));
+    const fillPicker = screen.getByLabelText("Shape fill colour");
+    const outlinePicker = screen.getByLabelText("Shape outline colour");
+    expect(fillPicker.closest(".shape-colour-row")).toContainElement(
+      screen.getByRole("button", { name: "No Fill" }),
+    );
+    expect(outlinePicker.closest(".shape-colour-row")).toContainElement(
+      screen.getByRole("button", { name: "No Outline" }),
+    );
+    expect(screen.getByLabelText("Shape outline thickness").closest("label"))
+      .toHaveClass("shape-thickness-control");
+  });
+
   it("commits the latest drag position even when pointer-up follows immediately", () => {
     const { onUpdate } = renderEditor();
     fireEvent.click(screen.getByRole("button", { name: "Move" }));
@@ -160,6 +216,34 @@ describe("ShapeEditor", () => {
     const updated = onUpdate.mock.calls[0]?.[0];
     expect(updated?.position.x).toBeCloseTo(.3);
     expect(updated?.position.y).toBeCloseTo(.25);
+  });
+
+  it("does not let an earlier save acknowledgement reset a newer drag", () => {
+    const props = renderEditor({ ...shape, id: "duplicated-shape", revision: 0 });
+    const editor = screen.getByRole("group", { name: /triangle shape/ });
+
+    fireEvent.pointerDown(editor, { button: 0, pointerId: 20, clientX: 250, clientY: 250 });
+    fireEvent.pointerMove(editor, { pointerId: 20, clientX: 300, clientY: 250 });
+    fireEvent.pointerUp(editor, { pointerId: 20, clientX: 300, clientY: 250 });
+    const firstSaved = props.onUpdate.mock.calls[0]?.[0] as ShapeObject;
+
+    fireEvent.pointerDown(editor, { button: 0, pointerId: 21, clientX: 300, clientY: 250 });
+    fireEvent.pointerMove(editor, { pointerId: 21, clientX: 380, clientY: 290 });
+    props.rerenderEditor(firstSaved);
+    expect(screen.getByRole("group", { name: /triangle shape/ })).toHaveStyle({
+      left: "33%",
+      top: "25%",
+    });
+    fireEvent.pointerUp(screen.getByRole("group", { name: /triangle shape/ }), {
+      pointerId: 21,
+      clientX: 380,
+      clientY: 290,
+    });
+
+    const secondSaved = props.onUpdate.mock.calls[1]?.[0] as ShapeObject;
+    expect(secondSaved.position.x).toBeCloseTo(.33);
+    expect(secondSaved.position.y).toBeCloseTo(.25);
+    expect(secondSaved.revision).toBeGreaterThan(firstSaved.revision);
   });
 
   it.each(["Move", "Rotate", "Scale"])("moves only the vertex while %s mode is selected", (mode) => {

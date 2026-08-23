@@ -31,6 +31,18 @@ type DragState = {
   scaleAxis?: "horizontal" | "vertical";
 };
 type PalettePosition = { left: number; top: number };
+type PaletteDragState = {
+  frame?: number;
+  latest: PalettePosition;
+  maxLeft: number;
+  maxTop: number;
+  minLeft: number;
+  minTop: number;
+  offsetX: number;
+  offsetY: number;
+  origin: PalettePosition;
+  pointerId: number;
+};
 
 let retainedPalettePosition: PalettePosition | undefined;
 let retainedSnapEnabled = true;
@@ -173,7 +185,7 @@ export function ShapeEditor({
   const vertexRef = useRef<{ pointerId: number; index: number; start: ShapeObject } | undefined>(undefined);
   const objectRef = useRef<HTMLDivElement>(null);
   const paletteRef = useRef<HTMLDivElement>(null);
-  const paletteDragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | undefined>(undefined);
+  const paletteDragRef = useRef<PaletteDragState | undefined>(undefined);
   const current = draft ?? shape;
   const activePalettePlaced = Boolean(retainedPalettePosition);
   const activePalettePosition = retainedPalettePosition ?? palettePosition;
@@ -217,7 +229,12 @@ export function ShapeEditor({
 
   useEffect(() => {
     const pendingRevision = pendingRevisionRef.current;
-    if (pendingRevision === undefined || shape.revision < pendingRevision) return;
+    if (
+      pendingRevision === undefined ||
+      shape.revision < pendingRevision ||
+      dragRef.current ||
+      vertexRef.current
+    ) return;
     pendingRevisionRef.current = undefined;
     draftRef.current = undefined;
     setDraft(undefined);
@@ -299,7 +316,21 @@ export function ShapeEditor({
     const palette = paletteRef.current?.getBoundingClientRect();
     if (!palette || event.button !== 0) return;
     event.preventDefault();
-    paletteDragRef.current = { pointerId: event.pointerId, offsetX: event.clientX - palette.left, offsetY: event.clientY - palette.top };
+    const viewport = globalThis.visualViewport;
+    const margin = 12;
+    const origin = { left: palette.left, top: palette.top };
+    paletteDragRef.current = {
+      latest: origin,
+      maxLeft: (viewport?.offsetLeft ?? 0) + (viewport?.width ?? globalThis.innerWidth) - palette.width - margin,
+      maxTop: (viewport?.offsetTop ?? 0) + (viewport?.height ?? globalThis.innerHeight) - palette.height - margin,
+      minLeft: (viewport?.offsetLeft ?? 0) + margin,
+      minTop: (viewport?.offsetTop ?? 0) + margin,
+      offsetX: event.clientX - palette.left,
+      offsetY: event.clientY - palette.top,
+      origin,
+      pointerId: event.pointerId,
+    };
+    paletteRef.current?.classList.add("dragging");
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Continue while pointer events arrive. */ }
   };
 
@@ -307,7 +338,41 @@ export function ShapeEditor({
     const active = paletteDragRef.current;
     if (!active || active.pointerId !== event.pointerId) return;
     event.preventDefault();
-    movePalette(event.clientX - active.offsetX, event.clientY - active.offsetY);
+    active.latest = {
+      left: Math.max(active.minLeft, Math.min(event.clientX - active.offsetX, active.maxLeft)),
+      top: Math.max(active.minTop, Math.min(event.clientY - active.offsetY, active.maxTop)),
+    };
+    if (active.frame !== undefined) return;
+    active.frame = requestAnimationFrame(() => {
+      active.frame = undefined;
+      const palette = paletteRef.current;
+      if (!palette || paletteDragRef.current !== active) return;
+      palette.style.transform = `translate3d(${active.latest.left - active.origin.left}px, ${active.latest.top - active.origin.top}px, 0)`;
+    });
+  };
+
+  const finishPaletteMove = (event: PointerEvent<HTMLButtonElement>) => {
+    const active = paletteDragRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    if (active.frame !== undefined) cancelAnimationFrame(active.frame);
+    paletteDragRef.current = undefined;
+    if (paletteRef.current) {
+      paletteRef.current.style.transform = "";
+      paletteRef.current.classList.remove("dragging");
+    }
+    retainedPalettePosition = active.latest;
+    setPalettePosition(active.latest);
+  };
+
+  const cancelPaletteMove = (event: PointerEvent<HTMLButtonElement>) => {
+    const active = paletteDragRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    if (active.frame !== undefined) cancelAnimationFrame(active.frame);
+    paletteDragRef.current = undefined;
+    if (paletteRef.current) {
+      paletteRef.current.style.transform = "";
+      paletteRef.current.classList.remove("dragging");
+    }
   };
 
   const keyboardPaletteMove = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -590,10 +655,24 @@ export function ShapeEditor({
   const palette = selected && arrange && typeof document !== "undefined" ? createPortal(
     <div aria-label="Shape editing commands" className="shape-edit-palette" ref={paletteRef} role="toolbar" style={activePalettePosition}>
       <header className="shape-inspector-heading">
-        <div><span>{current.shapeKind.replace("freeform", "Freeform")}</span><strong>{current.shapeKind === "freeform" ? " shape" : " shape selected"}</strong></div>
+        <button
+          aria-label="Move shape editing palette"
+          className="shape-palette-heading-drag"
+          data-help-topic="shape-palette-move"
+          onKeyDown={keyboardPaletteMove}
+          onLostPointerCapture={finishPaletteMove}
+          onPointerCancel={cancelPaletteMove}
+          onPointerDown={beginPaletteMove}
+          onPointerMove={updatePaletteMove}
+          onPointerUp={finishPaletteMove}
+          type="button"
+        >
+          <span>{current.shapeKind.replace("freeform", "Freeform")}</span>
+          <strong>{current.shapeKind === "freeform" ? " shape" : " shape selected"}</strong>
+          <GripHorizontal aria-hidden="true" />
+        </button>
         <button aria-label="Finish editing shape" onClick={onDeselect} type="button"><Check aria-hidden="true" />Done</button>
       </header>
-      <button aria-label="Move shape editing palette" className="shape-palette-drag" data-help-topic="shape-palette-move" onKeyDown={keyboardPaletteMove} onLostPointerCapture={() => { paletteDragRef.current = undefined; }} onPointerDown={beginPaletteMove} onPointerMove={updatePaletteMove} onPointerUp={() => { paletteDragRef.current = undefined; }} type="button"><GripHorizontal aria-hidden="true" /><span>Move panel</span></button>
       <div aria-label="Shape adjustment" className="shape-edit-mode-group" role="group">{(["move", "rotate", "scale"] as const).map((value) => {
         const Icon = value === "move" ? Move : value === "rotate" ? RotateCw : Scaling;
         return <button aria-pressed={activeMode === value} data-help-topic={`shape-${value}`} key={value} onClick={() => { retainedShapeMode = value; setMode(value); }} type="button"><Icon aria-hidden="true" />{value[0]!.toUpperCase() + value.slice(1)}{activeMode === value ? <Check aria-hidden="true" className="shape-mode-check" /> : null}</button>;
@@ -613,11 +692,15 @@ export function ShapeEditor({
       </div>
       <button aria-expanded={activeColourOpen} className="shape-inspector-disclosure" data-help-topic="shape-colour" onClick={() => toggleInspectorSection("appearance")} type="button"><Palette aria-hidden="true" />Appearance <span>{activeColourOpen ? "Hide" : "Show"}</span></button>
       {activeColourOpen ? <div className="shape-colour-controls">
-        <label>Fill <input aria-label="Shape fill colour" data-help-topic="shape-colour" disabled={!current.fillColor} onChange={(event) => commit({ ...current, fillColor: event.target.value }, "Fill colour changed")} type="color" value={current.fillColor ?? "#d9a441"} /></label>
-        <button aria-pressed={Boolean(current.fillColor)} data-help-topic="shape-colour" onClick={() => commit({ ...current, fillColor: current.fillColor ? undefined : "#d9a441" }, "Shape fill changed")} type="button">{current.fillColor ? "No Fill" : "Add Fill"}</button>
-        <label>Outline <input aria-label="Shape outline colour" data-help-topic="shape-colour" disabled={!current.outlineColor} onChange={(event) => commit({ ...current, outlineColor: event.target.value }, "Outline colour changed")} type="color" value={current.outlineColor ?? "#3f3528"} /></label>
-        <button aria-pressed={Boolean(current.outlineColor)} data-help-topic="shape-colour" onClick={() => commit({ ...current, outlineColor: current.outlineColor ? undefined : "#3f3528" }, "Shape outline changed")} type="button">{current.outlineColor ? "No Outline" : "Add Outline"}</button>
-        <label>Thickness <output>{current.outlineWidth}</output><input aria-label="Shape outline thickness" data-help-topic="shape-colour" disabled={!current.outlineColor} max="12" min="1" onBlur={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} onChange={(event) => preview({ ...current, outlineWidth: Number(event.target.value) })} onKeyUp={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} onPointerUp={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} type="range" value={current.outlineWidth} /></label>
+        <div className="shape-colour-row">
+          <label>Fill <input aria-label="Shape fill colour" data-help-topic="shape-colour" disabled={!current.fillColor} onChange={(event) => commit({ ...current, fillColor: event.target.value }, "Fill colour changed")} type="color" value={current.fillColor ?? "#d9a441"} /></label>
+          <button aria-pressed={Boolean(current.fillColor)} data-help-topic="shape-colour" onClick={() => commit({ ...current, fillColor: current.fillColor ? undefined : "#d9a441" }, "Shape fill changed")} type="button">{current.fillColor ? "No Fill" : "Add Fill"}</button>
+        </div>
+        <div className="shape-colour-row">
+          <label>Outline <input aria-label="Shape outline colour" data-help-topic="shape-colour" disabled={!current.outlineColor} onChange={(event) => commit({ ...current, outlineColor: event.target.value }, "Outline colour changed")} type="color" value={current.outlineColor ?? "#3f3528"} /></label>
+          <button aria-pressed={Boolean(current.outlineColor)} data-help-topic="shape-colour" onClick={() => commit({ ...current, outlineColor: current.outlineColor ? undefined : "#3f3528" }, "Shape outline changed")} type="button">{current.outlineColor ? "No Outline" : "Add Outline"}</button>
+        </div>
+        <label className="shape-thickness-control">Thickness <output>{current.outlineWidth}</output><input aria-label="Shape outline thickness" data-help-topic="shape-colour" disabled={!current.outlineColor} max="12" min="1" onBlur={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} onChange={(event) => preview({ ...current, outlineWidth: Number(event.target.value) })} onKeyUp={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} onPointerUp={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} type="range" value={current.outlineWidth} /></label>
       </div> : null}
       {current.shapeKind !== "circle" && current.shapeKind !== "rectangle" ? <div className="shape-context-section"><strong>Edit points</strong><div className="shape-point-actions"><button aria-label="Add a vertex" aria-pressed={addingVertex} data-help-topic="shape-add-vertex" onClick={() => setAddingVertex((adding) => !adding)} type="button"><Plus aria-hidden="true" />Add point</button><button aria-label="Delete selected vertex" data-help-topic="shape-delete-vertex" disabled={selectedVertex === undefined || vertices.length <= 3} onClick={removeVertex} type="button"><Minus aria-hidden="true" />Remove point</button></div>{selectedVertex === undefined ? <small>Select a point on the shape to remove it.</small> : null}</div> : null}
       <button aria-expanded={activeArrangeOpen} className="shape-inspector-disclosure" onClick={() => toggleInspectorSection("arrange")} type="button"><Layers3 aria-hidden="true" />Arrange <span>{activeArrangeOpen ? "Hide" : "Show"}</span></button>

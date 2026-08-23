@@ -3,6 +3,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
@@ -72,9 +73,14 @@ import type { SketchTool } from "../sketch/types";
 import { browserFileToAsset, readImageSize } from "../utils/assets";
 import { localDateKey } from "../utils/date";
 import { createId } from "../utils/id";
+import {
+  defaultPaperBackgroundColour,
+  effectivePaperBackgroundColour,
+} from "../domain/paperBackground";
 import { displayAssetUri } from "../utils/displayAssetUri";
 import { openExternalUrl } from "../utils/openExternalUrl";
 import { AudioCard } from "./AudioCard";
+import { CanvasBackgroundChooser } from "./CanvasBackgroundChooser";
 import {
   ArrangeablePageObject,
   type LayoutChange,
@@ -311,6 +317,7 @@ export function PageWorkspace({
   const [linkBeingEdited, setLinkBeingEdited] = useState<LinkObject>();
   const [recording, setRecording] = useState<RecordingSnapshot>();
   const [voiceDialogOpen, setVoiceDialogOpen] = useState(false);
+  const [voiceDialogRequested, setVoiceDialogRequested] = useState(false);
   const [polygonDraft, setPolygonDraft] = useState<Position[] | null>(null);
   const [freeformDraft, setFreeformDraft] = useState(false);
   const autoStopStartedRef = useRef(false);
@@ -341,7 +348,7 @@ export function PageWorkspace({
 
   const { overlayActive, overlayReady, suspendOverlay } = useNativeDrawingOverlay({
     documentId: page.drawingDocumentId,
-    enabled: hasNativePencilKit() && polygonDraft === null && !freeformDraft && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested && !voiceDialogOpen && !shareChooserOpen && !shareChooserRequested && !shareInProgress,
+    enabled: hasNativePencilKit() && polygonDraft === null && !freeformDraft && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested && !voiceDialogOpen && !voiceDialogRequested && !shareChooserOpen && !shareChooserRequested && !shareInProgress,
     tool,
     color: penSettings.color,
     nib: penSettings.nib,
@@ -372,6 +379,18 @@ export function PageWorkspace({
     } else {
       setLinkBeingEdited(undefined);
       setNotice("The drawing is still saving. Try Link again in a moment.");
+    }
+  };
+
+  const openVoiceDialogAboveSketch = async () => {
+    setSelectedObjectId(undefined);
+    setVoiceDialogRequested(true);
+    const hidden = await suspendOverlay();
+    setVoiceDialogRequested(false);
+    if (hidden) {
+      setVoiceDialogOpen(true);
+    } else {
+      setNotice("The drawing is still saving. Try Voice again in a moment.");
     }
   };
 
@@ -597,7 +616,7 @@ export function PageWorkspace({
     }
     if (kind !== "polygon") { void placeShape(kind); return; }
     setPenHudOpen(false); setTool("view"); setSelectedObjectId(undefined);
-    setPolygonDraft([]); setNotice("Tap at least three points, then choose Finish polygon.");
+    setPolygonDraft([]); setNotice(undefined);
   };
 
   const finishFreeform = async (anchors: Position[]) => {
@@ -1355,7 +1374,8 @@ export function PageWorkspace({
           aria-haspopup="dialog"
           className="tool voice-tool"
           data-help-topic="voice"
-          onClick={() => setVoiceDialogOpen(true)}
+          disabled={voiceDialogRequested}
+          onClick={() => void openVoiceDialogAboveSketch()}
           type="button"
         >
           <Mic aria-hidden="true" />
@@ -1588,7 +1608,25 @@ export function PageWorkspace({
         onPointerMoveCapture={handleTwoFingerPointerMove}
         onPointerUpCapture={handleTwoFingerPointerUp}
         ref={paperRef}
+        style={{
+          "--page-background-colour": effectivePaperBackgroundColour(page),
+        } as CSSProperties}
       >
+        {tool === "arrange" ? (
+          <CanvasBackgroundChooser
+            control={{
+              color: effectivePaperBackgroundColour(page),
+              defaultColor: defaultPaperBackgroundColour(page.paperStyle),
+              onChange: (backgroundColor) => {
+                void commit({
+                  type: "page-background-update",
+                  pageId: page.id,
+                  ...(backgroundColor ? { backgroundColor } : {}),
+                });
+              },
+            }}
+          />
+        ) : null}
         <SketchSurface
           capabilities={
             overlayReady || tool === "arrange" || tool === "view"
@@ -1622,7 +1660,7 @@ export function PageWorkspace({
           repository={sketchRepository}
           tool={tool === "eraser" ? "eraser" : "pen"}
         />
-        {overlayActive ? null : (
+        {overlayReady ? null : (
           <NativeSketchPreview
             contentInsetTop={sketchPreviewInsetTop}
             documentId={page.drawingDocumentId}

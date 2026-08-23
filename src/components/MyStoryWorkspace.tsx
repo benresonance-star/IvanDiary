@@ -6,6 +6,7 @@ import {
   ImagePlus,
   Link as LinkIcon,
   Mail,
+  Maximize2,
   Mic,
   Move,
   PenLine,
@@ -300,10 +301,11 @@ export function MyStoryWorkspace({
   const [textEditing, setTextEditing] = useState<MyStoryTextBlock | null>();
   const [splitRatio, setSplitRatio] = useState(page.splitRatio);
   const splitRatioRef = useRef(page.splitRatio);
-  const dividerDragOffsetRef = useRef(0);
+  const [dividerDragging, setDividerDragging] = useState(false);
   const transcriptionInFlightRef = useRef(new Set<string>());
   const [recording, setRecording] = useState<RecordingSnapshot>();
   const [voiceDialogOpen, setVoiceDialogOpen] = useState(false);
+  const [voiceDialogRequested, setVoiceDialogRequested] = useState(false);
   const autoStopStartedRef = useRef(false);
   const toggleVoiceRef = useRef<() => Promise<void>>(async () => undefined);
   const pageTextColor = readableTextColour(
@@ -383,7 +385,7 @@ export function MyStoryWorkspace({
     }
     if (kind !== "polygon") { void placeShape(kind); return; }
     setPenHudOpen(false); onToolChange("view"); setSelection(undefined); setSelectedRecordingId(undefined); setSelectedShapeId(undefined);
-    setPolygonDraft([]); setNotice("Tap at least three points, then choose Finish polygon.");
+    setPolygonDraft([]); setNotice(undefined);
   };
   const finishFreeform = async (anchors: Position[]) => {
     const xs = anchors.map(({ x }) => x); const ys = anchors.map(({ y }) => y);
@@ -492,8 +494,9 @@ export function MyStoryWorkspace({
     !textEditorRequested &&
     textEditing === undefined &&
     polygonDraft === null && !freeformDraft &&
-    !voiceDialogOpen;
-  const { overlayActive, overlayReady, suspendOverlay } =
+    !voiceDialogOpen &&
+    !voiceDialogRequested;
+  const { overlayReady, suspendOverlay } =
     useNativeDrawingOverlay({
       documentId: page.drawingDocumentId,
       enabled: overlayEnabled,
@@ -638,6 +641,18 @@ export function MyStoryWorkspace({
     }
     setLinkEditing(link ?? null);
     setLinkComposerRequested(false);
+  };
+
+  const openVoiceDialog = async () => {
+    setSelection(undefined);
+    setVoiceDialogRequested(true);
+    const hidden = await suspendOverlay();
+    setVoiceDialogRequested(false);
+    if (hidden) {
+      setVoiceDialogOpen(true);
+    } else {
+      setNotice("The drawing is still saving. Try Voice again in a moment.");
+    }
   };
 
   const saveLink = async (url: string, title: string) => {
@@ -1048,15 +1063,25 @@ export function MyStoryWorkspace({
     }
   };
 
+  const resizeDividerAt = (clientX: number) => {
+    const bounds = paperRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const dividerRatio = Math.min(
+      0.7,
+      Math.max(0.3, (clientX - bounds.left) / bounds.width),
+    );
+    const next =
+      page.textSide === "left" ? dividerRatio : 1 - dividerRatio;
+    splitRatioRef.current = next;
+    setSplitRatio(next);
+  };
+
   const beginDividerDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (tool !== "arrange") return;
     event.preventDefault();
-    const dividerBounds =
-      event.currentTarget.parentElement?.getBoundingClientRect();
-    dividerDragOffsetRef.current = dividerBounds
-      ? event.clientX - (dividerBounds.left + dividerBounds.width / 2)
-      : 0;
+    setDividerDragging(true);
     event.currentTarget.setPointerCapture(event.pointerId);
+    resizeDividerAt(event.clientX);
   };
 
   const updateDivider = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -1066,23 +1091,14 @@ export function MyStoryWorkspace({
     ) {
       return;
     }
-    const bounds = paperRef.current?.getBoundingClientRect();
-    if (!bounds) return;
-    const dividerX = event.clientX - dividerDragOffsetRef.current;
-    const dividerRatio = Math.min(
-      0.7,
-      Math.max(0.3, (dividerX - bounds.left) / bounds.width),
-    );
-    const next =
-      page.textSide === "left" ? dividerRatio : 1 - dividerRatio;
-    splitRatioRef.current = next;
-    setSplitRatio(next);
+    event.preventDefault();
+    resizeDividerAt(event.clientX);
   };
 
   const finishDivider = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
     event.currentTarget.releasePointerCapture(event.pointerId);
-    dividerDragOffsetRef.current = 0;
+    setDividerDragging(false);
     const next = splitRatioRef.current;
     if (Math.abs(next - page.splitRatio) < 0.001) return;
     void commitWithUndo(
@@ -1092,6 +1108,28 @@ export function MyStoryWorkspace({
         pageId: page.id,
         splitRatio: page.splitRatio,
       },
+    );
+  };
+
+  const moveDividerWithKeyboard = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const visualRatio = page.textSide === "left"
+      ? splitRatioRef.current
+      : 1 - splitRatioRef.current;
+    const direction = event.key === "ArrowLeft" ? -1 : 1;
+    const nextVisualRatio = Math.min(
+      0.7,
+      Math.max(0.3, visualRatio + direction * (event.shiftKey ? 0.05 : 0.02)),
+    );
+    const next = page.textSide === "left" ? nextVisualRatio : 1 - nextVisualRatio;
+    splitRatioRef.current = next;
+    setSplitRatio(next);
+    void commitWithUndo(
+      { type: "my-story-layout-update", pageId: page.id, splitRatio: next },
+      { type: "my-story-layout-update", pageId: page.id, splitRatio: page.splitRatio },
     );
   };
 
@@ -1381,7 +1419,8 @@ export function MyStoryWorkspace({
             aria-expanded={voiceDialogOpen}
             aria-haspopup="dialog"
             className="tool voice-tool"
-            onClick={() => setVoiceDialogOpen(true)}
+            disabled={voiceDialogRequested}
+            onClick={() => void openVoiceDialog()}
             type="button"
           >
             <Mic aria-hidden="true" />
@@ -1570,7 +1609,7 @@ export function MyStoryWorkspace({
           repository={sketchRepository}
           tool={tool === "eraser" ? "eraser" : "pen"}
         />
-        {overlayActive ? null : (
+        {overlayReady ? null : (
           <NativeSketchPreview documentId={page.drawingDocumentId} />
         )}
         {polygonDraft ? <PolygonDraftEditor color={penSettings.color} onCancel={() => { setPolygonDraft(null); setNotice(undefined); onToolChange("pen"); }} onChange={setPolygonDraft} onFinish={() => void finishPolygon()} pageRef={paperRef} points={polygonDraft} /> : null}
@@ -1706,14 +1745,20 @@ export function MyStoryWorkspace({
           <div className="story-divider">
             <button
               aria-label="Resize text and image sides"
-              className="story-divider-resize"
+              aria-keyshortcuts="ArrowLeft ArrowRight"
+              className={`story-divider-resize${dividerDragging ? " dragging" : ""}`}
               onLostPointerCapture={finishDivider}
               onPointerCancel={finishDivider}
               onPointerDown={beginDividerDrag}
               onPointerMove={updateDivider}
               onPointerUp={finishDivider}
+              onKeyDown={moveDividerWithKeyboard}
               type="button"
-            />
+            >
+              <span aria-hidden="true" className="story-divider-resize-icon">
+                <Maximize2 />
+              </span>
+            </button>
             <button
               aria-label={
                 page.textSide === "left"

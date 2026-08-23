@@ -164,6 +164,52 @@ function renderWorkspace({
   return { share, audio, commit };
 }
 
+describe("PageWorkspace canvas background", () => {
+  beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      disconnect() {}
+    });
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("applies the page background colour to the paper", () => {
+    renderWorkspace({
+      page: { ...diaryPage(), backgroundColor: "#aabbcc" },
+    });
+    expect(document.querySelector(".paper-page")).toHaveStyle({
+      "--page-background-colour": "#aabbcc",
+    });
+  });
+
+  it("offers the background chooser on the canvas in Edit mode", () => {
+    const commit = vi.fn(async () => true);
+    renderWorkspace({
+      commit,
+      page: { ...diaryPage(), backgroundColor: "#aabbcc" },
+      tool: "arrange",
+    });
+
+    const paper = document.querySelector(".paper-page");
+    const trigger = screen.getByRole("button", {
+      name: "Canvas background colour #aabbcc",
+    });
+    expect(paper).toContainElement(trigger);
+    fireEvent.click(trigger);
+    const picker = screen.getByLabelText("Choose canvas background colour");
+    expect(picker).toHaveFocus();
+    fireEvent.change(picker, { target: { value: "#112233" } });
+    expect(commit).toHaveBeenCalledWith({
+      type: "page-background-update",
+      pageId: diaryPage().id,
+      backgroundColor: "#112233",
+    });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(trigger).toHaveFocus();
+  });
+});
+
 describe("PageWorkspace share", () => {
   beforeEach(() => {
     nativeTextEditor.available = false;

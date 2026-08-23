@@ -254,7 +254,7 @@ export function CanvasSettingsPanel({
             repository={sketchRepository}
             tool={tool}
           />
-          {overlayActive ? null : <NativeSketchPreview documentId={CANVAS_TEST_DOCUMENT_ID} />}
+          {overlayReady ? null : <NativeSketchPreview documentId={CANVAS_TEST_DOCUMENT_ID} />}
         </div>
       </section>
     </div>

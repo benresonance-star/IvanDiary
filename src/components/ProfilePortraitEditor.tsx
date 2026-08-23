@@ -121,7 +121,7 @@ export function ProfilePortraitEditor({
           repository={sketchRepository}
           tool={tool}
         />
-        {overlayActive ? null : (
+        {overlayReady ? null : (
           <NativeSketchPreview documentId={PROFILE_PORTRAIT_DOCUMENT_ID} />
         )}
       </div>

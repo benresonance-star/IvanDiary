@@ -38,6 +38,14 @@ describe("DiaryPageStrip", () => {
     expect(container.querySelector(".preview-text")).toHaveStyle({ zIndex: 11 });
   });
 
+  it("shows a page's selected background colour in its preview", () => {
+    const page = { ...pages()[0]!, backgroundColor: "#aabbcc" };
+    const { container } = render(<PagePreview page={page} />);
+    expect(container.querySelector(".diary-page-preview")).toHaveStyle({
+      backgroundColor: "#aabbcc",
+    });
+  });
+
   it("shows ordered visual pages and exposes the current page", () => {
     const { container } = render(
       <DiaryPageStrip

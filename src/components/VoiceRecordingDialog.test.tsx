@@ -28,6 +28,7 @@ describe("VoiceRecordingDialog", () => {
     const onPlace = vi.fn();
     const audio = new BrowserJournalAudioMock();
     const stopMonitoring = vi.spyOn(audio, "stopMonitoring");
+    const startMonitoring = vi.spyOn(audio, "startMonitoring");
     const startRecording = vi.spyOn(audio, "start");
     render(<VoiceRecordingDialog
       audio={audio}
@@ -36,6 +37,10 @@ describe("VoiceRecordingDialog", () => {
       onPlace={onPlace}
       recordingLimitMinutes={5}
     />);
+
+    expect(startMonitoring).not.toHaveBeenCalled();
+    expect(startRecording).not.toHaveBeenCalled();
+    expect(screen.getByRole("img", { name: "Microphone inactive" })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
     expect(await screen.findByRole("button", { name: "Pause recording" })).toBeVisible();

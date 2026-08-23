@@ -17,6 +17,7 @@ import {
   type PageObject,
   type PaperStyle,
 } from "../domain/models";
+import { effectivePaperBackgroundColour } from "../domain/paperBackground";
 import type { SketchRepository } from "../sketch/types";
 import { displayAssetUri } from "../utils/displayAssetUri";
 import { defaultObjectFrame } from "./arrangeGeometry";
@@ -75,6 +76,7 @@ export function PagePreview({
     <span
       aria-hidden="true"
       className={`diary-page-preview paper-${page.paperStyle} ${className}`}
+      style={{ backgroundColor: effectivePaperBackgroundColour(page) }}
     >
       {behindSketch.map((object) => renderObject(object, page.objects.indexOf(object)))}
       {sketchRepository ? (
@@ -445,6 +447,11 @@ export function DiaryPageStrip({
                 <span
                   aria-hidden="true"
                   className={`diary-page-preview paper-${pagePaperStyle(page)}`}
+                  style={
+                    "paperStyle" in page
+                      ? { backgroundColor: effectivePaperBackgroundColour(page) }
+                      : undefined
+                  }
                 >
                   <span className="page-preview-label">Page {pageNumber}</span>
                 </span>

@@ -12,6 +12,7 @@ import {
 import { isHexColor, readableTextColour } from "../utils/colour";
 import { webHttpUrl } from "../utils/webHttpUrl";
 import { normalizedStoryRenderOrder, renderItemKey } from "./storyRenderOrder";
+import { validPaperBackgroundColour } from "./paperBackground";
 
 export class OperationConflictError extends Error {
   constructor(message: string) {
@@ -678,6 +679,25 @@ export function applyDocumentOperation(
         updatedAt: operation.createdAt,
       }));
       break;
+    case "page-background-update": {
+      const backgroundColor = operation.backgroundColor === undefined
+        ? undefined
+        : validPaperBackgroundColour(operation.backgroundColor);
+      if (operation.backgroundColor !== undefined && !backgroundColor) {
+        throw new OperationConflictError("A valid page background colour is required.");
+      }
+      next = updatePage(snapshot, operation.pageId, (page) => {
+        const { backgroundColor: _previousBackground, ...pageWithoutBackground } = page;
+        void _previousBackground;
+        return {
+          ...pageWithoutBackground,
+          ...(backgroundColor ? { backgroundColor } : {}),
+          revision: page.revision + 1,
+          updatedAt: operation.createdAt,
+        };
+      });
+      break;
+    }
     case "story-create":
       if (snapshot.stories.some((story) => story.id === operation.story.id)) {
         throw new OperationConflictError(`Story ${operation.story.id} already exists.`);

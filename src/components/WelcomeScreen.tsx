@@ -178,7 +178,7 @@ export function WelcomeScreen({
         repository={sketchRepository}
         tool={tool}
       />
-      {overlayActive ? null : (
+      {overlayReady ? null : (
         <NativeSketchPreview
           className="welcome-native-preview"
           contentInsetTop={Math.max(previewInsetTop, 104)}

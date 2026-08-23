@@ -19,6 +19,7 @@ import {
 } from "./models";
 import { normalizedStoryRenderOrder } from "./storyRenderOrder";
 import { webHttpUrl } from "../utils/webHttpUrl";
+import { validPaperBackgroundColour } from "./paperBackground";
 
 const DEFAULT_SETTINGS: JournalSettings = {
   displayName: "Ivan",
@@ -272,6 +273,8 @@ function migratePageFrames(
   pages: JournalSnapshot["pages"],
 ): JournalSnapshot["pages"] {
   return pages.map((page) => {
+    const { backgroundColor: storedBackgroundColor, ...pageWithoutBackground } = page;
+    const backgroundColor = validPaperBackgroundColour(storedBackgroundColor);
     const grid = page.drawingGrid as Partial<DrawingGridSettings> | undefined;
     const spacing =
       grid && [36, 60, 96].includes(grid.spacing ?? 0)
@@ -298,7 +301,8 @@ function migratePageFrames(
         }
       : undefined;
     return {
-      ...page,
+      ...pageWithoutBackground,
+      ...(backgroundColor ? { backgroundColor } : {}),
       ...(drawingGrid ? { drawingGrid } : {}),
       objects: page.objects.map((object) => {
         const frame = object.frame ?? defaultFrame(object);

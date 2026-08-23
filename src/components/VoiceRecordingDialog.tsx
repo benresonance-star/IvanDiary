@@ -29,7 +29,6 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
   const [recording, setRecording] = useState(initialRecording);
   const [busy, setBusy] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [previewLevel, setPreviewLevel] = useState(0);
   const [status, setStatus] = useState("Ready to record");
   const autoFinalisingRef = useRef(false);
   const cancelRequestedRef = useRef(false);
@@ -56,25 +55,6 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
     catch { setStatus("The recording could not be finalized. It remains recoverable."); }
     finally { setBusy(false); }
   }, [finalize, trashRecording]);
-
-  useEffect(() => {
-    if (recording || !audio.startMonitoring || !audio.monitorLevel || !audio.stopMonitoring) return;
-    let disposed = false;
-    let timer: number | undefined;
-    void audio.startMonitoring().then(({ powerLevel }) => {
-      if (disposed) return;
-      setPreviewLevel(powerLevel);
-      timer = window.setInterval(() => void audio.monitorLevel!().then((value) => {
-        if (!disposed) setPreviewLevel(value.powerLevel);
-      }).catch(() => setPreviewLevel(0)), 120);
-    }).catch(() => setStatus("Microphone preview is unavailable. You can still try to start recording."));
-    return () => {
-      disposed = true;
-      if (timer) window.clearInterval(timer);
-      setPreviewLevel(0);
-      void audio.stopMonitoring?.().catch(() => undefined);
-    };
-  }, [audio, recording]);
 
   useEffect(() => {
     if (recording?.state !== "recording") return;
@@ -161,7 +141,7 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
   return <div aria-labelledby="voice-recording-title" aria-modal="true" className="voice-recording-backdrop" role="dialog">
     <section className="voice-recording-dialog">
       <header><div><h2 id="voice-recording-title">Voice recording</h2><p>Record, listen, then place it on your canvas.</p></div><button aria-label="Cancel voice recording" className="secondary-action" onClick={cancel} type="button">Cancel</button></header>
-      <MicrophoneMeter active={active || (!recording && previewLevel > 0)} level={recording?.powerLevel ?? previewLevel} />
+      <MicrophoneMeter active={active} level={recording?.powerLevel ?? 0} />
       <strong className="voice-recording-time">{durationLabel(recording?.elapsedMs ?? 0)}</strong>
       {!reviewing ? <div className="voice-recording-actions">
         {!recording ? <button className="large-action" disabled={busy} onClick={() => void start()} type="button"><Mic aria-hidden="true" />Start recording</button> : <button className="large-action" disabled={busy} onClick={() => void togglePause()} type="button">{active ? <Pause aria-hidden="true" /> : <Mic aria-hidden="true" />}{active ? "Pause recording" : "Resume recording"}</button>}

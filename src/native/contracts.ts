@@ -81,6 +81,11 @@ export interface AppLifecyclePlugin {
   openUrl(options: { url: string }): Promise<{ opened: boolean }>;
 }
 
+export interface NativeJournalStorePlugin {
+  read(): Promise<{ available: boolean; contents?: string }>;
+  write(options: { contents: string }): Promise<void>;
+}
+
 export type CloudBackupResult = {
   state: "available" | "no-account" | "restricted" | "waiting" | "synced" | "error";
   message: string;

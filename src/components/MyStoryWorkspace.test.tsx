@@ -23,13 +23,15 @@ import { BrowserSketchRepository } from "../repository/browserSketchRepository";
 import type { PageTool } from "./JournalPage";
 import { MyStoryWorkspace } from "./MyStoryWorkspace";
 
+const suspendOverlay = vi.hoisted(() => vi.fn(async () => true));
+
 vi.mock("../hooks/useNativeDrawingOverlay", () => ({
   useNativeDrawingOverlay: () => ({
     nativeAvailable: false,
     overlayActive: false,
     overlayRequested: false,
     overlayReady: false,
-    suspendOverlay: vi.fn(async () => true),
+    suspendOverlay,
   }),
 }));
 
@@ -150,6 +152,25 @@ function renderStory(
 }
 
 describe("MyStoryWorkspace", () => {
+  it("waits for Draw to close before starting the Voice microphone preview", async () => {
+    let finishSuspending: ((hidden: boolean) => void) | undefined;
+    suspendOverlay.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+      finishSuspending = resolve;
+    }));
+    renderStory();
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Voice" }));
+
+    expect(suspendOverlay).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog", { name: "Voice recording" }))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Voice" })).toBeDisabled();
+
+    finishSuspending?.(true);
+    expect(await screen.findByRole("dialog", { name: "Voice recording" }))
+      .toBeInTheDocument();
+  });
+
   it("places a selected parametric shape from Draw settings", async () => {
     const { commit } = renderStory();
     fireEvent.click(screen.getByRole("button", { name: "Draw" }));
@@ -306,9 +327,17 @@ describe("MyStoryWorkspace", () => {
     });
     expect(page).toHaveClass("diary-page-button", "reorderable");
     expect(page.querySelector(".thumbnail-drag-indicator")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Resize text and image sides" }),
-    ).toBeInTheDocument();
+    const resizeDivider = screen.getByRole("button", {
+      name: "Resize text and image sides",
+    });
+    expect(resizeDivider.querySelector(".story-divider-resize-icon svg"))
+      .toBeInTheDocument();
+    fireEvent.keyDown(resizeDivider, { key: "ArrowRight" });
+    expect(commit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "my-story-layout-update",
+      pageId: "story-page",
+      splitRatio: 0.52,
+    }));
     fireEvent.click(
       screen.getByRole("button", { name: "Move Story text to the right" }),
     );
@@ -324,6 +353,31 @@ describe("MyStoryWorkspace", () => {
         name: /Page 1 cannot be deleted/i,
       }),
     ).toHaveClass("page-thumbnail-delete");
+  });
+
+  it("activates the story divider as soon as the resize handle is pressed", () => {
+    renderStory();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const paper = document.querySelector<HTMLElement>(".my-story-paper")!;
+    vi.spyOn(paper, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 600,
+      width: 1000, height: 600, toJSON: () => ({}),
+    });
+    const resizeDivider = screen.getByRole("button", {
+      name: "Resize text and image sides",
+    });
+    resizeDivider.setPointerCapture = vi.fn();
+    resizeDivider.hasPointerCapture = vi.fn(() => true);
+    resizeDivider.releasePointerCapture = vi.fn();
+
+    fireEvent.pointerDown(resizeDivider, {
+      button: 0,
+      clientX: 600,
+      pointerId: 12,
+    });
+
+    expect(resizeDivider).toHaveClass("dragging");
+    expect(paper.style.gridTemplateColumns).toContain("60%");
   });
 
   it("renders a restored right-side Story text layout", () => {

@@ -60,7 +60,7 @@ describe("accessible navigation and settings", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: "My Journal" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "My Daily Journal" })).toHaveAttribute(
       "aria-current",
       "page",
     );
