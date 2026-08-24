@@ -689,6 +689,85 @@ describe("PageWorkspace favourites", () => {
     };
     renderWorkspace({ page: { ...diaryPage(), id: "page-1", objects: [textObject] } });
     expect(screen.queryByRole("button", { name: "Edit journal text" })).not.toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Journal text" })).toHaveAttribute("readonly");
+    expect(screen.getByText("Read only words")).toHaveRole("paragraph");
+  });
+
+  it("renders stacked text in reading order and exposes accessible text controls", () => {
+    const first: TextObject = {
+      id: "text-first", type: "text", pageId: "page-1",
+      position: { x: 0.2, y: 0.2 }, frame: { width: 0.4, height: 0.12 },
+      createdAt: "2026-08-14T09:00:00.000Z", revision: 0,
+      text: "First words", textScale: 1, role: "body",
+    };
+    const second: TextObject = {
+      ...first, id: "text-second", text: "Second words",
+    };
+    const commit = vi.fn(async () => true);
+    renderWorkspace({
+      commit,
+      page: {
+        ...diaryPage(),
+        id: "page-1",
+        objects: [first, second],
+        textStack: {
+          position: { x: 0.1, y: 0.12 },
+          frame: { width: 0.8, height: 0.7 },
+          memberIds: [first.id, second.id],
+        },
+      },
+      tool: "arrange",
+    });
+
+    const pageText = screen.getByRole("region", { name: "Page text" });
+    expect(pageText).toHaveTextContent("First words");
+    expect(pageText.textContent?.indexOf("First words")).toBeLessThan(
+      pageText.textContent?.indexOf("Second words") ?? 0,
+    );
+
+    fireEvent.click(screen.getByText("First words"));
+    expect(screen.getByRole("complementary", { name: "Text editing commands" })).toBeVisible();
+    expect(
+      screen.queryByRole("slider", { name: "Text outline thickness" }),
+    ).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Text colour"), {
+      target: { value: "#123456" },
+    });
+    expect(commit).toHaveBeenCalledWith({
+      type: "page-object-update",
+      pageId: "page-1",
+      object: { ...first, color: "#123456", revision: 1 },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Title" }));
+    expect(commit).toHaveBeenCalledWith({
+      type: "page-object-update",
+      pageId: "page-1",
+      object: { ...first, role: "title", revision: 1 },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add background" }));
+    expect(commit).toHaveBeenCalledWith({
+      type: "page-object-update",
+      pageId: "page-1",
+      object: { ...first, backgroundColor: "#fffaf0", revision: 1 },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add outline" }));
+    expect(commit).toHaveBeenCalledWith({
+      type: "page-object-update",
+      pageId: "page-1",
+      object: {
+        ...first,
+        outlineColor: "#3f3528",
+        outlineWidth: 2,
+        revision: 1,
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Move to canvas" }));
+    expect(commit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "page-text-stack-membership-update",
+      pageId: "page-1",
+      objectId: first.id,
+      membership: expect.objectContaining({ kind: "free" }),
+    }));
   });
 });

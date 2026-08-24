@@ -13,6 +13,7 @@ import {
   type MyStoryVoiceRecording,
   type MyStoryRenderItemRef,
   type MyWord,
+  type PageTextStack,
   type PageObject,
   type ShapeObject,
   type Size,
@@ -300,13 +301,81 @@ function migratePageFrames(
               : DEFAULT_GRID_COLOR,
         }
       : undefined;
+    const textObjectIds = new Set(
+      page.objects
+        .filter((object) => object.type === "text")
+        .map((object) => object.id),
+    );
+    const storedTextStack = page.textStack as unknown;
+    const textStack = migratePageTextStack(storedTextStack, textObjectIds);
     return {
       ...pageWithoutBackground,
       ...(backgroundColor ? { backgroundColor } : {}),
       ...(drawingGrid ? { drawingGrid } : {}),
+      ...(textStack ? { textStack } : {}),
       objects: page.objects.map((object) => {
         const frame = object.frame ?? defaultFrame(object);
         const migrated = frame ? { ...object, frame } : object;
+        if (migrated.type === "text") {
+          const role =
+            migrated.role === "title" ||
+            migrated.role === "heading" ||
+            migrated.role === "body"
+              ? migrated.role
+              : undefined;
+          const font =
+            migrated.font === "system-rounded" ||
+            migrated.font === "system-serif" ||
+            migrated.font === "system-sans"
+              ? migrated.font
+              : undefined;
+          const color =
+            typeof migrated.color === "string" &&
+            /^#[0-9a-f]{6}$/i.test(migrated.color)
+              ? migrated.color
+              : undefined;
+          const backgroundColor =
+            typeof migrated.backgroundColor === "string" &&
+            /^#[0-9a-f]{6}$/i.test(migrated.backgroundColor)
+              ? migrated.backgroundColor
+              : undefined;
+          const outlineColor =
+            typeof migrated.outlineColor === "string" &&
+            /^#[0-9a-f]{6}$/i.test(migrated.outlineColor)
+              ? migrated.outlineColor
+              : undefined;
+          const outlineWidth =
+            typeof migrated.outlineWidth === "number" &&
+            Number.isInteger(migrated.outlineWidth) &&
+            migrated.outlineWidth >= 1 &&
+            migrated.outlineWidth <= 12
+              ? migrated.outlineWidth
+              : undefined;
+          const {
+            role: _role,
+            font: _font,
+            color: _color,
+            backgroundColor: _backgroundColor,
+            outlineColor: _outlineColor,
+            outlineWidth: _outlineWidth,
+            ...legacyText
+          } = migrated;
+          void _role;
+          void _font;
+          void _color;
+          void _backgroundColor;
+          void _outlineColor;
+          void _outlineWidth;
+          return {
+            ...legacyText,
+            ...(role ? { role } : {}),
+            ...(font ? { font } : {}),
+            ...(color ? { color } : {}),
+            ...(backgroundColor ? { backgroundColor } : {}),
+            ...(outlineColor ? { outlineColor } : {}),
+            ...(outlineWidth ? { outlineWidth } : {}),
+          };
+        }
         return migrated.type === "shape"
           ? {
               ...migrated,
@@ -319,6 +388,41 @@ function migratePageFrames(
       }),
     };
   });
+}
+
+function migratePageTextStack(
+  value: unknown,
+  textObjectIds: ReadonlySet<string>,
+): PageTextStack | undefined {
+  if (!isRecord(value) || !isRecord(value.position) || !isRecord(value.frame)) {
+    return undefined;
+  }
+  const finite = (candidate: unknown): candidate is number =>
+    typeof candidate === "number" && Number.isFinite(candidate);
+  if (
+    !finite(value.position.x) ||
+    !finite(value.position.y) ||
+    !finite(value.frame.width) ||
+    !finite(value.frame.height)
+  ) {
+    return undefined;
+  }
+  const memberIds = Array.isArray(value.memberIds)
+    ? [...new Set(value.memberIds.filter(
+        (id): id is string => typeof id === "string" && textObjectIds.has(id),
+      ))]
+    : [];
+  return {
+    position: {
+      x: Math.min(1, Math.max(0, value.position.x)),
+      y: Math.min(1, Math.max(0, value.position.y)),
+    },
+    frame: {
+      width: Math.min(1, Math.max(0.01, value.frame.width)),
+      height: Math.min(1, Math.max(0.01, value.frame.height)),
+    },
+    memberIds,
+  };
 }
 
 function defaultStoryPage(timestamp: string): MyStoryPage {

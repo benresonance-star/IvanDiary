@@ -29,6 +29,7 @@ import type {
   MyWord,
   Page,
   PageObject,
+  PageTextStack,
   PhotoObject,
   Position,
   SaveHealth,
@@ -81,6 +82,7 @@ import { displayAssetUri } from "../utils/displayAssetUri";
 import { openExternalUrl } from "../utils/openExternalUrl";
 import { AudioCard } from "./AudioCard";
 import { CanvasBackgroundChooser } from "./CanvasBackgroundChooser";
+import { CanvasTextInspector } from "./CanvasTextInspector";
 import {
   ArrangeablePageObject,
   type LayoutChange,
@@ -159,6 +161,7 @@ type PageAction =
   | { kind: "create"; objects: PageObject[] }
   | { kind: "update"; before: PageObject; after: PageObject }
   | { kind: "reorder"; beforeIds: string[]; afterIds: string[] }
+  | { kind: "text-stack"; before?: PageTextStack; after?: PageTextStack }
   | { kind: "delete"; objects: PageObject[] };
 
 function deletionDescription(
@@ -301,6 +304,8 @@ export function PageWorkspace({
   const [linkComposerOpen, setLinkComposerOpen] = useState(false);
   const [linkComposerRequested, setLinkComposerRequested] = useState(false);
   const [textComposerOpen, setTextComposerOpen] = useState(false);
+  const [textBeingEdited, setTextBeingEdited] = useState<TextObject>();
+  const [draggedTextId, setDraggedTextId] = useState<string>();
   const [textComposerRequested, setTextComposerRequested] = useState(false);
   const [nativeTextEditorUnavailable, setNativeTextEditorUnavailable] =
     useState(false);
@@ -395,6 +400,8 @@ export function PageWorkspace({
   };
 
   const openTextComposerAboveSketch = async () => {
+    setTextBeingEdited(undefined);
+    setTextDraft(EMPTY_TEXT_DRAFT);
     setSelectedObjectId(undefined);
     setTool("view");
     setTextComposerRequested(true);
@@ -711,7 +718,6 @@ export function PageWorkspace({
 
   const editTextObjectNative = async (object: TextObject) => {
     if (tool !== "arrange") return;
-    setSelectedObjectId(undefined);
     try {
       const result = await openNativeTextEditor({
         initialText: object.text,
@@ -740,11 +746,34 @@ export function PageWorkspace({
       });
       if (!saved) {
         setNotice("The edited text could not be saved.");
+      } else {
+        actionTimelineRef.current.push({
+          kind: "update",
+          before: object,
+          after: { ...object, text: result.text, revision: object.revision + 1 },
+        });
       }
     } catch {
       setNativeTextEditorUnavailable(true);
-      setNotice("The native editor was unavailable. You can edit this text here.");
+      setTextBeingEdited(object);
+      setTextDraft({ ...EMPTY_TEXT_DRAFT, text: object.text });
+      setTextComposerOpen(true);
+      setNotice("The native editor was unavailable. The standard editor is open.");
     }
+  };
+
+  const editTextObject = (object: TextObject) => {
+    if (
+      textEditorPreference === "native" &&
+      hasNativeTextEditor() &&
+      !nativeTextEditorUnavailable
+    ) {
+      void editTextObjectNative(object);
+      return;
+    }
+    setTextBeingEdited(object);
+    setTextDraft({ ...EMPTY_TEXT_DRAFT, text: object.text });
+    setTextComposerOpen(true);
   };
 
   const commitLayoutChange = (objectId: string, change: LayoutChange) => {
@@ -850,6 +879,40 @@ export function PageWorkspace({
     }
   };
 
+  const restoreTextStack = async (target?: PageTextStack) => {
+    const targetIds = new Set(target?.memberIds ?? []);
+    for (const objectId of page.textStack?.memberIds ?? []) {
+      if (targetIds.has(objectId)) continue;
+      const object = page.objects.find((candidate) => candidate.id === objectId);
+      if (!object || object.type !== "text") continue;
+      await commit({
+        type: "page-text-stack-membership-update",
+        pageId: page.id,
+        objectId,
+        membership: {
+          kind: "free",
+          position: object.position,
+          frame: defaultObjectFrame(object),
+        },
+      });
+    }
+    if (!target) return;
+    await commit({
+      type: "page-text-stack-layout-update",
+      pageId: page.id,
+      position: target.position,
+      frame: target.frame,
+    });
+    for (const [index, objectId] of target.memberIds.entries()) {
+      await commit({
+        type: "page-text-stack-membership-update",
+        pageId: page.id,
+        objectId,
+        membership: { kind: "stack", index },
+      });
+    }
+  };
+
   const undoLastAction = () => {
     if (overlayActive) {
       void undoNativeDrawingOverlay();
@@ -883,6 +946,10 @@ export function PageWorkspace({
     }
     if (action.kind === "reorder") {
       void commit({ type: "page-objects-reorder", pageId: page.id, objectIds: action.beforeIds });
+      return;
+    }
+    if (action.kind === "text-stack") {
+      void restoreTextStack(action.before);
       return;
     }
 
@@ -972,6 +1039,9 @@ export function PageWorkspace({
       text: text.trim(),
       textScale: 1,
       textAlign: "left",
+      role: "body",
+      font: "system-sans",
+      color: "#201c17",
       layer: "above-sketch",
     };
     const saved = await commit({
@@ -980,14 +1050,58 @@ export function PageWorkspace({
       object,
     });
     if (saved) {
+      const joinedStack = await commit({
+        type: "page-text-stack-membership-update",
+        pageId: page.id,
+        objectId: object.id,
+        membership: { kind: "stack" },
+      });
+      if (!joinedStack) {
+        await commit({
+          type: "page-object-delete",
+          pageId: page.id,
+          objectId: object.id,
+        });
+        setNotice("The text block could not be added to the page.");
+        return false;
+      }
+      actionTimelineRef.current.push({ kind: "create", objects: [object] });
       setTextComposerOpen(false);
-      setPlacingTextId(object.id);
       setSelectedObjectId(object.id);
       setTool("arrange");
     } else {
       setNotice("The text box could not be added.");
     }
     return saved;
+  }
+
+  async function saveTextDraft(): Promise<void> {
+    if (!textBeingEdited) {
+      await addText();
+      return;
+    }
+    const next = {
+      ...textBeingEdited,
+      text: textDraft.text.trim(),
+      revision: textBeingEdited.revision + 1,
+    };
+    const saved = await commit({
+      type: "page-object-update",
+      pageId: page.id,
+      object: next,
+    });
+    if (!saved) {
+      setNotice("The edited text could not be saved.");
+      return;
+    }
+    actionTimelineRef.current.push({
+      kind: "update",
+      before: textBeingEdited,
+      after: next,
+    });
+    setTextBeingEdited(undefined);
+    setTextComposerOpen(false);
+    setTextDraft(EMPTY_TEXT_DRAFT);
   }
 
   const toggleTextVoice = async () => {
@@ -1292,6 +1406,122 @@ export function PageWorkspace({
         },
       });
     }
+  };
+
+  const textStack = page.textStack;
+  const textStackIds = new Set(textStack?.memberIds ?? []);
+  const stackedTexts = (textStack?.memberIds ?? []).flatMap((id) => {
+    const object = page.objects.find((candidate) => candidate.id === id);
+    return object?.type === "text" ? [object] : [];
+  });
+  const selectedText = page.objects.find(
+    (object): object is TextObject =>
+      object.id === selectedObjectId && object.type === "text",
+  );
+  const selectedTextStackIndex = selectedText
+    ? (textStack?.memberIds.indexOf(selectedText.id) ?? -1)
+    : -1;
+
+  const updateCanvasText = (object: TextObject) => {
+    const before = page.objects.find(
+      (candidate): candidate is TextObject =>
+        candidate.id === object.id && candidate.type === "text",
+    );
+    if (!before) return;
+    actionTimelineRef.current.push({ kind: "update", before, after: object });
+    updateObject(object);
+  };
+
+  const reorderStackText = (objectId: string, direction: -1 | 1) => {
+    if (!textStack) return;
+    const index = textStack.memberIds.indexOf(objectId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= textStack.memberIds.length) return;
+    const memberIds = [...textStack.memberIds];
+    [memberIds[index], memberIds[target]] = [memberIds[target]!, memberIds[index]!];
+    const after = { ...textStack, memberIds };
+    actionTimelineRef.current.push({ kind: "text-stack", before: textStack, after });
+    void commit({
+      type: "page-text-stack-reorder",
+      pageId: page.id,
+      memberIds,
+    });
+  };
+
+  const placeTextInStackAt = (objectId: string, targetIndex: number) => {
+    const before = textStack;
+    const memberIds = (before?.memberIds ?? []).filter((id) => id !== objectId);
+    const index = Math.max(0, Math.min(targetIndex, memberIds.length));
+    memberIds.splice(index, 0, objectId);
+    const after: PageTextStack = {
+      position: before?.position ?? { x: 0.1, y: 0.12 },
+      frame: before?.frame ?? { width: 0.8, height: 0.76 },
+      memberIds,
+    };
+    actionTimelineRef.current.push({ kind: "text-stack", before, after });
+    if (before?.memberIds.includes(objectId)) {
+      void commit({
+        type: "page-text-stack-reorder",
+        pageId: page.id,
+        memberIds,
+      });
+    } else {
+      void commit({
+        type: "page-text-stack-membership-update",
+        pageId: page.id,
+        objectId,
+        membership: { kind: "stack", index },
+      });
+    }
+    setSelectedObjectId(objectId);
+    setDraggedTextId(undefined);
+  };
+
+  const toggleTextStackMembership = (object: TextObject) => {
+    const before = textStack;
+    if (textStackIds.has(object.id)) {
+      const index = textStack?.memberIds.indexOf(object.id) ?? 0;
+      const element = document.querySelector<HTMLElement>(
+        `[data-stack-text-id="${object.id}"]`,
+      );
+      const paperRect = paperRef.current?.getBoundingClientRect();
+      const blockRect = element?.getBoundingClientRect();
+      const frame = paperRect && blockRect
+        ? {
+            width: Math.min(0.5, blockRect.width / paperRect.width),
+            height: Math.min(0.3, Math.max(0.1, blockRect.height / paperRect.height)),
+          }
+        : { width: 0.44, height: 0.16 };
+      const position = paperRect && blockRect
+        ? clampPosition({
+            x: (blockRect.left - paperRect.left) / paperRect.width,
+            y: (blockRect.top - paperRect.top) / paperRect.height,
+          }, frame)
+        : { x: 0.28, y: Math.min(0.72, 0.18 + index * 0.1) };
+      const after = before
+        ? { ...before, memberIds: before.memberIds.filter((id) => id !== object.id) }
+        : undefined;
+      actionTimelineRef.current.push({ kind: "text-stack", before, after });
+      void commit({
+        type: "page-text-stack-membership-update",
+        pageId: page.id,
+        objectId: object.id,
+        membership: { kind: "free", position, frame },
+      });
+      return;
+    }
+    const after: PageTextStack = {
+      position: before?.position ?? { x: 0.1, y: 0.12 },
+      frame: before?.frame ?? { width: 0.8, height: 0.76 },
+      memberIds: [...(before?.memberIds ?? []), object.id],
+    };
+    actionTimelineRef.current.push({ kind: "text-stack", before, after });
+    void commit({
+      type: "page-text-stack-membership-update",
+      pageId: page.id,
+      objectId: object.id,
+      membership: { kind: "stack" },
+    });
   };
 
   return (
@@ -1605,6 +1835,50 @@ export function PageWorkspace({
           if (clickedObject?.dataset.objectId === placingTextId) return;
           finishTextPlacement();
         }}
+        onDragOver={(event) => {
+          if (draggedTextId && tool === "arrange") event.preventDefault();
+        }}
+        onDrop={(event) => {
+          if (!draggedTextId || tool !== "arrange") return;
+          if (
+            event.target instanceof Element &&
+            event.target.closest(".canvas-text-stack")
+          ) return;
+          event.preventDefault();
+          const object = page.objects.find(
+            (candidate): candidate is TextObject =>
+              candidate.id === draggedTextId && candidate.type === "text",
+          );
+          const bounds = paperRef.current?.getBoundingClientRect();
+          if (!object || !bounds || !textStackIds.has(object.id)) {
+            setDraggedTextId(undefined);
+            return;
+          }
+          const frame = { width: 0.44, height: 0.16 };
+          const position = clampPosition({
+            x: (event.clientX - bounds.left) / bounds.width - frame.width / 2,
+            y: (event.clientY - bounds.top) / bounds.height - frame.height / 2,
+          }, frame);
+          const after = textStack
+            ? {
+                ...textStack,
+                memberIds: textStack.memberIds.filter((id) => id !== object.id),
+              }
+            : undefined;
+          actionTimelineRef.current.push({
+            kind: "text-stack",
+            before: textStack,
+            after,
+          });
+          void commit({
+            type: "page-text-stack-membership-update",
+            pageId: page.id,
+            objectId: object.id,
+            membership: { kind: "free", position, frame },
+          });
+          setSelectedObjectId(object.id);
+          setDraggedTextId(undefined);
+        }}
         onPointerCancelCapture={handleTwoFingerPointerCancel}
         onPointerDownCapture={handleTwoFingerPointerDown}
         onPointerMoveCapture={handleTwoFingerPointerMove}
@@ -1672,8 +1946,119 @@ export function PageWorkspace({
         {polygonDraft ? <PolygonDraftEditor color={penSettings.color} onCancel={() => { setPolygonDraft(null); setNotice(undefined); setTool("pen"); }} onChange={setPolygonDraft} onFinish={() => void finishPolygon()} pageRef={paperRef} points={polygonDraft} /> : null}
         {freeformDraft ? <FreeformDraftEditor color={penSettings.color} onCancel={() => { setFreeformDraft(false); setNotice(undefined); setTool("pen"); }} onFinish={(anchors) => void finishFreeform(anchors)} onInvalid={() => setNotice("Draw a larger closed outline to create a freeform shape.")} pageRef={paperRef} /> : null}
 
+        {textStack && stackedTexts.length > 0 ? (
+          <ArrangeablePageObject
+            arrange={tool === "arrange"}
+            className="page-object canvas-text-stack"
+            frame={textStack.frame}
+            layer="above-sketch"
+            objectLabel="text column"
+            objectId="page-text-stack"
+            onCommit={(change) => {
+              const after = {
+                ...textStack,
+                ...(change.kind === "move"
+                  ? { position: change.after.position }
+                  : { frame: change.after.frame }),
+              };
+              actionTimelineRef.current.push({
+                kind: "text-stack",
+                before: textStack,
+                after,
+              });
+              void commit({
+                type: "page-text-stack-layout-update",
+                pageId: page.id,
+                position: after.position,
+                frame: after.frame,
+              });
+            }}
+            onSelect={() => setSelectedObjectId("page-text-stack")}
+            pageRef={paperRef}
+            position={textStack.position}
+            selected={
+              selectedObjectId === "page-text-stack" ||
+              selectedTextStackIndex >= 0
+            }
+            showShortcuts={selectedObjectId === "page-text-stack"}
+            stackIndex={page.objects.length + 1}
+          >
+            {/* Drag-and-drop supplements the inspector’s keyboard-accessible
+                earlier/later and stack-membership controls. */}
+            {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+            <section
+              aria-label="Page text"
+              className="canvas-text-stack-flow"
+              onDragOver={(event) => {
+                if (draggedTextId) event.preventDefault();
+              }}
+              onDrop={(event) => {
+                if (!draggedTextId) return;
+                event.preventDefault();
+                event.stopPropagation();
+                placeTextInStackAt(draggedTextId, stackedTexts.length);
+              }}
+            >
+              {stackedTexts.map((object, stackIndex) => (
+                // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+                <div
+                  aria-label={tool === "arrange" ? `Select text block: ${object.text}` : undefined}
+                  className={`canvas-text-stack-block${selectedObjectId === object.id ? " selected" : ""}`}
+                  data-stack-text-id={object.id}
+                  draggable={tool === "arrange"}
+                  key={object.id}
+                  onDragStart={(event) => {
+                    event.stopPropagation();
+                    event.dataTransfer.effectAllowed = "move";
+                    setDraggedTextId(object.id);
+                  }}
+                  onDragEnd={() => setDraggedTextId(undefined)}
+                  onDragOver={(event) => {
+                    if (draggedTextId && draggedTextId !== object.id) {
+                      event.preventDefault();
+                    }
+                  }}
+                  onDrop={(event) => {
+                    if (!draggedTextId || draggedTextId === object.id) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    placeTextInStackAt(draggedTextId, stackIndex);
+                  }}
+                  onClick={(event) => {
+                    if (tool !== "arrange") return;
+                    event.stopPropagation();
+                    setSelectedObjectId(object.id);
+                  }}
+                  onDoubleClick={() => tool === "arrange" && editTextObject(object)}
+                  onKeyDown={(event) => {
+                    if (
+                      tool === "arrange" &&
+                      (event.key === "Enter" || event.key === " ")
+                    ) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setSelectedObjectId(object.id);
+                    }
+                  }}
+                  role={tool === "arrange" ? "button" : undefined}
+                  tabIndex={tool === "arrange" ? 0 : undefined}
+                >
+                  <TextCard
+                    object={object}
+                    onSave={updateObject}
+                    readOnly
+                  />
+                </div>
+              ))}
+            </section>
+          </ArrangeablePageObject>
+        ) : null}
+
         {page.objects.map((object, index) => {
           if (object.type === "transcript") {
+            return null;
+          }
+          if (object.type === "text" && textStackIds.has(object.id)) {
             return null;
           }
           switch (object.type) {
@@ -1808,6 +2193,10 @@ export function PageWorkspace({
                     commitLayoutChange(object.id, change)
                   }
                   onDelete={() => deletePageObject(object)}
+                  onNativeDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    setDraggedTextId(object.id);
+                  }}
                   onSelect={() => setSelectedObjectId(object.id)}
                   onToggleLayer={() => toggleObjectLayer(object)}
                   pageRef={paperRef}
@@ -1818,14 +2207,8 @@ export function PageWorkspace({
                 >
                   <TextCard
                     object={object}
-                    onEdit={
-                      textEditorPreference === "native" &&
-                      hasNativeTextEditor() &&
-                      !nativeTextEditorUnavailable
-                        ? () => void editTextObjectNative(object)
-                        : undefined
-                    }
-                    onSave={updateObject}
+                    onEdit={tool === "arrange" ? () => editTextObject(object) : undefined}
+                    onSave={updateCanvasText}
                     readOnly={tool !== "arrange"}
                   />
                 </ArrangeablePageObject>
@@ -1909,8 +2292,27 @@ export function PageWorkspace({
           />
         ) : null}
 
+        {tool === "arrange" && selectedText ? (
+          <CanvasTextInspector
+            canMoveEarlier={selectedTextStackIndex > 0}
+            canMoveLater={
+              selectedTextStackIndex >= 0 &&
+              selectedTextStackIndex < (textStack?.memberIds.length ?? 0) - 1
+            }
+            key={selectedText.id}
+            object={selectedText}
+            onDelete={() => deletePageObject(selectedText)}
+            onEdit={() => editTextObject(selectedText)}
+            onMoveEarlier={() => reorderStackText(selectedText.id, -1)}
+            onMoveLater={() => reorderStackText(selectedText.id, 1)}
+            onToggleStack={() => toggleTextStackMembership(selectedText)}
+            onUpdate={updateCanvasText}
+            stacked={selectedTextStackIndex >= 0}
+          />
+        ) : null}
+
         {textComposerOpen ? (
-          <TextComposer draft={textDraft} recording={textRecording?.state === "recording"} selectionRef={textSelectionRef} status={textStatus} onCancel={() => { setTextComposerOpen(false); setTextDraft(EMPTY_TEXT_DRAFT); textSelectionRef.current = { start: 0, end: 0 }; setTextStatus(undefined); }} onChange={setTextDraft} onSubmit={() => void addText()} onToggleVoice={() => void toggleTextVoice()} />
+          <TextComposer draft={textDraft} recording={textRecording?.state === "recording"} selectionRef={textSelectionRef} status={textStatus} onCancel={() => { setTextComposerOpen(false); setTextBeingEdited(undefined); setTextDraft(EMPTY_TEXT_DRAFT); textSelectionRef.current = { start: 0, end: 0 }; setTextStatus(undefined); }} onChange={setTextDraft} onSubmit={() => void saveTextDraft()} onToggleVoice={() => void toggleTextVoice()} />
         ) : null}
 
         {voiceDialogOpen ? (

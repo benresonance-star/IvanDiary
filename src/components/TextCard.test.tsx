@@ -67,8 +67,46 @@ describe("TextCard", () => {
     expect(
       screen.queryByRole("button", { name: "Edit journal text" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Journal text" })).toHaveAttribute(
-      "readonly",
+    expect(screen.getByText("Original words")).toHaveRole("paragraph");
+  });
+
+  it("preserves line returns between editing and viewing", () => {
+    const multiline = "First line\n\nSecond paragraph\nThird line";
+    const onSave = vi.fn();
+    const { rerender } = render(
+      <TextCard object={object} onSave={onSave} readOnly={false} />,
     );
+    const editor = screen.getByRole("textbox", { name: "Journal text" });
+
+    fireEvent.change(editor, { target: { value: multiline } });
+    fireEvent.blur(editor);
+    expect(onSave).toHaveBeenCalledWith({
+      ...object,
+      text: multiline,
+      revision: 3,
+    });
+
+    rerender(
+      <TextCard
+        object={{ ...object, text: multiline }}
+        onSave={onSave}
+        readOnly
+      />,
+    );
+    const viewed = screen.getByRole("paragraph");
+    expect(viewed.textContent).toBe(multiline);
+    expect(globalThis.getComputedStyle(viewed).whiteSpace).toBe("pre-wrap");
+  });
+
+  it("renders the selected text colour without replacing it", () => {
+    render(
+      <TextCard
+        object={{ ...object, color: "#d02020" }}
+        onSave={vi.fn()}
+        readOnly
+      />,
+    );
+
+    expect(screen.getByRole("paragraph")).toHaveStyle({ color: "#d02020" });
   });
 });

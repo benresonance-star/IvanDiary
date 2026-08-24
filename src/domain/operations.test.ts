@@ -16,7 +16,7 @@ import {
 function textOperation(
   snapshotRevision: number,
   id = "operation-add-text",
-): DocumentOperation {
+): Extract<DocumentOperation, { type: "page-object-add" }> {
   const object: TextObject = {
     id: "test-text",
     type: "text",
@@ -101,6 +101,93 @@ describe("document operations", () => {
     expect(
       twice.pages[0]?.objects.filter((object) => object.id === "test-text"),
     ).toHaveLength(1);
+  });
+
+  it("updates, reorders, and atomically releases structured canvas text", () => {
+    const withFirst = applyDocumentOperation(initial, textOperation(0, "add-first"));
+    const secondOperation = textOperation(1, "add-second");
+    secondOperation.object = { ...secondOperation.object, id: "second-text" };
+    const withTexts = applyDocumentOperation(withFirst, secondOperation);
+    const layout = applyDocumentOperation(withTexts, {
+      id: "stack-layout",
+      type: "page-text-stack-layout-update",
+      journalId: initial.id,
+      baseRevision: 2,
+      resultingRevision: 3,
+      createdAt: "2026-08-03T10:01:00.000Z",
+      pageId: initial.pages[0]!.id,
+      position: { x: 0.1, y: 0.15 },
+      frame: { width: 0.8, height: 0.7 },
+    });
+    const firstMember = applyDocumentOperation(layout, {
+      id: "stack-first",
+      type: "page-text-stack-membership-update",
+      journalId: initial.id,
+      baseRevision: 3,
+      resultingRevision: 4,
+      createdAt: "2026-08-03T10:02:00.000Z",
+      pageId: initial.pages[0]!.id,
+      objectId: "test-text",
+      membership: { kind: "stack" },
+    });
+    const secondMember = applyDocumentOperation(firstMember, {
+      id: "stack-second",
+      type: "page-text-stack-membership-update",
+      journalId: initial.id,
+      baseRevision: 4,
+      resultingRevision: 5,
+      createdAt: "2026-08-03T10:03:00.000Z",
+      pageId: initial.pages[0]!.id,
+      objectId: "second-text",
+      membership: { kind: "stack" },
+    });
+    const reordered = applyDocumentOperation(secondMember, {
+      id: "stack-reorder",
+      type: "page-text-stack-reorder",
+      journalId: initial.id,
+      baseRevision: 5,
+      resultingRevision: 6,
+      createdAt: "2026-08-03T10:04:00.000Z",
+      pageId: initial.pages[0]!.id,
+      memberIds: ["second-text", "test-text"],
+    });
+    const released = applyDocumentOperation(reordered, {
+      id: "release-text",
+      type: "page-text-stack-membership-update",
+      journalId: initial.id,
+      baseRevision: 6,
+      resultingRevision: 7,
+      createdAt: "2026-08-03T10:05:00.000Z",
+      pageId: initial.pages[0]!.id,
+      objectId: "second-text",
+      membership: {
+        kind: "free",
+        position: { x: 0.2, y: 0.3 },
+        frame: { width: 0.4, height: 0.2 },
+      },
+    });
+
+    expect(reordered.pages[0]?.textStack?.memberIds).toEqual([
+      "second-text",
+      "test-text",
+    ]);
+    expect(released.pages[0]?.textStack?.memberIds).toEqual(["test-text"]);
+    expect(released.pages[0]?.objects.find(({ id }) => id === "second-text"))
+      .toEqual(expect.objectContaining({
+        position: { x: 0.2, y: 0.3 },
+        frame: { width: 0.4, height: 0.2 },
+      }));
+    expect(applyDocumentOperation(released, {
+      id: "release-text",
+      type: "page-text-stack-membership-update",
+      journalId: initial.id,
+      baseRevision: 6,
+      resultingRevision: 7,
+      createdAt: "2026-08-03T10:05:00.000Z",
+      pageId: initial.pages[0]!.id,
+      objectId: "second-text",
+      membership: { kind: "free", position: { x: 0, y: 0 }, frame: { width: 1, height: 1 } },
+    })).toBe(released);
   });
 
   it("sets and restores a page background colour", () => {

@@ -7,6 +7,79 @@ import {
 } from "./migrations";
 
 describe("journal migrations", () => {
+  it("normalizes structured text fields and stack references idempotently", () => {
+    const current = createInitialJournalSnapshot(
+      new Date("2026-08-03T09:00:00.000Z"),
+    );
+    const text = {
+      id: "structured-text",
+      type: "text",
+      pageId: current.pages[0]!.id,
+      position: { x: 0.2, y: 0.2 },
+      frame: { width: 0.3, height: 0.2 },
+      text: "Heading",
+      textScale: 1,
+      role: "heading",
+      font: "system-serif",
+      color: "#123456",
+      backgroundColor: "#fefefe",
+      outlineColor: "#654321",
+      outlineWidth: 4,
+      revision: 0,
+      createdAt: current.updatedAt,
+    } as const;
+    const invalidText = {
+      ...text,
+      id: "legacy-text",
+      role: "banner",
+      font: "comic",
+      color: "red",
+      backgroundColor: "paper",
+      outlineColor: "ink",
+      outlineWidth: 99,
+    };
+    const migrated = migrateJournalSnapshot({
+      ...current,
+      pages: [{
+        ...current.pages[0]!,
+        objects: [text, invalidText],
+        textStack: {
+          position: { x: -2, y: 4 },
+          frame: { width: 3, height: -1 },
+          memberIds: [
+            "structured-text",
+            "structured-text",
+            "missing",
+            "legacy-text",
+          ],
+        },
+      }],
+    });
+
+    expect(migrated.pages[0]?.textStack).toEqual({
+      position: { x: 0, y: 1 },
+      frame: { width: 1, height: 0.01 },
+      memberIds: ["structured-text", "legacy-text"],
+    });
+    expect(migrated.pages[0]?.objects[0]).toEqual(
+      expect.objectContaining({
+        role: "heading",
+        font: "system-serif",
+        color: "#123456",
+        backgroundColor: "#fefefe",
+        outlineColor: "#654321",
+        outlineWidth: 4,
+      }),
+    );
+    expect(migrated.pages[0]?.objects[1]).not.toHaveProperty("role");
+    expect(migrated.pages[0]?.objects[1]).not.toHaveProperty("font");
+    expect(migrated.pages[0]?.objects[1]).not.toHaveProperty("color");
+    expect(migrated.pages[0]?.objects[1]).not.toHaveProperty("backgroundColor");
+    expect(migrated.pages[0]?.objects[1]).not.toHaveProperty("outlineColor");
+    expect(migrated.pages[0]?.objects[1]).not.toHaveProperty("outlineWidth");
+    expect(migrateJournalSnapshot(migrated)).toEqual(migrated);
+  });
+
   it("preserves valid page backgrounds and removes invalid values", () => {
     const current = createInitialJournalSnapshot(new Date("2026-08-03T09:00:00.000Z"));
     const valid = migrateJournalSnapshot({

@@ -414,7 +414,6 @@ export default function App() {
   if (!snapshot) {
     return (
       <main className="opening-screen">
-        <div className="opening-book" aria-hidden="true" />
         <h1>Opening Ivan’s Diary…</h1>
         {health.localDurability === "error" ? (
           <p role="alert">

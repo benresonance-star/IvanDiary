@@ -57,7 +57,22 @@ export function PagePreview({
       case "voice":
         return <span className="page-preview-object preview-voice" key={object.id} style={previewStyle(object, stackIndex)} />;
       case "text":
-        return <span className="page-preview-object preview-text" key={object.id} style={previewStyle(object, stackIndex)}>{object.text}</span>;
+        return (
+          <span
+            className={`page-preview-object preview-text canvas-text-${object.role ?? "body"} canvas-font-${object.font ?? "system-sans"}`}
+            key={object.id}
+            style={{
+              ...previewStyle(object, stackIndex),
+              backgroundColor: object.backgroundColor ?? "transparent",
+              border: object.outlineColor
+                ? `${object.outlineWidth ?? 2}px solid ${object.outlineColor}`
+                : "none",
+              color: object.color ?? "#201c17",
+            }}
+          >
+            {object.text}
+          </span>
+        );
       case "link":
         return <span className="page-preview-object preview-link" key={object.id} style={previewStyle(object, stackIndex)}>{object.title}</span>;
       case "shape":
@@ -70,8 +85,17 @@ export function PagePreview({
       }
     }
   };
-  const behindSketch = page.objects.filter((object) => object.layer === "behind-sketch");
-  const aboveSketch = page.objects.filter((object) => object.layer !== "behind-sketch");
+  const stackIds = new Set(page.textStack?.memberIds ?? []);
+  const behindSketch = page.objects.filter(
+    (object) => object.layer === "behind-sketch" && !stackIds.has(object.id),
+  );
+  const aboveSketch = page.objects.filter(
+    (object) => object.layer !== "behind-sketch" && !stackIds.has(object.id),
+  );
+  const stackedTexts = (page.textStack?.memberIds ?? []).flatMap((id) => {
+    const object = page.objects.find((candidate) => candidate.id === id);
+    return object?.type === "text" ? [object] : [];
+  });
   return (
     <span
       aria-hidden="true"
@@ -84,6 +108,33 @@ export function PagePreview({
           documentId={page.drawingDocumentId}
           repository={sketchRepository}
         />
+      ) : null}
+      {page.textStack && stackedTexts.length > 0 ? (
+        <span
+          className="page-preview-text-stack"
+          style={{
+            left: `${page.textStack.position.x * 100}%`,
+            top: `${page.textStack.position.y * 100}%`,
+            width: `${page.textStack.frame.width * 100}%`,
+            height: `${page.textStack.frame.height * 100}%`,
+          }}
+        >
+          {stackedTexts.map((object) => (
+            <span
+              className={`preview-stacked-text canvas-text-${object.role ?? "body"} canvas-font-${object.font ?? "system-sans"}`}
+              key={object.id}
+              style={{
+                backgroundColor: object.backgroundColor ?? "transparent",
+                border: object.outlineColor
+                  ? `${object.outlineWidth ?? 2}px solid ${object.outlineColor}`
+                  : "none",
+                color: object.color ?? "#201c17",
+              }}
+            >
+              {object.text}
+            </span>
+          ))}
+        </span>
       ) : null}
       {aboveSketch.map((object) => renderObject(object, page.objects.indexOf(object)))}
     </span>

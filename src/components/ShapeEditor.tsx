@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, Copy, GripHorizontal, Layers3, Magnet, Minus, Move, Palette, Plus, RotateCcw, RotateCw, Scaling, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Copy, GripHorizontal, Layers3, Magnet, Minus, Move, Palette, Plus, RotateCcw, RotateCw, Scaling, Trash2 } from "lucide-react";
 import {
   useLayoutEffect,
   useEffect,
@@ -17,10 +17,11 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { ShapeCard } from "./ShapeCard";
 import { shapeBoundaryVertices, shapeVertices } from "./shapeGeometry";
 
-type ShapeMode = "move" | "rotate" | "scale";
+type TransformMode = "move" | "rotate" | "scale";
+type ShapeMode = TransformMode | "sort";
 type DragState = {
   pointerId: number;
-  mode: ShapeMode;
+  mode: TransformMode;
   start: ShapeObject;
   startX: number;
   startY: number;
@@ -47,8 +48,8 @@ type PaletteDragState = {
 let retainedPalettePosition: PalettePosition | undefined;
 let retainedSnapEnabled = true;
 let retainedShapeMode: ShapeMode = "move";
-type InspectorSection = "appearance" | "arrange";
-let retainedInspectorSection: InspectorSection | undefined;
+type InspectorSection = "adjust" | "style";
+let retainedInspectorSection: InspectorSection = "adjust";
 const SNAP_DISTANCE_PX = 20;
 
 const normalizedRotation = (degrees: number) => ((degrees % 360) + 360) % 360;
@@ -169,16 +170,16 @@ export function ShapeEditor({
   snapShapes: ShapeObject[];
   stackIndex: number;
 }) {
-  const [mode, setMode] = useState<ShapeMode>(retainedShapeMode);
+  const [modeState, setModeState] = useState<{ value: ShapeMode }>({ value: retainedShapeMode });
   const [draft, setDraft] = useState<ShapeObject>();
-  const [inspectorSection, setInspectorSection] = useState<InspectorSection | undefined>(retainedInspectorSection);
+  const [inspectorSection, setInspectorSection] = useState<InspectorSection>(retainedInspectorSection);
   const [addingVertex, setAddingVertex] = useState(false);
   const [selectedVertex, setSelectedVertex] = useState<number>();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [controllerTarget, setControllerTarget] = useState<Element | null>(null);
   const [palettePosition, setPalettePosition] = useState<CSSProperties>(retainedPalettePosition ?? { left: 12, top: 12 });
   const [announcement, setAnnouncement] = useState("");
-  const [, setSnapRevision] = useState(0);
+  const [, setPaletteRevision] = useState(0);
   const draftRef = useRef<ShapeObject | undefined>(undefined);
   const pendingRevisionRef = useRef<number | undefined>(undefined);
   const dragRef = useRef<DragState | undefined>(undefined);
@@ -186,20 +187,21 @@ export function ShapeEditor({
   const objectRef = useRef<HTMLDivElement>(null);
   const paletteRef = useRef<HTMLDivElement>(null);
   const paletteDragRef = useRef<PaletteDragState | undefined>(undefined);
+  const positionPaletteRef = useRef<() => void>(() => undefined);
   const current = draft ?? shape;
   const activePalettePlaced = Boolean(retainedPalettePosition);
   const activePalettePosition = retainedPalettePosition ?? palettePosition;
   const frame = current.frame ?? { width: 0.24, height: 0.24 };
   const vertices = current.shapeKind === "circle" ? [] : current.shapeKind === "rectangle" ? shapeVertices(current) : shapeBoundaryVertices(current);
   const snapEnabled = retainedSnapEnabled;
-  const activeMode = selected ? retainedShapeMode : mode;
+  const activeMode = selected ? retainedShapeMode : modeState.value;
   const activeInspectorSection = selected ? retainedInspectorSection : inspectorSection;
-  const activeColourOpen = activeInspectorSection === "appearance";
-  const activeArrangeOpen = activeInspectorSection === "arrange";
+  const activeStyleOpen = activeInspectorSection === "style";
 
   const toggleInspectorSection = (section: InspectorSection) => {
-    retainedInspectorSection = activeInspectorSection === section ? undefined : section;
+    retainedInspectorSection = section;
     setInspectorSection(retainedInspectorSection);
+    setPaletteRevision((revision) => revision + 1);
   };
 
   const nearestSnapPoint = (x: number, y: number, page: DOMRect) => {
@@ -245,33 +247,31 @@ export function ShapeEditor({
   }, [pageRef]);
 
   useLayoutEffect(() => {
-    if (!selected || !arrange) return;
-    const position = () => {
-      const object = objectRef.current?.getBoundingClientRect();
+    positionPaletteRef.current = () => {
       const palette = paletteRef.current?.getBoundingClientRect();
-      const page = pageRef.current?.getBoundingClientRect();
-      if (!object || !palette || !page) return;
+      if (!palette) return;
       const viewport = globalThis.visualViewport;
       const margin = 12;
+      if (retainedPalettePosition) {
+        const viewportLeft = (viewport?.offsetLeft ?? 0) + margin;
+        const viewportTop = (viewport?.offsetTop ?? 0) + margin;
+        const viewportRight = (viewport?.offsetLeft ?? 0) + (viewport?.width ?? globalThis.innerWidth) - margin;
+        const viewportBottom = (viewport?.offsetTop ?? 0) + (viewport?.height ?? globalThis.innerHeight) - margin;
+        const clamped = {
+          left: Math.max(viewportLeft, Math.min(retainedPalettePosition.left, viewportRight - palette.width)),
+          top: Math.max(viewportTop, Math.min(retainedPalettePosition.top, viewportBottom - palette.height)),
+        };
+        retainedPalettePosition = clamped;
+        setPalettePosition((previous) => Number(previous.left) === clamped.left && Number(previous.top) === clamped.top ? previous : clamped);
+        return;
+      }
+      const object = objectRef.current?.getBoundingClientRect();
+      const page = pageRef.current?.getBoundingClientRect();
+      if (!object || !page) return;
       const leftBound = Math.max(page.left, viewport?.offsetLeft ?? 0) + margin;
       const topBound = Math.max(page.top, viewport?.offsetTop ?? 0) + margin;
       const rightBound = Math.min(page.right, (viewport?.offsetLeft ?? 0) + (viewport?.width ?? globalThis.innerWidth)) - margin;
       const bottomBound = Math.min(page.bottom, (viewport?.offsetTop ?? 0) + (viewport?.height ?? globalThis.innerHeight)) - margin;
-      if (activePalettePlaced) {
-        setPalettePosition(() => {
-          const viewportLeft = (viewport?.offsetLeft ?? 0) + margin;
-          const viewportTop = (viewport?.offsetTop ?? 0) + margin;
-          const viewportRight = (viewport?.offsetLeft ?? 0) + (viewport?.width ?? globalThis.innerWidth) - margin;
-          const viewportBottom = (viewport?.offsetTop ?? 0) + (viewport?.height ?? globalThis.innerHeight) - margin;
-          const clamped = {
-            left: Math.max(viewportLeft, Math.min(retainedPalettePosition?.left ?? margin, viewportRight - palette.width)),
-            top: Math.max(viewportTop, Math.min(retainedPalettePosition?.top ?? margin, viewportBottom - palette.height)),
-          };
-          retainedPalettePosition = clamped;
-          return clamped;
-        });
-        return;
-      }
       const candidates = [
         { left: object.right + margin, top: object.top },
         { left: object.left - palette.width - margin, top: object.top },
@@ -280,23 +280,36 @@ export function ShapeEditor({
       ];
       const fitting = candidates.find((candidate) => candidate.left >= leftBound && candidate.left + palette.width <= rightBound && candidate.top >= topBound && candidate.top + palette.height <= bottomBound);
       const preferred = fitting ?? candidates[object.left + object.width / 2 < (leftBound + rightBound) / 2 ? 0 : 1]!;
-      setPalettePosition({
+      const next = {
         left: Math.max(leftBound, Math.min(preferred.left, rightBound - palette.width)),
         top: Math.max(topBound, Math.min(preferred.top, bottomBound - palette.height)),
-      });
+      };
+      setPalettePosition((previous) => Number(previous.left) === next.left && Number(previous.top) === next.top ? previous : next);
     };
-    position();
+  });
+
+  useLayoutEffect(() => {
+    if (!selected || !arrange) return;
+    positionPaletteRef.current();
+  }, [activeInspectorSection, activePalettePlaced, arrange, current.frame, current.position, current.rotationDegrees, pageRef, selected]);
+
+  useEffect(() => {
+    if (!selected || !arrange) return;
+    const position = () => positionPaletteRef.current();
     globalThis.addEventListener("resize", position);
     globalThis.addEventListener("scroll", position, true);
     globalThis.visualViewport?.addEventListener("resize", position);
     globalThis.visualViewport?.addEventListener("scroll", position);
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(position);
+    if (paletteRef.current) observer?.observe(paletteRef.current);
     return () => {
       globalThis.removeEventListener("resize", position);
       globalThis.removeEventListener("scroll", position, true);
       globalThis.visualViewport?.removeEventListener("resize", position);
       globalThis.visualViewport?.removeEventListener("scroll", position);
+      observer?.disconnect();
     };
-  }, [activeArrangeOpen, activePalettePlaced, activeColourOpen, arrange, current.frame, current.position, current.rotationDegrees, pageRef, selected]);
+  }, [arrange, selected]);
 
   const movePalette = (left: number, top: number) => {
     const palette = paletteRef.current?.getBoundingClientRect();
@@ -409,26 +422,9 @@ export function ShapeEditor({
     const centreX = bounds.left + (current.position.x + frame.width / 2) * bounds.width;
     const centreY = bounds.top + (current.position.y + frame.height / 2) * bounds.height;
     dragRef.current = {
-      pointerId: event.pointerId, mode: activeMode, start: current, startX: event.clientX, startY: event.clientY,
+      pointerId: event.pointerId, mode: "move", start: current, startX: event.clientX, startY: event.clientY,
       centreX, centreY, startDistance: Math.max(1, distance(event.clientX, event.clientY, centreX, centreY)),
       startAngle: angle(event.clientX, event.clientY, centreX, centreY),
-    };
-    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Continue while pointer events arrive. */ }
-  };
-
-  const beginCircleScale = (event: PointerEvent<HTMLButtonElement>, scaleAxis: "horizontal" | "vertical") => {
-    if (!arrange || event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    onSelect();
-    const bounds = pageRef.current?.getBoundingClientRect();
-    if (!bounds) return;
-    const centreX = bounds.left + (current.position.x + frame.width / 2) * bounds.width;
-    const centreY = bounds.top + (current.position.y + frame.height / 2) * bounds.height;
-    dragRef.current = {
-      pointerId: event.pointerId, mode: "scale", start: current, startX: event.clientX, startY: event.clientY,
-      centreX, centreY, startDistance: Math.max(1, distance(event.clientX, event.clientY, centreX, centreY)), scaleAxis,
-      startAngle: 0,
     };
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Continue while pointer events arrive. */ }
   };
@@ -509,49 +505,8 @@ export function ShapeEditor({
     if (!event.key.startsWith("Arrow")) return;
     event.preventDefault();
     const amount = event.shiftKey ? 0.05 : 0.015;
-    if (activeMode === "move") {
-      const delta = { x: event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0, y: event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0 };
-      commit({ ...current, position: clampPosition({ x: current.position.x + delta.x, y: current.position.y + delta.y }, frame) }, "Shape moved");
-    } else if (activeMode === "rotate") {
-      const direction = event.key === "ArrowLeft" || event.key === "ArrowDown" ? -1 : 1;
-      commit({ ...current, rotationDegrees: normalizedRotation((current.rotationDegrees ?? 0) + direction * (event.shiftKey ? 15 : 5)) }, "Shape rotated");
-    } else {
-      const grow = event.key === "ArrowUp" || event.key === "ArrowRight";
-      const requestedFactor = grow ? 1 + (event.shiftKey ? 0.15 : 0.05) : 1 - (event.shiftKey ? 0.15 : 0.05);
-      const centre = { x: current.position.x + frame.width / 2, y: current.position.y + frame.height / 2 };
-      const minimumFactor = Math.max(0.08 / frame.width, 0.08 / frame.height);
-      const maximumFactor = Math.min((PAGE_LAYOUT_BOUNDS.right - PAGE_LAYOUT_BOUNDS.left) / frame.width, (PAGE_LAYOUT_BOUNDS.bottom - PAGE_LAYOUT_BOUNDS.top) / frame.height);
-      const factor = Math.max(minimumFactor, Math.min(maximumFactor, requestedFactor));
-      const nextFrame = { width: frame.width * factor, height: frame.height * factor };
-      commit({ ...current, frame: nextFrame, position: clampPosition({ x: centre.x - nextFrame.width / 2, y: centre.y - nextFrame.height / 2 }, nextFrame) }, "Shape scaled");
-    }
-  };
-
-  const keyboardCircleScale = (event: KeyboardEvent<HTMLButtonElement>, scaleAxis: "horizontal" | "vertical") => {
-    if (!event.key.startsWith("Arrow")) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const grow = event.key === "ArrowUp" || event.key === "ArrowRight";
-    const requestedFactor = grow ? 1 + (event.shiftKey ? 0.15 : 0.05) : 1 - (event.shiftKey ? 0.15 : 0.05);
-    const centre = { x: current.position.x + frame.width / 2, y: current.position.y + frame.height / 2 };
-    const limit = scaleAxis === "horizontal" ? PAGE_LAYOUT_BOUNDS.right - PAGE_LAYOUT_BOUNDS.left : PAGE_LAYOUT_BOUNDS.bottom - PAGE_LAYOUT_BOUNDS.top;
-    const nextFrame = scaleAxis === "horizontal"
-      ? { ...frame, width: Math.max(.08, Math.min(limit, frame.width * requestedFactor)) }
-      : { ...frame, height: Math.max(.08, Math.min(limit, frame.height * requestedFactor)) };
-    commit({ ...current, frame: nextFrame, position: clampPosition({ x: centre.x - nextFrame.width / 2, y: centre.y - nextFrame.height / 2 }, nextFrame) }, `Circle stretched ${scaleAxis === "horizontal" ? "horizontally" : "vertically"}`);
-  };
-
-  const restoreRoundCircle = (scaleAxis: "horizontal" | "vertical") => {
-    const bounds = pageRef.current?.getBoundingClientRect();
-    if (!bounds) return;
-    const centre = { x: current.position.x + frame.width / 2, y: current.position.y + frame.height / 2 };
-    const maximumDiameter = Math.min(
-      (PAGE_LAYOUT_BOUNDS.right - PAGE_LAYOUT_BOUNDS.left) * bounds.width,
-      (PAGE_LAYOUT_BOUNDS.bottom - PAGE_LAYOUT_BOUNDS.top) * bounds.height,
-    );
-    const diameter = Math.min(maximumDiameter, scaleAxis === "horizontal" ? frame.width * bounds.width : frame.height * bounds.height);
-    const nextFrame = { width: diameter / bounds.width, height: diameter / bounds.height };
-    commit({ ...current, frame: nextFrame, position: clampPosition({ x: centre.x - nextFrame.width / 2, y: centre.y - nextFrame.height / 2 }, nextFrame) }, "Circle restored to round");
+    const delta = { x: event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0, y: event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0 };
+    commit({ ...current, position: clampPosition({ x: current.position.x + delta.x, y: current.position.y + delta.y }, frame) }, "Shape moved");
   };
 
   const keyboardVertex = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -636,6 +591,7 @@ export function ShapeEditor({
       commit({ ...current, rotationDegrees: normalizedRotation((current.rotationDegrees ?? 0) + (anticlockwise ? -5 : 5)) }, `Shape rotated ${anticlockwise ? "anticlockwise" : "clockwise"}`);
       return;
     }
+    if (activeMode === "sort") return;
     const grow = direction === "up" || direction === "right";
     const factor = grow ? 1.05 : 0.95;
     const centre = { x: current.position.x + frame.width / 2, y: current.position.y + frame.height / 2 };
@@ -646,11 +602,7 @@ export function ShapeEditor({
     commit({ ...current, frame: nextFrame, position: clampPosition({ x: centre.x - nextFrame.width / 2, y: centre.y - nextFrame.height / 2 }, nextFrame) }, `Shape made ${grow ? "larger" : "smaller"}`);
   };
 
-  const modeDetails = activeMode === "move"
-    ? { Icon: Move, hint: "Drag the shape or use the arrows." }
-    : activeMode === "rotate"
-      ? { Icon: RotateCw, hint: "Drag around the shape or use the buttons." }
-      : { Icon: Scaling, hint: "Drag the shape or use the size buttons." };
+  const activeModeLabel = activeMode[0]!.toUpperCase() + activeMode.slice(1);
 
   const palette = selected && arrange && typeof document !== "undefined" ? createPortal(
     <div aria-label="Shape editing commands" className="shape-edit-palette" ref={paletteRef} role="toolbar" style={activePalettePosition}>
@@ -668,30 +620,43 @@ export function ShapeEditor({
           type="button"
         >
           <span>{current.shapeKind.replace("freeform", "Freeform")}</span>
-          <strong>{current.shapeKind === "freeform" ? " shape" : " shape selected"}</strong>
           <GripHorizontal aria-hidden="true" />
         </button>
-        <button aria-label="Finish editing shape" onClick={onDeselect} type="button"><Check aria-hidden="true" />Done</button>
       </header>
-      <div aria-label="Shape adjustment" className="shape-edit-mode-group" role="group">{(["move", "rotate", "scale"] as const).map((value) => {
-        const Icon = value === "move" ? Move : value === "rotate" ? RotateCw : Scaling;
-        return <button aria-pressed={activeMode === value} data-help-topic={`shape-${value}`} key={value} onClick={() => { retainedShapeMode = value; setMode(value); }} type="button"><Icon aria-hidden="true" />{value[0]!.toUpperCase() + value.slice(1)}{activeMode === value ? <Check aria-hidden="true" className="shape-mode-check" /> : null}</button>;
-      })}</div>
-      <div className="shape-adjustment-panel">
-        <div className="shape-adjustment-description"><modeDetails.Icon aria-hidden="true" /><span><strong>{activeMode[0]!.toUpperCase() + activeMode.slice(1)}</strong><small>{modeDetails.hint}</small></span></div>
-        {activeMode === "move" ? <div aria-label="Move shape precisely" className="shape-nudge-grid" role="group">
-          <button aria-label="Move shape up" onClick={() => adjustShape("up")} type="button"><ArrowUp aria-hidden="true" /></button>
-          <button aria-label="Move shape left" onClick={() => adjustShape("left")} type="button"><ArrowLeft aria-hidden="true" /></button>
-          <span aria-hidden="true" className="shape-nudge-centre" />
-          <button aria-label="Move shape right" onClick={() => adjustShape("right")} type="button"><ArrowRight aria-hidden="true" /></button>
-          <button aria-label="Move shape down" onClick={() => adjustShape("down")} type="button"><ArrowDown aria-hidden="true" /></button>
-        </div> : <div className="shape-adjustment-actions">
-          <button aria-label={activeMode === "rotate" ? "Rotate shape anticlockwise" : "Make shape smaller"} onClick={() => adjustShape("left")} type="button">{activeMode === "rotate" ? <RotateCcw aria-hidden="true" /> : <Minus aria-hidden="true" />}<span>{activeMode === "rotate" ? "Left" : "Smaller"}</span></button>
-          <button aria-label={activeMode === "rotate" ? "Rotate shape clockwise" : "Make shape larger"} onClick={() => adjustShape("right")} type="button">{activeMode === "rotate" ? <RotateCw aria-hidden="true" /> : <Plus aria-hidden="true" />}<span>{activeMode === "rotate" ? "Right" : "Larger"}</span></button>
-        </div>}
+      <div aria-label="Shape editing section" className="shape-inspector-tabs" role="group">
+        <button aria-pressed={!activeStyleOpen} data-help-topic="shape-adjust" onClick={() => toggleInspectorSection("adjust")} type="button"><Move aria-hidden="true" />Adjust</button>
+        <button aria-pressed={activeStyleOpen} data-help-topic="shape-colour" onClick={() => toggleInspectorSection("style")} type="button"><Palette aria-hidden="true" />Style</button>
       </div>
-      <button aria-expanded={activeColourOpen} className="shape-inspector-disclosure" data-help-topic="shape-colour" onClick={() => toggleInspectorSection("appearance")} type="button"><Palette aria-hidden="true" />Appearance <span>{activeColourOpen ? "Hide" : "Show"}</span></button>
-      {activeColourOpen ? <div className="shape-colour-controls">
+      {!activeStyleOpen ? <>
+        <div className="shape-adjust-workspace">
+          <div aria-label="Shape adjustment mode" className="shape-edit-mode-group" role="group">{(["move", "rotate", "scale", "sort"] as const).map((value) => {
+            const Icon = value === "move" ? Move : value === "rotate" ? RotateCw : value === "scale" ? Scaling : Layers3;
+            return <button aria-pressed={activeMode === value} data-help-topic={`shape-${value}`} key={value} onClick={() => { retainedShapeMode = value; setModeState({ value }); }} type="button"><Icon aria-hidden="true" /><span>{value[0]!.toUpperCase() + value.slice(1)}</span></button>;
+          })}</div>
+          <div aria-label={`${activeModeLabel} controls`} className={`shape-adjustment-panel shape-adjustment-${activeMode}`} role="group">
+            {activeMode === "move" ? <>
+              <div aria-label="Move shape precisely" className="shape-nudge-grid" role="group">
+                <button aria-label="Move shape up" onClick={() => adjustShape("up")} type="button"><ArrowUp aria-hidden="true" /></button>
+                <button aria-label="Move shape left" onClick={() => adjustShape("left")} type="button"><ArrowLeft aria-hidden="true" /></button>
+                <span aria-hidden="true" className="shape-nudge-centre" />
+                <button aria-label="Move shape right" onClick={() => adjustShape("right")} type="button"><ArrowRight aria-hidden="true" /></button>
+                <button aria-label="Move shape down" onClick={() => adjustShape("down")} type="button"><ArrowDown aria-hidden="true" /></button>
+              </div>
+              <button aria-pressed={snapEnabled} className="shape-snap-toggle" data-help-topic="shape-snap" onClick={() => { retainedSnapEnabled = !retainedSnapEnabled; setPaletteRevision((revision) => revision + 1); setAnnouncement(`Shape snapping ${retainedSnapEnabled ? "on" : "off"}`); }} type="button"><Magnet aria-hidden="true" />Snap {snapEnabled ? "On" : "Off"}</button>
+            </> : activeMode === "rotate" ? <div className="shape-adjustment-actions">
+              <button aria-label="Rotate shape anticlockwise" onClick={() => adjustShape("left")} type="button"><RotateCcw aria-hidden="true" /><span>Left</span></button>
+              <button aria-label="Rotate shape clockwise" onClick={() => adjustShape("right")} type="button"><RotateCw aria-hidden="true" /><span>Right</span></button>
+            </div> : activeMode === "scale" ? <div className="shape-adjustment-actions">
+              <button aria-label="Make shape larger" onClick={() => adjustShape("right")} type="button"><Plus aria-hidden="true" /><span>Larger</span></button>
+              <button aria-label="Make shape smaller" onClick={() => adjustShape("left")} type="button"><Minus aria-hidden="true" /><span>Smaller</span></button>
+            </div> : <div className="shape-sort-actions">
+              <button aria-label="Move shape up one layer" data-help-topic="shape-layer-up" disabled={!canMoveUp} onClick={onMoveUp} type="button"><ArrowUp aria-hidden="true" /><span>Forward</span></button>
+              <button aria-label="Move shape down one layer" data-help-topic="shape-layer-down" disabled={!canMoveDown} onClick={onMoveDown} type="button"><ArrowDown aria-hidden="true" /><span>Backward</span></button>
+            </div>}
+          </div>
+        </div>
+        {current.shapeKind !== "circle" && current.shapeKind !== "rectangle" ? <div className="shape-context-section"><strong>Points</strong><div className="shape-point-actions"><button aria-label="Add a vertex" aria-pressed={addingVertex} data-help-topic="shape-add-vertex" onClick={() => setAddingVertex((adding) => !adding)} type="button"><Plus aria-hidden="true" />Add</button><button aria-label="Delete selected vertex" data-help-topic="shape-delete-vertex" disabled={selectedVertex === undefined || vertices.length <= 3} onClick={removeVertex} type="button"><Minus aria-hidden="true" />Remove</button></div></div> : null}
+      </> : <div className="shape-colour-controls">
         <div className="shape-colour-row">
           <label>Fill <input aria-label="Shape fill colour" data-help-topic="shape-colour" disabled={!current.fillColor} onChange={(event) => commit({ ...current, fillColor: event.target.value }, "Fill colour changed")} type="color" value={current.fillColor ?? "#d9a441"} /></label>
           <button aria-pressed={Boolean(current.fillColor)} data-help-topic="shape-colour" onClick={() => commit({ ...current, fillColor: current.fillColor ? undefined : "#d9a441" }, "Shape fill changed")} type="button">{current.fillColor ? "No Fill" : "Add Fill"}</button>
@@ -701,46 +666,12 @@ export function ShapeEditor({
           <button aria-pressed={Boolean(current.outlineColor)} data-help-topic="shape-colour" onClick={() => commit({ ...current, outlineColor: current.outlineColor ? undefined : "#3f3528" }, "Shape outline changed")} type="button">{current.outlineColor ? "No Outline" : "Add Outline"}</button>
         </div>
         <label className="shape-thickness-control">Thickness <output>{current.outlineWidth}</output><input aria-label="Shape outline thickness" data-help-topic="shape-colour" disabled={!current.outlineColor} max="12" min="1" onBlur={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} onChange={(event) => preview({ ...current, outlineWidth: Number(event.target.value) })} onKeyUp={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} onPointerUp={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} type="range" value={current.outlineWidth} /></label>
-      </div> : null}
-      {current.shapeKind !== "circle" && current.shapeKind !== "rectangle" ? <div className="shape-context-section"><strong>Edit points</strong><div className="shape-point-actions"><button aria-label="Add a vertex" aria-pressed={addingVertex} data-help-topic="shape-add-vertex" onClick={() => setAddingVertex((adding) => !adding)} type="button"><Plus aria-hidden="true" />Add point</button><button aria-label="Delete selected vertex" data-help-topic="shape-delete-vertex" disabled={selectedVertex === undefined || vertices.length <= 3} onClick={removeVertex} type="button"><Minus aria-hidden="true" />Remove point</button></div>{selectedVertex === undefined ? <small>Select a point on the shape to remove it.</small> : null}</div> : null}
-      <button aria-expanded={activeArrangeOpen} className="shape-inspector-disclosure" onClick={() => toggleInspectorSection("arrange")} type="button"><Layers3 aria-hidden="true" />Arrange <span>{activeArrangeOpen ? "Hide" : "Show"}</span></button>
-      {activeArrangeOpen ? <div className="shape-arrange-controls">
-        <button aria-label="Move shape up one layer" data-help-topic="shape-layer-up" disabled={!canMoveUp} onClick={onMoveUp} type="button"><ArrowUp aria-hidden="true" />Bring forward</button>
-        <button aria-label="Move shape down one layer" data-help-topic="shape-layer-down" disabled={!canMoveDown} onClick={onMoveDown} type="button"><ArrowDown aria-hidden="true" />Send backward</button>
-        <button aria-pressed={snapEnabled} data-help-topic="shape-snap" onClick={() => { retainedSnapEnabled = !retainedSnapEnabled; setSnapRevision((revision) => revision + 1); setAnnouncement(`Shape snapping ${retainedSnapEnabled ? "on" : "off"}`); }} type="button"><Magnet aria-hidden="true" />Snap {snapEnabled ? "On" : "Off"}</button>
-      </div> : null}
-      <div className="shape-inspector-footer"><button data-help-topic="shape-duplicate" onClick={onDuplicate} type="button"><Copy aria-hidden="true" />Duplicate</button><button className="shape-edit-delete" data-help-topic="shape-delete" onClick={() => setDeleteOpen(true)} type="button"><Trash2 aria-hidden="true" />Delete</button></div>
+      </div>}
+      <div className="shape-inspector-footer"><button className="shape-edit-delete" data-help-topic="shape-delete" onClick={() => setDeleteOpen(true)} type="button"><Trash2 aria-hidden="true" />Delete</button><button data-help-topic="shape-duplicate" onClick={() => { retainedShapeMode = "move"; setModeState({ value: "move" }); onDuplicate(); }} type="button"><Copy aria-hidden="true" />Make a copy</button></div>
     </div>, document.body) : null;
 
   const controllers = selected && arrange && controllerTarget ? createPortal(
     <div aria-label={`${shape.shapeKind} shape editing points`} className="shape-controller-overlay shape-editor" style={{ ...shapeStyle(current, stackIndex), zIndex: 850 }}>
-      {current.shapeKind === "circle" && activeMode === "scale" ? <><button
-        aria-label="Stretch circle horizontally. Double-tap to make round"
-        className="shape-scale-handle"
-        data-help-topic="shape-scale"
-        onDoubleClick={() => restoreRoundCircle("horizontal")}
-        onKeyDown={(event) => keyboardCircleScale(event, "horizontal")}
-        onLostPointerCapture={finishTransform}
-        onPointerCancel={cancelTransform}
-        onPointerDown={(event) => beginCircleScale(event, "horizontal")}
-        onPointerMove={updateTransform}
-        onPointerUp={finishTransform}
-        style={{ left: "96%", top: "50%" }}
-        type="button"
-      /><button
-        aria-label="Stretch circle vertically. Double-tap to make round"
-        className="shape-scale-handle"
-        data-help-topic="shape-scale"
-        onDoubleClick={() => restoreRoundCircle("vertical")}
-        onKeyDown={(event) => keyboardCircleScale(event, "vertical")}
-        onLostPointerCapture={finishTransform}
-        onPointerCancel={cancelTransform}
-        onPointerDown={(event) => beginCircleScale(event, "vertical")}
-        onPointerMove={updateTransform}
-        onPointerUp={finishTransform}
-        style={{ left: "50%", top: "96%" }}
-        type="button"
-      /></> : null}
       {vertices.map((point, index) => <button
         aria-label={`Vertex ${index + 1}`}
         aria-pressed={selectedVertex === index}
@@ -766,7 +697,7 @@ export function ShapeEditor({
     {/* Pointer and keyboard transform behavior is implemented on this group. */}
     {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
     <div
-      aria-label={arrange ? `${shape.shapeKind} shape. ${activeMode} mode.` : undefined}
+      aria-label={arrange ? `${shape.shapeKind} shape. Drag or use arrow keys to move.` : undefined}
       className={`page-object shape-object shape-editor${current.layer === "behind-sketch" ? " behind-sketch" : ""}${arrange ? " arrangeable" : ""}${selected ? " selected-object" : ""}`}
       data-help-topic={arrange ? "shape-edit" : undefined}
       data-object-id={shape.id}

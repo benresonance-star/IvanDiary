@@ -3,6 +3,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
@@ -67,7 +68,7 @@ export function ArrangeablePageObject({
   aspectRatio,
   children,
   className,
-  deleteDescription,
+  deleteDescription = "",
   frame,
   layer,
   maximumFrame,
@@ -78,6 +79,7 @@ export function ArrangeablePageObject({
   onDelete,
   onMoveBackward,
   onMoveForward,
+  onNativeDragStart,
   onSelect,
   onToggleAspectLock,
   onToggleLayer,
@@ -93,7 +95,7 @@ export function ArrangeablePageObject({
   aspectRatio?: number;
   children: ReactNode;
   className: string;
-  deleteDescription: string;
+  deleteDescription?: string;
   frame: Size;
   layer: "above-sketch" | "behind-sketch";
   maximumFrame?: Size;
@@ -101,12 +103,13 @@ export function ArrangeablePageObject({
   objectLabel: string;
   objectId: string;
   onCommit: (change: LayoutChange) => void;
-  onDelete: () => void;
+  onDelete?: () => void;
   onMoveBackward?: () => void;
   onMoveForward?: () => void;
+  onNativeDragStart?: (event: DragEvent<HTMLDivElement>) => void;
   onSelect: () => void;
   onToggleAspectLock?: () => void;
-  onToggleLayer: () => void;
+  onToggleLayer?: () => void;
   pageRef: RefObject<HTMLDivElement | null>;
   position: Position;
   selected: boolean;
@@ -304,7 +307,9 @@ export function ArrangeablePageObject({
       data-help-title={arrange ? objectLabel : undefined}
       data-help-topic={arrange ? "arrange-object" : undefined}
       data-object-id={objectId}
+      draggable={arrange && Boolean(onNativeDragStart)}
       onClick={arrange ? onSelect : undefined}
+      onDragStart={onNativeDragStart}
       onKeyDown={arrange ? handleKeyDown : undefined}
       role={arrange ? "group" : undefined}
       style={style}
@@ -361,7 +366,7 @@ export function ArrangeablePageObject({
           >
             <Maximize2 aria-hidden="true" />
           </button> : null}
-          <button
+          {onDelete ? <button
             aria-label={`Delete ${objectLabel}`}
             className="arrange-delete"
             data-help-title={`Delete ${objectLabel.toLowerCase()}`}
@@ -373,8 +378,8 @@ export function ArrangeablePageObject({
             type="button"
           >
             <Trash2 aria-hidden="true" />
-          </button>
-          <button
+          </button> : null}
+          {onToggleLayer ? <button
             aria-label={`${layer === "behind-sketch" ? "Move in front of" : "Move behind"} sketch: ${objectLabel}`}
             className="arrange-layer-toggle"
             data-help-title={`Layer ${objectLabel.toLowerCase()}`}
@@ -391,7 +396,7 @@ export function ArrangeablePageObject({
             ) : (
               <ArrowDown aria-hidden="true" className="layer-direction-icon" />
             )}
-          </button>
+          </button> : null}
           {onMoveForward ? <button aria-label={`Bring ${objectLabel} forward`} className="arrange-order arrange-order-forward" onClick={(event) => { event.stopPropagation(); onMoveForward(); }} type="button"><StepForward aria-hidden="true" /></button> : null}
           {onMoveBackward ? <button aria-label={`Send ${objectLabel} backward`} className="arrange-order arrange-order-backward" onClick={(event) => { event.stopPropagation(); onMoveBackward(); }} type="button"><StepBack aria-hidden="true" /></button> : null}
           {showShortcuts ? (
@@ -437,7 +442,7 @@ export function ArrangeablePageObject({
                 portalTarget,
               )
             : null}
-          {deleteDialogOpen ? (
+          {deleteDialogOpen && onDelete ? (
             <ConfirmDialog
               cancelLabel="Keep it"
               confirmClassName="confirm-delete"

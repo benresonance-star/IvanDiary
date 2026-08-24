@@ -20,6 +20,10 @@ function renderEditor(value: ShapeObject = shape, snapShapes: ShapeObject[] = []
     pageRef: { current: page }, selected: true, shape: value, snapShapes, stackIndex: 2,
   };
   const view = render(<ShapeEditor {...props} />);
+  const adjust = screen.getByRole("button", { name: "Adjust" });
+  if (adjust.getAttribute("aria-pressed") !== "true") fireEvent.click(adjust);
+  const move = screen.getByRole("button", { name: "Move" });
+  if (move.getAttribute("aria-pressed") !== "true") fireEvent.click(move);
   return { ...props, rerenderEditor: (next: ShapeObject) => view.rerender(<ShapeEditor {...props} shape={next} />) };
 }
 
@@ -35,6 +39,29 @@ describe("ShapeEditor", () => {
     expect(screen.getByRole("button", { name: "Vertex 1" }).closest(".shape-controller-overlay")).toHaveStyle({ zIndex: 850 });
     expect(within(toolbar).getByRole("button", { name: "Move" }).parentElement).toHaveClass("shape-edit-mode-group");
     expect(within(toolbar).getByRole("button", { name: "Add a vertex" }).parentElement).toHaveClass("shape-point-actions");
+  });
+
+  it.each(["Move", "Rotate", "Scale", "Sort"] as const)("connects %s mode to its semantic adaptive controller", (mode) => {
+    renderEditor();
+    const modeButton = screen.getByRole("button", { name: mode });
+    fireEvent.click(modeButton);
+
+    const controller = screen.getByRole("group", { name: `${mode} controls` });
+    expect(modeButton).toHaveAttribute("aria-pressed", "true");
+    expect(modeButton.closest(".shape-adjust-workspace")).toContainElement(controller);
+    expect(controller).toHaveClass(`shape-adjustment-${mode.toLowerCase()}`);
+    expect(controller.querySelector(".shape-active-mode-label")).not.toBeInTheDocument();
+  });
+
+  it("switches modes without synchronously remeasuring the palette", () => {
+    renderEditor();
+    const toolbar = screen.getByRole("toolbar", { name: "Shape editing commands" });
+    const measurePalette = vi.spyOn(toolbar, "getBoundingClientRect");
+
+    fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
+
+    expect(screen.getByRole("group", { name: "Rotate controls" })).toBeVisible();
+    expect(measurePalette).not.toHaveBeenCalled();
   });
 
   it("renders a behind-sketch shape below the drawing surface", () => {
@@ -53,17 +80,15 @@ describe("ShapeEditor", () => {
     expect(Number(toolbar.style.left.replace("px", ""))).toBeGreaterThan(before);
   });
 
-  it("uses the title area as the move handle while keeping Done separate", () => {
-    const { onDeselect } = renderEditor();
+  it("uses the compact title area as the move handle", () => {
+    renderEditor();
     const toolbar = screen.getByRole("toolbar", { name: "Shape editing commands" });
     const titleHandle = screen.getByRole("button", { name: "Move shape editing palette" });
-    const done = screen.getByRole("button", { name: "Finish editing shape" });
 
     expect(titleHandle).toHaveClass("shape-palette-heading-drag");
-    expect(titleHandle).toHaveTextContent("triangle shape selected");
-    expect(done).not.toBe(titleHandle);
-    fireEvent.click(done);
-    expect(onDeselect).toHaveBeenCalledOnce();
+    expect(titleHandle).toHaveTextContent("triangle");
+    expect(titleHandle).not.toHaveTextContent("shape selected");
+    expect(screen.queryByRole("button", { name: "Finish editing shape" })).not.toBeInTheDocument();
     expect(toolbar).toContainElement(titleHandle);
   });
 
@@ -126,7 +151,7 @@ describe("ShapeEditor", () => {
     expect(screen.getByRole("toolbar", { name: "Shape editing commands" })).toBeInTheDocument();
   });
 
-  it("moves an expanded colour palette upward to keep its bottom visible", () => {
+  it("moves the Style palette upward to keep its bottom visible", () => {
     renderEditor();
     const toolbar = screen.getByRole("toolbar", { name: "Shape editing commands" });
     let paletteHeight = 200;
@@ -141,16 +166,18 @@ describe("ShapeEditor", () => {
     const collapsedTop = Number(toolbar.style.top.replace("px", ""));
 
     paletteHeight = 500;
-    fireEvent.click(screen.getByRole("button", { name: /Appearance/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Style" }));
     expect(Number(toolbar.style.top.replace("px", ""))).toBeLessThan(collapsedTop);
     expect(Number(toolbar.style.top.replace("px", "")) + paletteHeight).toBeLessThanOrEqual(globalThis.innerHeight - 12);
   });
 
   it("provides help topics for every command", () => {
     renderEditor();
-    const arrange = screen.getByRole("button", { name: /Arrange/ });
-    if (arrange.getAttribute("aria-expanded") !== "true") fireEvent.click(arrange);
-    for (const name of ["Move", "Rotate", "Scale", /Appearance/, "Add a vertex", "Delete selected vertex", "Move shape up one layer", "Move shape down one layer", /Snap/, "Duplicate", "Delete"]) {
+    for (const name of ["Adjust", "Style", "Move", "Rotate", "Scale", "Sort", "Add a vertex", "Delete selected vertex", /Snap/, "Make a copy", "Delete"]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute("data-help-topic");
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Sort" }));
+    for (const name of ["Move shape up one layer", "Move shape down one layer"]) {
       expect(screen.getByRole("button", { name })).toHaveAttribute("data-help-topic");
     }
   });
@@ -158,8 +185,7 @@ describe("ShapeEditor", () => {
   it("snaps a dragged vertex to a nearby node on another shape", () => {
     const target = { ...shape, id: "target-shape", shapeKind: "rectangle" as const, position: { x: .5, y: .2 } };
     const { onUpdate } = renderEditor(shape, [target]);
-    const arrange = screen.getByRole("button", { name: /Arrange/ });
-    if (arrange.getAttribute("aria-expanded") !== "true") fireEvent.click(arrange);
+    fireEvent.click(screen.getByRole("button", { name: "Move" }));
     const snapButton = screen.getByRole("button", { name: /Snap (On|Off)/ });
     if (snapButton.textContent === "Snap Off") fireEvent.click(snapButton);
     const firstVertex = screen.getByRole("button", { name: "Vertex 1" });
@@ -172,11 +198,15 @@ describe("ShapeEditor", () => {
     expect(updated.position.y + updated.frame!.height * snapped.y).toBeCloseTo(.212);
   });
 
-  it("rotates by keyboard without resizing the frame", () => {
+  it("uses arrow keys to move the canvas shape even when Rotate is selected", () => {
     const { onUpdate } = renderEditor();
     fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
     fireEvent.keyDown(screen.getByRole("group", { name: /triangle shape/ }), { key: "ArrowRight" });
-    expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ rotationDegrees: 5, frame: shape.frame }), shape);
+    const updated = onUpdate.mock.calls[0]?.[0] as ShapeObject;
+    expect(updated.position.x).toBeCloseTo(.215);
+    expect(updated.position.y).toBeCloseTo(.2);
+    expect(updated.rotationDegrees).toBe(0);
+    expect(updated.frame).toEqual(shape.frame);
   });
 
   it("offers large on-screen adjustments without requiring a drag", () => {
@@ -191,9 +221,9 @@ describe("ShapeEditor", () => {
     expect(onUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ rotationDegrees: 5 }), shape);
   });
 
-  it("keeps each appearance colour and its toggle in a compact row", () => {
+  it("keeps each Style colour and its toggle in a compact row", () => {
     renderEditor();
-    fireEvent.click(screen.getByRole("button", { name: "Appearance Show" }));
+    fireEvent.click(screen.getByRole("button", { name: "Style" }));
     const fillPicker = screen.getByLabelText("Shape fill colour");
     const outlinePicker = screen.getByLabelText("Shape outline colour");
     expect(fillPicker.closest(".shape-colour-row")).toContainElement(
@@ -216,6 +246,21 @@ describe("ShapeEditor", () => {
     const updated = onUpdate.mock.calls[0]?.[0];
     expect(updated?.position.x).toBeCloseTo(.3);
     expect(updated?.position.y).toBeCloseTo(.25);
+  });
+
+  it.each(["Rotate", "Scale", "Sort"])("keeps canvas dragging as Move while %s controls are selected", (mode) => {
+    const { onUpdate } = renderEditor();
+    fireEvent.click(screen.getByRole("button", { name: mode }));
+    const editor = screen.getByRole("group", { name: /triangle shape/ });
+    fireEvent.pointerDown(editor, { button: 0, pointerId: 40, clientX: 250, clientY: 250 });
+    fireEvent.pointerMove(editor, { pointerId: 40, clientX: 300, clientY: 290 });
+    fireEvent.pointerUp(editor, { pointerId: 40, clientX: 300, clientY: 290 });
+
+    expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      position: { x: .25, y: .25 },
+      frame: shape.frame,
+      rotationDegrees: 0,
+    }), shape);
   });
 
   it("does not let an earlier save acknowledgement reset a newer drag", () => {
@@ -246,7 +291,7 @@ describe("ShapeEditor", () => {
     expect(secondSaved.revision).toBeGreaterThan(firstSaved.revision);
   });
 
-  it.each(["Move", "Rotate", "Scale"])("moves only the vertex while %s mode is selected", (mode) => {
+  it.each(["Move", "Rotate", "Scale", "Sort"])("moves only the vertex while %s mode is selected", (mode) => {
     const { onUpdate } = renderEditor();
     fireEvent.click(screen.getByRole("button", { name: mode }));
     const firstVertex = screen.getByRole("button", { name: "Vertex 1" });
@@ -315,7 +360,7 @@ describe("ShapeEditor", () => {
     expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ shapeKind: "polygon", points: expect.arrayContaining([expect.objectContaining({ x: .725, y: .5 })]) }), shape);
   });
 
-  it("hides irrelevant vertex controls for circles", () => {
+  it("scales circles only from the palette and hides vertex controls", () => {
     const { onUpdate } = renderEditor({ ...shape, shapeKind: "circle" });
     fireEvent.click(screen.getByRole("button", { name: "Move" }));
     expect(screen.queryByRole("button", { name: "Add a vertex" })).not.toBeInTheDocument();
@@ -323,18 +368,10 @@ describe("ShapeEditor", () => {
     expect(screen.queryByRole("button", { name: /Vertex 1/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Stretch circle horizontally/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Scale" }));
-    const horizontal = screen.getByRole("button", { name: /Stretch circle horizontally/ });
-    const vertical = screen.getByRole("button", { name: /Stretch circle vertically/ });
-    fireEvent.pointerDown(horizontal, { button: 0, pointerId: 12, clientX: 440, clientY: 256 });
-    fireEvent.pointerMove(horizontal, { pointerId: 12, clientX: 560, clientY: 256 });
-    fireEvent.pointerUp(horizontal, { pointerId: 12, clientX: 560, clientY: 256 });
+    expect(screen.queryByRole("button", { name: /Stretch circle/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Make shape larger" }));
     expect(onUpdate.mock.calls[0]?.[0].frame.width).toBeGreaterThan(shape.frame!.width);
-    expect(onUpdate.mock.calls[0]?.[0].frame.height).toBe(shape.frame!.height);
-
-    fireEvent.doubleClick(vertical);
-    const rounded = onUpdate.mock.calls.at(-1)?.[0] as ShapeObject;
-    expect(rounded.frame!.width * 1000).toBeCloseTo(rounded.frame!.height * 800);
-    expect(rounded.frame!.height).toBeCloseTo(shape.frame!.height);
+    expect(onUpdate.mock.calls[0]?.[0].frame.height).toBeGreaterThan(shape.frame!.height);
   });
 
   it("uses two opposite corners to resize a rectangle without converting it to a polygon", () => {
@@ -352,51 +389,45 @@ describe("ShapeEditor", () => {
     ]));
   });
 
-  it("expands colour controls and delegates ordering, duplication, and confirmed deletion", () => {
+  it("switches sections and delegates ordering, copying, and confirmed deletion", () => {
     const props = renderEditor();
-    const look = screen.getByRole("button", { name: /Appearance/ });
-    if (look.getAttribute("aria-expanded") !== "true") fireEvent.click(look);
+    fireEvent.click(screen.getByRole("button", { name: "Style" }));
     expect(screen.getByRole("slider", { name: "Shape outline thickness" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "No Outline" }));
     expect(props.onUpdate).toHaveBeenCalledWith(expect.objectContaining({ outlineColor: undefined }), shape);
-    const arrange = screen.getByRole("button", { name: /Arrange/ });
-    if (arrange.getAttribute("aria-expanded") !== "true") fireEvent.click(arrange);
+    fireEvent.click(screen.getByRole("button", { name: "Adjust" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sort" }));
     fireEvent.click(screen.getByRole("button", { name: "Move shape up one layer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Make a copy" }));
     expect(props.onMoveUp).toHaveBeenCalledOnce();
     expect(props.onDuplicate).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "Move" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     const dialog = screen.getByRole("alertdialog", { name: /Delete triangle shape/ });
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     expect(props.onDelete).toHaveBeenCalledOnce();
   });
 
-  it("keeps Appearance and Arrange mutually exclusive and lets each section collapse", () => {
+  it("keeps Adjust and Style mutually exclusive", () => {
     renderEditor();
-    let appearance = screen.getByRole("button", { name: /Appearance/ });
-    let arrange = screen.getByRole("button", { name: /Arrange/ });
-    if (appearance.getAttribute("aria-expanded") === "true") fireEvent.click(appearance);
-    if (arrange.getAttribute("aria-expanded") === "true") fireEvent.click(arrange);
+    const adjust = screen.getByRole("button", { name: "Adjust" });
+    const style = screen.getByRole("button", { name: "Style" });
+    expect(adjust).toHaveAttribute("aria-pressed", "true");
+    expect(style).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Move" })).toBeVisible();
 
-    appearance = screen.getByRole("button", { name: /Appearance/ });
-    fireEvent.click(appearance);
-    expect(appearance).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(style);
+    expect(style).toHaveAttribute("aria-pressed", "true");
+    expect(adjust).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("slider", { name: "Shape outline thickness" })).toBeVisible();
-    expect(screen.getByRole("button", { name: /Arrange/ })).toHaveAttribute("aria-expanded", "false");
 
-    fireEvent.click(screen.getByRole("button", { name: /Arrange/ }));
-    expect(screen.getByRole("button", { name: /Appearance/ })).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(adjust);
+    expect(adjust).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("slider", { name: "Shape outline thickness" })).not.toBeInTheDocument();
-    arrange = screen.getByRole("button", { name: /Arrange/ });
-    expect(arrange).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: /Snap/ })).toBeVisible();
-
-    fireEvent.click(arrange);
-    expect(arrange).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("button", { name: /Snap/ })).not.toBeInTheDocument();
   });
 
-  it("retains mode and Appearance visibility when selecting another mounted shape", () => {
+  it("retains mode and Style visibility when selecting another mounted shape", () => {
     const page = document.createElement("div");
     const common = {
       arrange: true, canMoveDown: true, canMoveUp: true, onDelete: vi.fn(), onDeselect: vi.fn(), onDuplicate: vi.fn(),
@@ -404,13 +435,14 @@ describe("ShapeEditor", () => {
     };
     const second = { ...shape, id: "shape-2" };
     const view = render(<><ShapeEditor {...common} key="first" selected shape={shape} /><ShapeEditor {...common} key="second" selected={false} shape={second} /></>);
+    fireEvent.click(screen.getByRole("button", { name: "Adjust" }));
     fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
-    const look = screen.getByRole("button", { name: /Appearance/ });
-    if (look.getAttribute("aria-expanded") !== "true") fireEvent.click(look);
+    fireEvent.click(screen.getByRole("button", { name: "Style" }));
 
     view.rerender(<><ShapeEditor {...common} key="first" selected={false} shape={shape} /><ShapeEditor {...common} key="second" selected shape={second} /></>);
-    expect(screen.getByRole("button", { name: "Rotate" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: /Appearance/ })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Style" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("slider", { name: "Shape outline thickness" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Adjust" }));
+    expect(screen.getByRole("button", { name: "Rotate" })).toHaveAttribute("aria-pressed", "true");
   });
 });

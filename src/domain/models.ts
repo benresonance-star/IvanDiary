@@ -109,6 +109,21 @@ export type TextObject = PageObjectBase & {
   /** Retained for compatibility; canvas text size follows JournalSettings.textScale. */
   textScale: number;
   textAlign?: "left" | "center";
+  role?: CanvasTextRole;
+  font?: CanvasTextFont;
+  color?: string;
+  backgroundColor?: string;
+  outlineColor?: string;
+  outlineWidth?: number;
+};
+
+export type CanvasTextRole = "title" | "heading" | "body";
+export type CanvasTextFont = "system-rounded" | "system-serif" | "system-sans";
+
+export type PageTextStack = {
+  position: Position;
+  frame: Size;
+  memberIds: EntityId[];
 };
 
 export type LinkObject = PageObjectBase & {
@@ -149,6 +164,7 @@ export type Page = {
   backgroundColor?: string;
   drawingDocumentId: EntityId;
   drawingGrid?: DrawingGridSettings;
+  textStack?: PageTextStack;
   objects: PageObject[];
   revision: number;
   createdAt: IsoDateTime;
@@ -466,6 +482,25 @@ export type DocumentOperation = OperationBase &
       objectIds: EntityId[];
     }
     | {
+      type: "page-text-stack-layout-update";
+      pageId: EntityId;
+      position: Position;
+      frame: Size;
+    }
+    | {
+      type: "page-text-stack-reorder";
+      pageId: EntityId;
+      memberIds: EntityId[];
+    }
+    | {
+      type: "page-text-stack-membership-update";
+      pageId: EntityId;
+      objectId: EntityId;
+      membership:
+        | { kind: "stack"; index?: number }
+        | { kind: "free"; position: Position; frame: Size };
+    }
+    | {
       type: "page-paper-update";
       pageId: EntityId;
       paperStyle: PaperStyle;
@@ -617,3 +652,16 @@ type WithoutOperationMetadata<T> = T extends OperationBase
 
 export type DocumentOperationInput =
   WithoutOperationMetadata<DocumentOperation>;
+
+export type PageTextStackLayoutUpdateInput = Extract<
+  DocumentOperationInput,
+  { type: "page-text-stack-layout-update" }
+>;
+export type PageTextStackReorderInput = Extract<
+  DocumentOperationInput,
+  { type: "page-text-stack-reorder" }
+>;
+export type PageTextStackMembershipUpdateInput = Extract<
+  DocumentOperationInput,
+  { type: "page-text-stack-membership-update" }
+>;

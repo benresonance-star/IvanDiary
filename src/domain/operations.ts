@@ -84,6 +84,16 @@ function isExactReorder(currentIds: string[], nextIds: string[]): boolean {
   );
 }
 
+function isNormalizedPosition(position: { x: number; y: number }): boolean {
+  return Number.isFinite(position.x) && Number.isFinite(position.y) &&
+    position.x >= 0 && position.x <= 1 && position.y >= 0 && position.y <= 1;
+}
+
+function isNormalizedFrame(frame: { width: number; height: number }): boolean {
+  return Number.isFinite(frame.width) && Number.isFinite(frame.height) &&
+    frame.width > 0 && frame.width <= 1 && frame.height > 0 && frame.height <= 1;
+}
+
 function applyFavourite(
   snapshot: JournalSnapshot,
   operation: Extract<DocumentOperation, { type: "favourite-set" }>,
@@ -652,6 +662,16 @@ export function applyDocumentOperation(
         objects: page.objects.filter(
           (object) => object.id !== operation.objectId,
         ),
+        ...(page.textStack
+          ? {
+              textStack: {
+                ...page.textStack,
+                memberIds: page.textStack.memberIds.filter(
+                  (id) => id !== operation.objectId,
+                ),
+              },
+            }
+          : {}),
         revision: page.revision + 1,
         updatedAt: operation.createdAt,
       }));
@@ -666,6 +686,106 @@ export function applyDocumentOperation(
         return {
           ...page,
           objects: operation.objectIds.map((id) => page.objects.find((object) => object.id === id)!),
+          revision: page.revision + 1,
+          updatedAt: operation.createdAt,
+        };
+      });
+      break;
+    case "page-text-stack-layout-update":
+      if (
+        !isNormalizedPosition(operation.position) ||
+        !isNormalizedFrame(operation.frame)
+      ) {
+        throw new OperationConflictError(
+          "Text stack layout must use normalized geometry.",
+        );
+      }
+      next = updatePage(snapshot, operation.pageId, (page) => ({
+        ...page,
+        textStack: {
+          position: operation.position,
+          frame: operation.frame,
+          memberIds: page.textStack?.memberIds ?? [],
+        },
+        revision: page.revision + 1,
+        updatedAt: operation.createdAt,
+      }));
+      break;
+    case "page-text-stack-reorder":
+      next = updatePage(snapshot, operation.pageId, (page) => {
+        const currentIds = page.textStack?.memberIds ?? [];
+        if (!page.textStack || !isExactReorder(currentIds, operation.memberIds)) {
+          throw new OperationConflictError(
+            "Reordered stack members must contain every member exactly once.",
+          );
+        }
+        return {
+          ...page,
+          textStack: { ...page.textStack, memberIds: [...operation.memberIds] },
+          revision: page.revision + 1,
+          updatedAt: operation.createdAt,
+        };
+      });
+      break;
+    case "page-text-stack-membership-update":
+      next = updatePage(snapshot, operation.pageId, (page) => {
+        const object = page.objects.find(
+          (candidate) => candidate.id === operation.objectId,
+        );
+        if (!object || object.type !== "text") {
+          throw new OperationConflictError(
+            `Text object ${operation.objectId} does not exist.`,
+          );
+        }
+        const memberIds = (page.textStack?.memberIds ?? []).filter(
+          (id) => id !== operation.objectId,
+        );
+        if (operation.membership.kind === "stack") {
+          const index = operation.membership.index ?? memberIds.length;
+          if (!Number.isInteger(index) || index < 0 || index > memberIds.length) {
+            throw new OperationConflictError("The text stack index is invalid.");
+          }
+          memberIds.splice(index, 0, operation.objectId);
+          return {
+            ...page,
+            textStack: {
+              position: page.textStack?.position ?? { x: 0.1, y: 0.1 },
+              frame: page.textStack?.frame ?? { width: 0.8, height: 0.8 },
+              memberIds,
+            },
+            objects: page.objects.map((candidate) =>
+              candidate.id === object.id
+                ? { ...candidate, revision: candidate.revision + 1 }
+                : candidate,
+            ),
+            revision: page.revision + 1,
+            updatedAt: operation.createdAt,
+          };
+        }
+        if (
+          !isNormalizedPosition(operation.membership.position) ||
+          !isNormalizedFrame(operation.membership.frame)
+        ) {
+          throw new OperationConflictError(
+            "Free text must use normalized geometry.",
+          );
+        }
+        const freeMembership = operation.membership;
+        return {
+          ...page,
+          ...(page.textStack
+            ? { textStack: { ...page.textStack, memberIds } }
+            : {}),
+          objects: page.objects.map((candidate) =>
+            candidate.id === object.id
+              ? {
+                  ...candidate,
+                  position: freeMembership.position,
+                  frame: freeMembership.frame,
+                  revision: candidate.revision + 1,
+                }
+              : candidate,
+          ),
           revision: page.revision + 1,
           updatedAt: operation.createdAt,
         };

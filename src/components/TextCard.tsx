@@ -21,14 +21,41 @@ export function TextCard({
       editorRef.current?.focus({ preventScroll: true });
     }
   }, [object.text.length, readOnly]);
+  const role = object.role ?? "body";
+  const className = `page-text-card canvas-text-${role} canvas-font-${object.font ?? "system-sans"}`;
+  const style = {
+    backgroundColor: object.backgroundColor ?? "transparent",
+    border: object.outlineColor
+      ? `${object.outlineWidth ?? 2}px solid ${object.outlineColor}`
+      : "none",
+    color: object.color ?? "#201c17",
+    overflowWrap: "anywhere",
+    textAlign: object.textAlign ?? "left",
+    whiteSpace: "pre-wrap",
+  } as const;
 
-  if (onEdit && !readOnly) {
+  if (readOnly) {
+    switch (role) {
+      case "title":
+        return <h1 className={className} style={style}>{object.text}</h1>;
+      case "heading":
+        return <h2 className={className} style={style}>{object.text}</h2>;
+      case "body":
+        return <p className={className} style={style}>{object.text}</p>;
+      default: {
+        const exhaustiveRole: never = role;
+        throw new Error(`Unsupported canvas text role: ${exhaustiveRole}`);
+      }
+    }
+  }
+
+  if (onEdit) {
     return (
       <button
         aria-label="Edit journal text"
-        className="page-text-card native-text-edit-trigger"
+        className={`${className} native-text-edit-trigger`}
         onClick={onEdit}
-        style={{ textAlign: object.textAlign ?? "left" }}
+        style={style}
         type="button"
       >
         {object.text}
@@ -39,7 +66,7 @@ export function TextCard({
   return (
     <textarea
       aria-label="Journal text"
-      className="page-text-card"
+      className={className}
       onBlur={() => {
         if (text !== object.text) {
           onSave({ ...object, text, revision: object.revision + 1 });
@@ -52,7 +79,7 @@ export function TextCard({
       placeholder="Write here, or use Apple dictation…"
       readOnly={readOnly}
       ref={editorRef}
-      style={{ textAlign: object.textAlign ?? "left" }}
+      style={style}
       value={text}
     />
   );
