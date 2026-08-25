@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import type { TextObject } from "../domain/models";
 
@@ -24,6 +24,7 @@ export function TextCard({
   const role = object.role ?? "body";
   const className = `page-text-card canvas-text-${role} canvas-font-${object.font ?? "system-sans"}`;
   const style = {
+    "--canvas-text-scale": object.textScale,
     backgroundColor: object.backgroundColor ?? "transparent",
     border: object.outlineColor
       ? `${object.outlineWidth ?? 2}px solid ${object.outlineColor}`
@@ -32,7 +33,7 @@ export function TextCard({
     overflowWrap: "anywhere",
     textAlign: object.textAlign ?? "left",
     whiteSpace: "pre-wrap",
-  } as const;
+  } as CSSProperties;
 
   if (readOnly) {
     switch (role) {

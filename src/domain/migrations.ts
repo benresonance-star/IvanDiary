@@ -422,6 +422,7 @@ function migratePageTextStack(
       height: Math.min(1, Math.max(0.01, value.frame.height)),
     },
     memberIds,
+    layer: value.layer === "behind-sketch" ? "behind-sketch" : "above-sketch",
   };
 }
 

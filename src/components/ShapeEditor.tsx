@@ -429,8 +429,40 @@ export function ShapeEditor({
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Continue while pointer events arrive. */ }
   };
 
+  const beginCircleScale = (
+    event: PointerEvent<HTMLButtonElement>,
+    scaleAxis: "horizontal" | "vertical",
+  ) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const bounds = pageRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const centreX = bounds.left + (current.position.x + frame.width / 2) * bounds.width;
+    const centreY = bounds.top + (current.position.y + frame.height / 2) * bounds.height;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      mode: "scale",
+      start: current,
+      startX: event.clientX,
+      startY: event.clientY,
+      centreX,
+      centreY,
+      startDistance: Math.max(1, distance(event.clientX, event.clientY, centreX, centreY)),
+      startAngle: angle(event.clientX, event.clientY, centreX, centreY),
+      scaleAxis,
+    };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Continue while pointer events arrive. */ }
+  };
+  const beginCircleWidthScale = (event: PointerEvent<HTMLButtonElement>) => {
+    beginCircleScale(event, "horizontal");
+  };
+  const beginCircleHeightScale = (event: PointerEvent<HTMLButtonElement>) => {
+    beginCircleScale(event, "vertical");
+  };
+
   const updateTransform = (event: PointerEvent<HTMLElement>) => {
-    if (vertexRef.current || (event.target instanceof Element && event.target.closest(".shape-vertex-handle, .shape-edge-handle"))) return;
+    if (vertexRef.current || (event.target instanceof Element && event.target.closest(".shape-vertex-handle:not(.shape-scale-handle), .shape-edge-handle"))) return;
     const active = dragRef.current;
     const bounds = pageRef.current?.getBoundingClientRect();
     if (!active || !bounds || active.pointerId !== event.pointerId) return;
@@ -473,7 +505,7 @@ export function ShapeEditor({
   };
 
   const finishTransform = (event: PointerEvent<HTMLElement>) => {
-    if (vertexRef.current || (event.target instanceof Element && event.target.closest(".shape-vertex-handle, .shape-edge-handle"))) return;
+    if (vertexRef.current || (event.target instanceof Element && event.target.closest(".shape-vertex-handle:not(.shape-scale-handle), .shape-edge-handle"))) return;
     const active = dragRef.current;
     if (!active || active.pointerId !== event.pointerId) return;
     dragRef.current = undefined;
@@ -672,6 +704,22 @@ export function ShapeEditor({
 
   const controllers = selected && arrange && controllerTarget ? createPortal(
     <div aria-label={`${shape.shapeKind} shape editing points`} className="shape-controller-overlay shape-editor" style={{ ...shapeStyle(current, stackIndex), zIndex: 850 }}>
+      {current.shapeKind === "circle" && activeMode === "scale" ? [
+        { axis: "horizontal" as const, label: "width", left: "100%", top: "50%" },
+        { axis: "vertical" as const, label: "height", left: "50%", top: "100%" },
+      ].map((handle) => <button
+        aria-label={`Change circle ${handle.label}`}
+        className={`shape-vertex-handle shape-scale-handle shape-scale-${handle.axis}`}
+        key={handle.label}
+        onLostPointerCapture={finishTransform}
+        onPointerDown={handle.axis === "horizontal"
+          ? beginCircleWidthScale
+          : beginCircleHeightScale}
+        onPointerMove={updateTransform}
+        onPointerUp={finishTransform}
+        style={{ left: handle.left, top: handle.top }}
+        type="button"
+      />) : null}
       {vertices.map((point, index) => <button
         aria-label={`Vertex ${index + 1}`}
         aria-pressed={selectedVertex === index}

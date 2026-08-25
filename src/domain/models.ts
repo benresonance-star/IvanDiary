@@ -124,6 +124,7 @@ export type PageTextStack = {
   position: Position;
   frame: Size;
   memberIds: EntityId[];
+  layer?: "above-sketch" | "behind-sketch";
 };
 
 export type LinkObject = PageObjectBase & {
@@ -486,6 +487,11 @@ export type DocumentOperation = OperationBase &
       pageId: EntityId;
       position: Position;
       frame: Size;
+    }
+    | {
+      type: "page-text-stack-layer-update";
+      pageId: EntityId;
+      layer: "above-sketch" | "behind-sketch";
     }
     | {
       type: "page-text-stack-reorder";

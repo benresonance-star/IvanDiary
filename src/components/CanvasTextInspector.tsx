@@ -5,9 +5,9 @@ import {
   Edit3,
   GripHorizontal,
   List,
-  Palette,
+  Minus,
+  Plus,
   Trash2,
-  Type,
 } from "lucide-react";
 import {
   useEffect,
@@ -19,24 +19,13 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import type {
-  CanvasTextFont,
-  CanvasTextRole,
-  TextObject,
-} from "../domain/models";
+import type { TextObject } from "../domain/models";
+import {
+  adjustCanvasTextScale,
+  CANVAS_TEXT_SCALE_MAX,
+  CANVAS_TEXT_SCALE_MIN,
+} from "./canvasTextScale";
 import { ConfirmDialog } from "./ConfirmDialog";
-
-const ROLES: Array<{ value: CanvasTextRole; label: string }> = [
-  { value: "title", label: "Title" },
-  { value: "heading", label: "Heading" },
-  { value: "body", label: "Main text" },
-];
-
-const FONTS: Array<{ value: CanvasTextFont; label: string }> = [
-  { value: "system-sans", label: "Clear" },
-  { value: "system-serif", label: "Book" },
-  { value: "system-rounded", label: "Rounded" },
-];
 
 type PalettePosition = { left: number; top: number };
 type PaletteDrag = {
@@ -90,8 +79,7 @@ export function CanvasTextInspector({
       top: 84,
     },
   );
-  const role = object.role ?? "body";
-  const font = object.font ?? "system-sans";
+  const textScale = object.textScale ?? 1;
 
   const movePalette = (left: number, top: number) => {
     const palette = paletteRef.current?.getBoundingClientRect();
@@ -255,91 +243,71 @@ export function CanvasTextInspector({
         >
           <GripHorizontal aria-hidden="true" />
           <strong>Text</strong>
-          <Type aria-hidden="true" />
         </button>
-        <div aria-label="Text structure" className="canvas-text-role-group" role="group">
-          {ROLES.map(({ value, label }) => (
-            <button
-              aria-pressed={role === value}
-              data-help-topic="canvas-text-structure"
-              key={value}
-              onClick={() => onUpdate({ ...object, role: value, revision: object.revision + 1 })}
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div aria-label="Text font" className="canvas-text-font-group" role="group">
-          {FONTS.map(({ value, label }) => (
-            <button
-              aria-pressed={font === value}
-              className={`canvas-font-${value}`}
-              data-help-topic="canvas-text-style"
-              key={value}
-              onClick={() => onUpdate({ ...object, font: value, revision: object.revision + 1 })}
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
+        <button className="canvas-text-edit" onClick={onEdit} type="button">
+          <Edit3 aria-hidden="true" />Edit text
+        </button>
+        <button className="canvas-text-membership" data-help-topic="canvas-text-membership" onClick={onToggleStack} type="button">
+          {stacked ? <BringToFront aria-hidden="true" /> : <List aria-hidden="true" />}
+          {stacked ? "Move to canvas" : "Move to text stack"}
+        </button>
+        <div aria-label="Text size" className="canvas-text-size-control" role="group">
+          <strong>Text Size</strong>
+          <button
+            aria-label="Decrease text size"
+            disabled={textScale <= CANVAS_TEXT_SCALE_MIN}
+            onClick={() => onUpdate({
+              ...object,
+              textScale: adjustCanvasTextScale(textScale, -1),
+              revision: object.revision + 1,
+            })}
+            type="button"
+          >
+            <Minus aria-hidden="true" />
+          </button>
+          <output aria-label="Current text size">{Math.round(textScale * 100)}%</output>
+          <button
+            aria-label="Increase text size"
+            disabled={textScale >= CANVAS_TEXT_SCALE_MAX}
+            onClick={() => onUpdate({
+              ...object,
+              textScale: adjustCanvasTextScale(textScale, 1),
+              revision: object.revision + 1,
+            })}
+            type="button"
+          >
+            <Plus aria-hidden="true" />
+          </button>
         </div>
         <fieldset className="canvas-text-appearance-controls">
           <legend>Colours</legend>
         <label className="canvas-text-colour-control" data-help-topic="canvas-text-style">
-          <Palette aria-hidden="true" />
-          Colour
           <input
             aria-label="Text colour"
             onChange={(event) => onUpdate({ ...object, color: event.target.value, revision: object.revision + 1 })}
             type="color"
             value={object.color ?? "#201c17"}
           />
+          <span>Text Colour</span>
         </label>
         <div className="canvas-text-colour-row">
           <label data-help-topic="canvas-text-style">
-            Background
-            <input
-              aria-label="Text background colour"
-              disabled={!object.backgroundColor}
-              onChange={(event) => onUpdate({
-                ...object,
-                backgroundColor: event.target.value,
-                revision: object.revision + 1,
-              })}
-              type="color"
-              value={object.backgroundColor ?? "#fffaf0"}
-            />
-          </label>
-          <button
-            aria-pressed={Boolean(object.backgroundColor)}
-            onClick={() => onUpdate({
-              ...object,
-              backgroundColor: object.backgroundColor ? undefined : "#fffaf0",
-              revision: object.revision + 1,
-            })}
-            type="button"
-          >
-            {object.backgroundColor ? "No background" : "Add background"}
-          </button>
-        </div>
-        <div className="canvas-text-colour-row">
-          <label data-help-topic="canvas-text-style">
-            Outline
-            <input
+            {object.outlineColor ? <input
               aria-label="Text outline colour"
-              disabled={!object.outlineColor}
               onChange={(event) => onUpdate({
                 ...object,
                 outlineColor: event.target.value,
                 revision: object.revision + 1,
               })}
               type="color"
-              value={object.outlineColor ?? "#3f3528"}
-            />
+              value={object.outlineColor}
+            /> : null}
+            <span>Outline</span>
           </label>
           <button
+            aria-label="Toggle text outline"
             aria-pressed={Boolean(object.outlineColor)}
+            className="canvas-text-toggle"
             onClick={() => onUpdate({
               ...object,
               outlineColor: object.outlineColor ? undefined : "#3f3528",
@@ -348,7 +316,7 @@ export function CanvasTextInspector({
             })}
             type="button"
           >
-            {object.outlineColor ? "No outline" : "Add outline"}
+            {object.outlineColor ? "On" : "Off"}
           </button>
         </div>
         {object.outlineColor ? <label className="canvas-text-outline-width">
@@ -369,6 +337,34 @@ export function CanvasTextInspector({
             value={outlineWidthDraft}
           />
         </label> : null}
+        <div className="canvas-text-colour-row">
+          <label data-help-topic="canvas-text-style">
+            {object.backgroundColor ? <input
+              aria-label="Text background colour"
+              onChange={(event) => onUpdate({
+                ...object,
+                backgroundColor: event.target.value,
+                revision: object.revision + 1,
+              })}
+              type="color"
+              value={object.backgroundColor}
+            /> : null}
+            <span>Background</span>
+          </label>
+          <button
+            aria-label="Toggle text background"
+            aria-pressed={Boolean(object.backgroundColor)}
+            className="canvas-text-toggle"
+            onClick={() => onUpdate({
+              ...object,
+              backgroundColor: object.backgroundColor ? undefined : "#fffaf0",
+              revision: object.revision + 1,
+            })}
+            type="button"
+          >
+            {object.backgroundColor ? "On" : "Off"}
+          </button>
+        </div>
         </fieldset>
         {stacked ? (
           <div aria-label="Text reading order" className="canvas-text-order-group" data-help-topic="canvas-text-order" role="group">
@@ -376,12 +372,7 @@ export function CanvasTextInspector({
             <button disabled={!canMoveLater} onClick={onMoveLater} type="button"><ArrowDown aria-hidden="true" />Later</button>
           </div>
         ) : null}
-        <button className="canvas-text-membership" data-help-topic="canvas-text-membership" onClick={onToggleStack} type="button">
-          {stacked ? <BringToFront aria-hidden="true" /> : <List aria-hidden="true" />}
-          {stacked ? "Move to canvas" : "Return to stack"}
-        </button>
         <div className="canvas-text-inspector-actions">
-          <button onClick={onEdit} type="button"><Edit3 aria-hidden="true" />Edit text</button>
           <button className="canvas-text-delete" onClick={() => setDeleteOpen(true)} type="button"><Trash2 aria-hidden="true" />Delete</button>
         </div>
         <span aria-live="polite" className="visually-hidden">

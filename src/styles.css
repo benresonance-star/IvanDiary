@@ -2574,9 +2574,9 @@ textarea,
 .canvas-font-system-sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .canvas-font-system-serif { font-family: ui-serif, "New York", Georgia, serif; }
 .canvas-font-system-rounded { font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif; }
-.page-text-card.canvas-text-title { font-size: clamp(1.45rem, 3vw, 2.2rem); font-weight: 750; line-height: 1.12; }
-.page-text-card.canvas-text-heading { font-size: clamp(1.15rem, 2vw, 1.55rem); font-weight: 700; line-height: 1.22; }
-.page-text-card.canvas-text-body { font-size: 1rem; font-weight: 450; line-height: 1.5; }
+.page-text-card.canvas-text-title { font-size: clamp(calc(1.45rem * var(--canvas-text-scale, 1)), calc(3vw * var(--canvas-text-scale, 1)), calc(2.2rem * var(--canvas-text-scale, 1))); font-weight: 750; line-height: 1.12; }
+.page-text-card.canvas-text-heading { font-size: clamp(calc(1.15rem * var(--canvas-text-scale, 1)), calc(2vw * var(--canvas-text-scale, 1)), calc(1.55rem * var(--canvas-text-scale, 1))); font-weight: 700; line-height: 1.22; }
+.page-text-card.canvas-text-body { font-size: calc(1rem * var(--canvas-text-scale, 1)); font-weight: 450; line-height: 1.5; }
 
 .canvas-text-stack {
   min-width: 220px;
@@ -2639,6 +2639,8 @@ textarea,
   gap: 8px;
   touch-action: none;
   cursor: grab;
+  border: 0;
+  background: transparent;
 }
 
 .canvas-text-inspector.dragging,
@@ -2654,8 +2656,6 @@ textarea,
   flex: 0 0 auto;
 }
 
-.canvas-text-role-group,
-.canvas-text-font-group,
 .canvas-text-order-group,
 .canvas-text-inspector-actions {
   display: grid;
@@ -2663,9 +2663,8 @@ textarea,
   gap: 5px;
 }
 
-.canvas-text-font-group { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.canvas-text-order-group,
-.canvas-text-inspector-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.canvas-text-order-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.canvas-text-inspector-actions { grid-template-columns: 1fr; }
 
 .canvas-text-inspector button,
 .canvas-text-colour-control {
@@ -2687,6 +2686,33 @@ textarea,
   background: #f4d8b1;
 }
 
+.canvas-text-inspector .canvas-text-edit {
+  width: 100%;
+  border-color: #536f45;
+  background: #dcebd3;
+  color: #294322;
+}
+
+.canvas-text-size-control {
+  display: grid;
+  grid-template-columns: 1fr 44px auto 44px;
+  align-items: center;
+  min-height: 48px;
+  gap: 6px;
+}
+
+.canvas-text-size-control button {
+  min-width: 44px;
+  padding: 8px;
+}
+
+.canvas-text-size-control output {
+  min-width: 48px;
+  color: #4a3927;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 .canvas-text-inspector button:focus-visible,
 .canvas-text-colour-control:focus-within {
   outline: 3px solid #17120c;
@@ -2694,7 +2720,8 @@ textarea,
 }
 
 .canvas-text-colour-control {
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 10px;
 }
 
 .canvas-text-appearance-controls {
@@ -2717,16 +2744,31 @@ textarea,
 
 .canvas-text-colour-control input,
 .canvas-text-colour-row input[type="color"] {
-  width: 44px;
+  width: 36px;
   height: 36px;
-  padding: 2px;
+  padding: 0;
   border: 0;
+  border-radius: 50%;
+  outline: 0;
   background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.canvas-text-colour-control input::-webkit-color-swatch-wrapper,
+.canvas-text-colour-row input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.canvas-text-colour-control input::-webkit-color-swatch,
+.canvas-text-colour-row input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
 }
 
 .canvas-text-colour-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 112px;
+  grid-template-columns: minmax(0, 1fr) 68px;
   align-items: stretch;
   gap: 5px;
 }
@@ -2734,7 +2776,7 @@ textarea,
 .canvas-text-colour-row label,
 .canvas-text-outline-width {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr;
   align-items: center;
   min-height: 44px;
   padding: 4px 8px;
@@ -2744,6 +2786,30 @@ textarea,
   background: #fffdf7;
   color: #2f251a;
   font-weight: 700;
+}
+
+.canvas-text-colour-row label {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.canvas-text-colour-row label span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-text-inspector .canvas-text-toggle {
+  min-width: 68px;
+  padding-inline: 8px;
+  border-radius: 999px;
+}
+
+.canvas-text-colour-row label:focus-within,
+.canvas-text-colour-control:focus-within {
+  outline: 3px solid #17120c;
+  outline-offset: 2px;
 }
 
 .canvas-text-colour-row button { padding-inline: 5px; font-size: 13px; }
@@ -2983,14 +3049,14 @@ textarea,
 }
 
 .page-object.arrangeable {
-  border: 2px solid transparent;
   border-radius: 14px;
   cursor: pointer;
   touch-action: none;
 }
 
 .page-object.arrangeable.selected-object:not(.behind-sketch):not(.shape-editor) {
-  border-color: #7b674c;
+  outline: 2px solid #7b674c;
+  outline-offset: 0;
   box-shadow: 0 0 0 4px rgba(255, 253, 247, 0.88);
 }
 
@@ -3006,6 +3072,9 @@ textarea,
 }
 
 .shape-controller-overlay { position: absolute; z-index: 850 !important; pointer-events: none; }
+
+.shape-scale-horizontal { cursor: ew-resize; }
+.shape-scale-vertical { cursor: ns-resize; }
 
 .page-object.arrangeable.selected-object.behind-sketch:not(.shape-editor)::after {
   position: absolute;
@@ -3095,6 +3164,10 @@ textarea,
   transform: translateX(-50%);
 }
 
+.arrange-controller-overlay.controls-near-top .move-handle {
+  top: 4px;
+}
+
 .arrange-aspect-lock {
   position: absolute;
   top: -25px;
@@ -3129,6 +3202,42 @@ textarea,
   right: -25px;
   bottom: -25px;
   cursor: nwse-resize;
+}
+
+.arrange-controller-overlay.controls-near-right .resize-handle {
+  right: auto;
+  left: -25px;
+  cursor: nesw-resize;
+}
+
+.arrange-controller-overlay.controls-near-bottom .resize-handle {
+  top: -25px;
+  bottom: auto;
+  cursor: nesw-resize;
+}
+
+.arrange-controller-overlay.controls-near-right.controls-near-bottom .resize-handle {
+  cursor: nwse-resize;
+}
+
+.arrange-controller-overlay.adaptive-edge-controls[data-resize-horizontal="right"] .resize-handle {
+  right: 4px;
+  left: auto;
+}
+
+.arrange-controller-overlay.adaptive-edge-controls[data-resize-horizontal="left"] .resize-handle {
+  right: auto;
+  left: 4px;
+}
+
+.arrange-controller-overlay.adaptive-edge-controls[data-resize-vertical="bottom"] .resize-handle {
+  top: auto;
+  bottom: 4px;
+}
+
+.arrange-controller-overlay.adaptive-edge-controls[data-resize-vertical="top"] .resize-handle {
+  top: 4px;
+  bottom: auto;
 }
 
 .arrange-delete {
@@ -3269,6 +3378,11 @@ textarea,
   border-radius: 12px;
   background: #fffaf0;
   box-shadow: 0 4px 14px rgba(53, 39, 21, 0.18);
+}
+
+.arrange-controller-overlay.adaptive-edge-controls.controls-near-top .arrange-nudge-controls {
+  top: calc(100% + 12px);
+  bottom: auto;
 }
 
 .arrange-nudge-controls button {

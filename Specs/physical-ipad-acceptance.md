@@ -84,9 +84,13 @@ iPadOS release before a production build.
 - [ ] Backgrounding during a save produces no missing journal operations or
       partial drawing files.
 
-## My Story sharing
+## Page sharing
 
-- [ ] Picture and PDF exports match the complete split Story page, including
-      text colours, text-side background, photographs, divider, and sketch ink.
+- [ ] Journal and sketchbook picture and PDF exports match the complete paper,
+      including text, behind-sketch and above-sketch shapes, photographs, and
+      sketch ink; alerts, toolbars, and workspace chrome are absent.
+- [ ] My Story picture and PDF exports match the complete split Story page,
+      including text colours, text-side background, both shape layers,
+      photographs, divider, and sketch ink.
 - [ ] My Story Voice recordings are attached as playable files to both share
       formats; cancelling the share sheet leaves the page and recordings intact.

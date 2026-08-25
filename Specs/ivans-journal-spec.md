@@ -2,12 +2,14 @@
 
 **Status:** Revised implementation baseline  
 **Primary user:** Ivan  
-**Primary creation device:** iPad Pro with Apple Pencil  
-**Secondary device:** iPhone  
+**Current release device:** iPad Pro with Apple Pencil
+
+**Future device intent:** iPhone (not part of the current release)
 **Working product names:** Ivan's Diary (user-facing candidate), My Journal
 (internal/general name)
 
-![Interface V2 — simplified iPad workspace](./Interface%20V2.png)
+The historical Interface V2 reference image is not checked into this
+repository.
 
 The reference image establishes the intended interaction hierarchy and visual
 direction. It is not a pixel-perfect implementation contract. Accessibility,
@@ -16,8 +18,9 @@ adjustments.
 
 ## 1. Purpose
 
-Ivan's Diary is a simple iPhone and iPad journaling and sketching app
-for a person who prefers **voice and drawing over typing**.
+Ivan's Diary is currently an iPad journaling and sketching app for a person who
+prefers **voice and drawing over typing**. An iPhone experience remains future
+product intent.
 
 The app should feel like a **personal paper journal and sketchbook**,
 not a productivity tool.
@@ -142,11 +145,17 @@ Voice recording is a primary interaction.
 
 Provide a large, obvious microphone control.
 
-Basic flow:
+Intended flow:
 
 **Tap microphone → begin durable local recording → Record → Stop → finalise
-original audio locally → request Apple transcription → attach audio and
-transcript to page → synchronize in the background**
+original audio locally → optionally choose Convert to text → attach the
+transcript to the page → back up in the background**
+
+Stopping preserves the original audio and does not automatically request
+transcription. The current voice-card component does not render its
+**Convert to text** action, so user-triggered transcription from a saved
+recording remains unresolved rather than implemented. See
+[ADR 0005](../docs/adr/0005-user-triggered-transcription-preserves-audio.md).
 
 Always preserve:
 
@@ -436,11 +445,13 @@ controls, including:
 -   Undo
 -   Share, at the right end of the toolbar
 
-Share captures the journal drawing on the paper as a picture or PDF and opens
-the iOS share sheet for Messages or Mail. The picture is built from the saved
-drawing, not a screenshot, so alerts and other chrome cannot appear. Voice recordings on the page are sent as separate
-playable files. The PDF also includes a large-print **What was said** page from
-any transcripts, and pasted web links stay tappable on the page plus a
+Share captures the complete paper composition as a picture or PDF and opens
+the iOS share sheet for Messages or Mail. A controlled paper-only capture uses
+the saved drawing preview together with text, shapes, photographs and other
+visible page content; alerts, toolbars and other workspace chrome cannot
+appear. Voice recordings on the page are sent as separate playable files. The
+PDF also includes a large-print **What was said** page from any transcripts,
+and pasted web links stay tappable on the page plus a
 large-print **Web links** page. Favourite stays after the today/earlier entry label, or beside
 the sketchbook name, not in the toolbar.
 
@@ -463,6 +474,9 @@ least 44 by 44 points including their invisible hit area.
 ------------------------------------------------------------------------
 
 ## 13. iPhone UI
+
+This section records future product intent. The current release target is
+iPad-only.
 
 iPhone focuses on:
 
@@ -494,7 +508,7 @@ the MVP.
 
 -   React and TypeScript
 -   Capacitor 8 native iOS shell
--   responsive iPad and iPhone layouts
+-   responsive iPad layouts; iPhone adaptation is future work
 -   native iOS keyboard, permissions, lifecycle and sharing integration
 
 The React application provides navigation, journal composition, text,
@@ -558,8 +572,9 @@ insufficient.
 
 The device is the immediate source of truth while Ivan is working:
 
--   SQLite stores journal metadata, page objects, versioned operations and
-    sync state
+-   the current native repository atomically stores a versioned JSON envelope
+    containing the journal snapshot, checkpoint and pending operation log in
+    protected Application Support storage
 -   original audio and photographs are stored as native files referenced by
     stable asset IDs
 -   drawing operations are committed locally at stroke boundaries
@@ -568,25 +583,17 @@ The device is the immediate source of truth while Ivan is working:
 -   each mutation has an idempotent operation ID and document revision
 -   acknowledged edits survive force-close, crash and temporary network loss
 
+SQLite was a prior design direction and remains only a possible future
+replacement; it is not the current native persistence backend.
+
 ### Backend
 
-Use Supabase for:
-
--   authentication
--   PostgreSQL metadata
--   object storage
--   journal and sketchbook structure
--   page metadata
--   stroke history
--   original audio
--   photographs
--   transcripts
-
-Supabase is a synchronization and backup destination, not the authority for
-whether the current local edit is safe. Remote synchronization replays
-idempotent local operations and reports conflicts explicitly. Authentication
-must support a caregiver-assisted setup so Ivan does not face routine account
-management.
+The current backend direction is Apple iCloud/CloudKit backup and recovery,
+which supersedes the earlier Supabase proposal. Local durability remains the
+authority for whether the current edit is safe. Multi-device conflict behavior
+is unresolved and must not silently discard or overwrite edits. See
+[ADR 0004](../docs/adr/0004-cloudkit-icloud-backup-and-recovery.md) and
+[ADR 0007](../docs/adr/0007-multi-device-conflict-policy.md).
 
 ### Development Requirements
 
@@ -610,8 +617,9 @@ management.
 -   The Intel Mac is an MVP toolchain, not a long-term assumption: Xcode 27 is
     Apple-silicon-only, so future App Store maintenance will require an
     Apple-silicon Mac or compatible hosted build service.
--   Physical iPad and iPhone testing is mandatory; simulators cannot validate
-    Pencil, palm, microphone or interruption behaviour.
+-   Physical iPad testing is mandatory for the current release; simulators
+    cannot validate Pencil, palm, microphone or interruption behaviour.
+    Physical iPhone testing will be required when iPhone work enters scope.
 
 ### Version Control and Repository
 
@@ -627,7 +635,7 @@ management.
     state, local databases, generated recordings/photos, signing material,
     credentials or environment secrets.
 -   Keep `.env` files local and provide documented example variables without
-    real keys when Supabase or other services are introduced.
+    real keys if services requiring them are introduced.
 -   Before merging or pushing release-ready changes, run type checking, lint,
     automated tests and a production build. Native changes additionally require
     the applicable Xcode build and physical-device checks.
@@ -764,7 +772,7 @@ unacceptable.
 Requirements:
 
 -   continuous local save while working
--   background sync to Supabase
+-   background backup and recovery through iCloud/CloudKit
 -   tolerate temporary network loss
 -   never discard an audio recording because transcription or upload
     fails
@@ -873,10 +881,10 @@ nudge and size shortcut buttons stay hidden.
 ### Persistence
 
 -   automatic local save
--   Supabase sync
+-   iCloud/CloudKit backup and recovery
 -   recovery after interruption
 -   durable native audio files
--   local SQLite metadata and operation log
+-   atomic Application Support JSON envelope for metadata and operation log
 -   separate local-save and remote-sync status
 
 ### Favourites
@@ -919,7 +927,9 @@ The MVP is successful when Ivan can:
 3.  Draw naturally with Apple Pencil or finger.
 4.  Record himself speaking without leaving the page.
 5.  Have the original recording saved permanently.
-6.  See an Apple-generated transcript without being required to edit it.
+6.  Explicitly choose **Convert to text** and see an Apple-generated transcript
+    without being required to edit it. The current missing voice-card action
+    must be resolved before this criterion is met.
 7.  Add another page or photograph.
 8.  Close the app without manually saving.
 9.  Return later and see the page exactly as he left it.

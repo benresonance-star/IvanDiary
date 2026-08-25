@@ -706,10 +706,27 @@ export function applyDocumentOperation(
           position: operation.position,
           frame: operation.frame,
           memberIds: page.textStack?.memberIds ?? [],
+          layer: page.textStack?.layer ?? "above-sketch",
         },
         revision: page.revision + 1,
         updatedAt: operation.createdAt,
       }));
+      break;
+    case "page-text-stack-layer-update":
+      next = updatePage(snapshot, operation.pageId, (page) => {
+        if (!page.textStack) {
+          throw new OperationConflictError("Text stack does not exist.");
+        }
+        return {
+          ...page,
+          textStack: {
+            ...page.textStack,
+            layer: operation.layer,
+          },
+          revision: page.revision + 1,
+          updatedAt: operation.createdAt,
+        };
+      });
       break;
     case "page-text-stack-reorder":
       next = updatePage(snapshot, operation.pageId, (page) => {
@@ -752,6 +769,7 @@ export function applyDocumentOperation(
               position: page.textStack?.position ?? { x: 0.1, y: 0.1 },
               frame: page.textStack?.frame ?? { width: 0.8, height: 0.8 },
               memberIds,
+              layer: page.textStack?.layer ?? "above-sketch",
             },
             objects: page.objects.map((candidate) =>
               candidate.id === object.id

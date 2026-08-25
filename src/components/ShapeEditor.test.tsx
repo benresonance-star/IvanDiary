@@ -360,18 +360,44 @@ describe("ShapeEditor", () => {
     expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ shapeKind: "polygon", points: expect.arrayContaining([expect.objectContaining({ x: .725, y: .5 })]) }), shape);
   });
 
-  it("scales circles only from the palette and hides vertex controls", () => {
+  it("shows separate width and height controllers for circles in Scale mode", () => {
     const { onUpdate } = renderEditor({ ...shape, shapeKind: "circle" });
     fireEvent.click(screen.getByRole("button", { name: "Move" }));
     expect(screen.queryByRole("button", { name: "Add a vertex" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete selected vertex" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Vertex 1/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Stretch circle horizontally/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Change circle/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Scale" }));
-    expect(screen.queryByRole("button", { name: /Stretch circle/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change circle width" })).toHaveClass(
+      "shape-vertex-handle",
+      "shape-scale-horizontal",
+    );
+    expect(screen.getByRole("button", { name: "Change circle height" })).toHaveClass(
+      "shape-vertex-handle",
+      "shape-scale-vertical",
+    );
+    const widthHandle = screen.getByRole("button", { name: "Change circle width" });
+    fireEvent.pointerDown(widthHandle, {
+      button: 0,
+      pointerId: 41,
+      clientX: 440,
+      clientY: 256,
+    });
+    fireEvent.pointerMove(widthHandle, {
+      pointerId: 41,
+      clientX: 500,
+      clientY: 256,
+    });
+    fireEvent.pointerUp(widthHandle, { pointerId: 41 });
+    expect(onUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        frame: { width: 0.36, height: shape.frame!.height },
+      }),
+      expect.anything(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Make shape larger" }));
-    expect(onUpdate.mock.calls[0]?.[0].frame.width).toBeGreaterThan(shape.frame!.width);
-    expect(onUpdate.mock.calls[0]?.[0].frame.height).toBeGreaterThan(shape.frame!.height);
+    expect(onUpdate.mock.lastCall?.[0].frame.width).toBeGreaterThan(shape.frame!.width);
+    expect(onUpdate.mock.lastCall?.[0].frame.height).toBeGreaterThan(shape.frame!.height);
   });
 
   it("uses two opposite corners to resize a rectangle without converting it to a polygon", () => {

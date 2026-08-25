@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   clampPosition,
   defaultPhotoFrame,
+  inwardResizeAnchor,
+  layoutEdges,
   MAXIMUM_FRAME,
   MAXIMUM_PHOTO_FRAME,
   MAXIMUM_SHAPE_FRAME,
@@ -10,6 +12,7 @@ import {
   moveLayout,
   pageAspectFromImage,
   resizeLayout,
+  resizeLayoutFromAnchor,
   type PageLayout,
 } from "./arrangeGeometry";
 
@@ -44,6 +47,54 @@ describe("arrange geometry", () => {
     expect(
       resizeLayout(START, { width: 2, height: 2 }).frame,
     ).toEqual({ width: 0.6, height: 0.55 });
+  });
+
+  it("detects proximity to each safe canvas edge", () => {
+    expect(layoutEdges({
+      position: { x: 0.03, y: 0.04 },
+      frame: { width: 0.3, height: 0.2 },
+    })).toEqual({ top: true, right: false, bottom: false, left: true });
+    expect(layoutEdges({
+      position: { x: 0.67, y: 0.76 },
+      frame: { width: 0.3, height: 0.2 },
+    })).toEqual({ top: false, right: true, bottom: true, left: false });
+    expect(layoutEdges({
+      position: { x: 0.67, y: 0.04 },
+      frame: { width: 0.3, height: 0.2 },
+    })).toEqual({ top: true, right: true, bottom: false, left: false });
+    expect(layoutEdges({
+      position: { x: 0.03, y: 0.76 },
+      frame: { width: 0.3, height: 0.2 },
+    })).toEqual({ top: false, right: false, bottom: true, left: true });
+  });
+
+  it("chooses inward resize anchors at the right and bottom edges", () => {
+    expect(inwardResizeAnchor({
+      position: { x: 0.67, y: 0.76 },
+      frame: { width: 0.3, height: 0.2 },
+    })).toEqual({ horizontal: "left", vertical: "top" });
+    expect(inwardResizeAnchor({
+      position: { x: 0.03, y: 0.04 },
+      frame: { width: 0.3, height: 0.2 },
+    })).toEqual({ horizontal: "right", vertical: "bottom" });
+  });
+
+  it("expands left and upward while preserving right and bottom edges", () => {
+    const start = {
+      position: { x: 0.67, y: 0.76 },
+      frame: { width: 0.3, height: 0.2 },
+    };
+    const resized = resizeLayoutFromAnchor(
+      start,
+      { width: -0.1, height: -0.1 },
+      { horizontal: "left", vertical: "top" },
+    );
+    expect(resized.position.x).toBeCloseTo(0.57);
+    expect(resized.position.y).toBeCloseTo(0.66);
+    expect(resized.frame.width).toBeCloseTo(0.4);
+    expect(resized.frame.height).toBeCloseTo(0.3);
+    expect(resized.position.x + resized.frame.width).toBeCloseTo(0.97);
+    expect(resized.position.y + resized.frame.height).toBeCloseTo(0.96);
   });
 
   it("lets a 16:9 photograph cover the drawable canvas without cropping", () => {

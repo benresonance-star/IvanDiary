@@ -190,6 +190,32 @@ describe("document operations", () => {
     })).toBe(released);
   });
 
+  it("persists the text stack sketch layer independently of its members", () => {
+    const layout = applyDocumentOperation(initial, {
+      id: "stack-layout",
+      type: "page-text-stack-layout-update",
+      journalId: initial.id,
+      baseRevision: 0,
+      resultingRevision: 1,
+      createdAt: "2026-08-03T10:01:00.000Z",
+      pageId: initial.pages[0]!.id,
+      position: { x: 0.1, y: 0.15 },
+      frame: { width: 0.8, height: 0.7 },
+    });
+    const behindSketch = applyDocumentOperation(layout, {
+      id: "stack-layer",
+      type: "page-text-stack-layer-update",
+      journalId: initial.id,
+      baseRevision: 1,
+      resultingRevision: 2,
+      createdAt: "2026-08-03T10:02:00.000Z",
+      pageId: initial.pages[0]!.id,
+      layer: "behind-sketch",
+    });
+
+    expect(behindSketch.pages[0]?.textStack?.layer).toBe("behind-sketch");
+  });
+
   it("sets and restores a page background colour", () => {
     const coloured = applyDocumentOperation(initial, {
       id: "set-page-background",

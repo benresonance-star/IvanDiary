@@ -504,6 +504,7 @@ export function PageWorkspace({
           title,
           fileStem: shareFileStem(title),
           paperRect,
+          captureMode: "webview",
           documentId: page.drawingDocumentId,
           previewInsetTop: sketchPreviewInsetTop,
           ...(recordings.transcripts.length > 0
@@ -1457,6 +1458,7 @@ export function PageWorkspace({
       position: before?.position ?? { x: 0.1, y: 0.12 },
       frame: before?.frame ?? { width: 0.8, height: 0.76 },
       memberIds,
+      layer: before?.layer ?? "above-sketch",
     };
     actionTimelineRef.current.push({ kind: "text-stack", before, after });
     if (before?.memberIds.includes(objectId)) {
@@ -1948,10 +1950,11 @@ export function PageWorkspace({
 
         {textStack && stackedTexts.length > 0 ? (
           <ArrangeablePageObject
+            adaptiveEdgeControls
             arrange={tool === "arrange"}
             className="page-object canvas-text-stack"
             frame={textStack.frame}
-            layer="above-sketch"
+            layer={textStack.layer ?? "above-sketch"}
             objectLabel="text column"
             objectId="page-text-stack"
             onCommit={(change) => {
@@ -1974,6 +1977,13 @@ export function PageWorkspace({
               });
             }}
             onSelect={() => setSelectedObjectId("page-text-stack")}
+            onToggleLayer={() => void commit({
+              type: "page-text-stack-layer-update",
+              pageId: page.id,
+              layer: textStack.layer === "behind-sketch"
+                ? "above-sketch"
+                : "behind-sketch",
+            })}
             pageRef={paperRef}
             position={textStack.position}
             selected={

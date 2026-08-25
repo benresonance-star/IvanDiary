@@ -26,10 +26,14 @@ import { createPortal } from "react-dom";
 
 import type { Position, Size } from "../domain/models";
 import {
+  inwardResizeAnchor,
+  layoutEdges,
   moveLayout,
   resizeLayout,
+  resizeLayoutFromAnchor,
   type AlignmentGuides,
   type PageLayout,
+  type ResizeAnchor,
 } from "./arrangeGeometry";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -45,6 +49,7 @@ type ActiveInteraction = {
   clientX: number;
   clientY: number;
   start: PageLayout;
+  resizeAnchor?: ResizeAnchor;
 };
 
 const EMPTY_GUIDES: AlignmentGuides = {
@@ -62,6 +67,7 @@ function layoutsEqual(first: PageLayout, second: PageLayout): boolean {
 }
 
 export function ArrangeablePageObject({
+  adaptiveEdgeControls = false,
   arrange,
   canResize = true,
   aspectLock = false,
@@ -89,6 +95,7 @@ export function ArrangeablePageObject({
   showShortcuts,
   stackIndex,
 }: {
+  adaptiveEdgeControls?: boolean;
   arrange: boolean;
   canResize?: boolean;
   aspectLock?: boolean;
@@ -153,6 +160,9 @@ export function ArrangeablePageObject({
       clientX: event.clientX,
       clientY: event.clientY,
       start: layout,
+      ...(kind === "resize" && adaptiveEdgeControls
+        ? { resizeAnchor: inwardResizeAnchor(layout) }
+        : {}),
     };
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -179,20 +189,23 @@ export function ArrangeablePageObject({
       return;
     }
 
-    updateLayout(
-      resizeLayout(
-        active.start,
-        {
-          width: deltaX,
-          height: deltaY,
-        },
-        {
-          aspectRatio: aspectLock ? aspectRatio : undefined,
-          maximum: maximumFrame,
-          minimum: minimumFrame,
-        },
-      ),
-    );
+    const resizeOptions = {
+      aspectRatio: aspectLock ? aspectRatio : undefined,
+      maximum: maximumFrame,
+      minimum: minimumFrame,
+    };
+    updateLayout(active.resizeAnchor
+      ? resizeLayoutFromAnchor(
+          active.start,
+          { width: deltaX, height: deltaY },
+          active.resizeAnchor,
+          resizeOptions,
+        )
+      : resizeLayout(
+          active.start,
+          { width: deltaX, height: deltaY },
+          resizeOptions,
+        ));
   };
 
   const finishInteraction = (event: PointerEvent<HTMLButtonElement>) => {
@@ -226,11 +239,20 @@ export function ArrangeablePageObject({
   };
 
   const applyResize = (delta: Size) => {
-    const next = resizeLayout(layout, delta, {
+    const options = {
       aspectRatio: aspectLock ? aspectRatio : undefined,
       maximum: maximumFrame,
       minimum: minimumFrame,
-    });
+    };
+    const anchor = adaptiveEdgeControls
+      ? inwardResizeAnchor(layout)
+      : undefined;
+    const next = anchor
+      ? resizeLayoutFromAnchor(layout, {
+          width: anchor.horizontal === "left" ? -delta.width : delta.width,
+          height: anchor.vertical === "top" ? -delta.height : delta.height,
+        }, anchor, options)
+      : resizeLayout(layout, delta, options);
     updateLayout(next);
     onCommit({ kind: "resize", before: layout, after: next });
   };
@@ -285,8 +307,24 @@ export function ArrangeablePageObject({
     top: `${layout.position.y * 100}%`,
     width: `${layout.frame.width * 100}%`,
     height: `${layout.frame.height * 100}%`,
-    ...(stackIndex === undefined ? {} : { zIndex: 20 + stackIndex }),
+    ...(stackIndex === undefined
+      ? {}
+      : { zIndex: layer === "behind-sketch" ? 0 : 20 + stackIndex }),
   };
+  const adaptiveEdges = adaptiveEdgeControls
+    ? layoutEdges(layout)
+    : undefined;
+  const adaptiveAnchor = adaptiveEdgeControls
+    ? inwardResizeAnchor(layout)
+    : undefined;
+  const controllerClassName = [
+    "arrange-controller-overlay",
+    adaptiveEdgeControls ? "adaptive-edge-controls" : "",
+    adaptiveEdges?.top ? "controls-near-top" : "",
+    adaptiveEdges?.right ? "controls-near-right" : "",
+    adaptiveEdges?.bottom ? "controls-near-bottom" : "",
+    adaptiveEdges?.left ? "controls-near-left" : "",
+  ].filter(Boolean).join(" ");
 
   return (
     // Keyboard movement and resizing are implemented above; `group` is used
@@ -317,7 +355,12 @@ export function ArrangeablePageObject({
     >
       {children}
       {arrange && selected && portalTarget ? createPortal(
-        <div className="arrange-controller-overlay" style={style}>
+        <div
+          className={controllerClassName}
+          data-resize-horizontal={adaptiveAnchor?.horizontal}
+          data-resize-vertical={adaptiveAnchor?.vertical}
+          style={style}
+        >
           {onToggleAspectLock ? (
             <button
               aria-label={

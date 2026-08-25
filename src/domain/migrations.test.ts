@@ -60,6 +60,7 @@ describe("journal migrations", () => {
       position: { x: 0, y: 1 },
       frame: { width: 1, height: 0.01 },
       memberIds: ["structured-text", "legacy-text"],
+      layer: "above-sketch",
     });
     expect(migrated.pages[0]?.objects[0]).toEqual(
       expect.objectContaining({

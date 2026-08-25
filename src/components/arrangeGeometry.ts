@@ -37,6 +37,20 @@ export type ResizeOptions = {
   minimum?: Size;
 };
 
+export type LayoutEdges = {
+  top: boolean;
+  right: boolean;
+  bottom: boolean;
+  left: boolean;
+};
+
+export type ResizeAnchor = {
+  horizontal: "left" | "right";
+  vertical: "top" | "bottom";
+};
+
+export const ADAPTIVE_CONTROL_EDGE_MARGIN = 0.04;
+
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
 }
@@ -127,6 +141,30 @@ export function clampPosition(position: Position, frame: Size): Position {
       PAGE_LAYOUT_BOUNDS.top,
       PAGE_LAYOUT_BOUNDS.bottom - frame.height,
     ),
+  };
+}
+
+export function layoutEdges(
+  layout: PageLayout,
+  margin = ADAPTIVE_CONTROL_EDGE_MARGIN,
+): LayoutEdges {
+  return {
+    top: layout.position.y <= PAGE_LAYOUT_BOUNDS.top + margin,
+    right:
+      layout.position.x + layout.frame.width >=
+      PAGE_LAYOUT_BOUNDS.right - margin,
+    bottom:
+      layout.position.y + layout.frame.height >=
+      PAGE_LAYOUT_BOUNDS.bottom - margin,
+    left: layout.position.x <= PAGE_LAYOUT_BOUNDS.left + margin,
+  };
+}
+
+export function inwardResizeAnchor(layout: PageLayout): ResizeAnchor {
+  const edges = layoutEdges(layout);
+  return {
+    horizontal: edges.right ? "left" : "right",
+    vertical: edges.bottom ? "top" : "bottom",
   };
 }
 
@@ -233,5 +271,58 @@ export function resizeLayout(
         maximumHeight,
       ),
     },
+  };
+}
+
+export function resizeLayoutFromAnchor(
+  start: PageLayout,
+  delta: Size,
+  anchor: ResizeAnchor,
+  options: ResizeOptions = {},
+): PageLayout {
+  const fixedRight = start.position.x + start.frame.width;
+  const fixedBottom = start.position.y + start.frame.height;
+  const maximum = options.maximum ?? MAXIMUM_FRAME;
+  const availableWidth = anchor.horizontal === "left"
+    ? fixedRight - PAGE_LAYOUT_BOUNDS.left
+    : PAGE_LAYOUT_BOUNDS.right - start.position.x;
+  const availableHeight = anchor.vertical === "top"
+    ? fixedBottom - PAGE_LAYOUT_BOUNDS.top
+    : PAGE_LAYOUT_BOUNDS.bottom - start.position.y;
+  const resizeStart = {
+    position: {
+      x: anchor.horizontal === "left"
+        ? PAGE_LAYOUT_BOUNDS.left
+        : start.position.x,
+      y: anchor.vertical === "top"
+        ? PAGE_LAYOUT_BOUNDS.top
+        : start.position.y,
+    },
+    frame: start.frame,
+  };
+  const resized = resizeLayout(
+    resizeStart,
+    {
+      width: anchor.horizontal === "left" ? -delta.width : delta.width,
+      height: anchor.vertical === "top" ? -delta.height : delta.height,
+    },
+    {
+      ...options,
+      maximum: {
+        width: Math.min(maximum.width, availableWidth),
+        height: Math.min(maximum.height, availableHeight),
+      },
+    },
+  );
+  return {
+    position: {
+      x: anchor.horizontal === "left"
+        ? fixedRight - resized.frame.width
+        : start.position.x,
+      y: anchor.vertical === "top"
+        ? fixedBottom - resized.frame.height
+        : start.position.y,
+    },
+    frame: resized.frame,
   };
 }

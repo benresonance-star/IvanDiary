@@ -295,6 +295,9 @@ describe("PageWorkspace share", () => {
       exportDiary: vi.fn(async () => ({ pdfFileUri: "file:///diary.pdf", archiveFileUri: "file:///diary.tar" })),
       exportPage: vi.fn(async () => {
         expect(document.querySelector(".journal-workspace.share-capturing")).toBeTruthy();
+        expect(screen.getByText("A complete shared page")).toBeInTheDocument();
+        expect(document.querySelector('[data-object-id="shape-behind"]')).toHaveClass("behind-sketch");
+        expect(document.querySelector('[data-object-id="shape-above"]')).not.toHaveClass("behind-sketch");
         expect(
           screen.queryByRole("button", { name: "Preparing to send" }),
         ).not.toBeInTheDocument();
@@ -313,6 +316,43 @@ describe("PageWorkspace share", () => {
       page: {
         ...diaryPage(),
         objects: [
+          {
+            id: "text-1",
+            type: "text",
+            pageId: "page-1",
+            position: { x: 0.15, y: 0.12 },
+            frame: { width: 0.4, height: 0.18 },
+            createdAt: "2026-08-14T00:00:00.000Z",
+            revision: 0,
+            text: "A complete shared page",
+            textScale: 1,
+          },
+          {
+            id: "shape-behind",
+            type: "shape",
+            pageId: "page-1",
+            position: { x: 0.1, y: 0.45 },
+            frame: { width: 0.2, height: 0.2 },
+            layer: "behind-sketch",
+            createdAt: "2026-08-14T00:00:00.000Z",
+            revision: 0,
+            shapeKind: "circle",
+            fillColor: "#ffd166",
+            outlineWidth: 2,
+          },
+          {
+            id: "shape-above",
+            type: "shape",
+            pageId: "page-1",
+            position: { x: 0.65, y: 0.45 },
+            frame: { width: 0.2, height: 0.2 },
+            layer: "above-sketch",
+            createdAt: "2026-08-14T00:00:00.000Z",
+            revision: 0,
+            shapeKind: "rectangle",
+            fillColor: "#5aa9e6",
+            outlineWidth: 2,
+          },
           {
             id: "voice-1",
             type: "voice",
@@ -349,6 +389,7 @@ describe("PageWorkspace share", () => {
         format: "jpg",
         title: expect.stringMatching(/^Ivan /),
         fileStem: expect.stringMatching(/^Ivan-\d/),
+        captureMode: "webview",
         documentId: diaryPage().drawingDocumentId,
         transcripts: ["No written text for this recording"],
       }),
@@ -726,6 +767,24 @@ describe("PageWorkspace favourites", () => {
 
     fireEvent.click(screen.getByText("First words"));
     expect(screen.getByRole("complementary", { name: "Text editing commands" })).toBeVisible();
+    expect(screen.queryByRole("group", { name: "Text structure" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Text font" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit text" })).toHaveClass(
+      "canvas-text-edit",
+    );
+    expect(
+      screen.getByRole("button", { name: "Edit text" }).compareDocumentPosition(
+        screen.getByRole("button", { name: "Move to canvas" }),
+      ),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    fireEvent.click(screen.getByRole("button", {
+      name: "Move behind sketch: text column",
+    }));
+    expect(commit).toHaveBeenCalledWith({
+      type: "page-text-stack-layer-update",
+      pageId: "page-1",
+      layer: "behind-sketch",
+    });
     expect(
       screen.queryByRole("slider", { name: "Text outline thickness" }),
     ).not.toBeInTheDocument();
@@ -737,20 +796,22 @@ describe("PageWorkspace favourites", () => {
       pageId: "page-1",
       object: { ...first, color: "#123456", revision: 1 },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Title" }));
+    fireEvent.click(screen.getByRole("button", { name: "Increase text size" }));
     expect(commit).toHaveBeenCalledWith({
       type: "page-object-update",
       pageId: "page-1",
-      object: { ...first, role: "title", revision: 1 },
+      object: { ...first, textScale: 1.25, revision: 1 },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Add background" }));
+    expect(screen.queryByLabelText("Text background colour")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle text background" }));
     expect(commit).toHaveBeenCalledWith({
       type: "page-object-update",
       pageId: "page-1",
       object: { ...first, backgroundColor: "#fffaf0", revision: 1 },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add outline" }));
+    expect(screen.queryByLabelText("Text outline colour")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle text outline" }));
     expect(commit).toHaveBeenCalledWith({
       type: "page-object-update",
       pageId: "page-1",

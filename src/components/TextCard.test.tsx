@@ -109,4 +109,18 @@ describe("TextCard", () => {
 
     expect(screen.getByRole("paragraph")).toHaveStyle({ color: "#d02020" });
   });
+
+  it("applies per-block scale without changing semantic text roles", () => {
+    render(
+      <TextCard
+        object={{ ...object, role: "heading", textScale: 1.5 }}
+        onSave={vi.fn()}
+        readOnly
+      />,
+    );
+
+    expect(screen.getByRole("heading", { level: 2 })).toHaveStyle({
+      "--canvas-text-scale": "1.5",
+    });
+  });
 });
