@@ -113,6 +113,17 @@ export class BrowserJournalFilesMock implements JournalFilesPlugin {
 
   async removeToTrash(): Promise<void> {}
 
+  async resolveStoredAssets({
+    assets,
+  }: Parameters<JournalFilesPlugin["resolveStoredAssets"]>[0]) {
+    return {
+      resolvedAssetUris: Object.fromEntries(
+        assets.map((asset) => [asset.id, asset.localUri]),
+      ),
+      unresolvedAssetIds: [],
+    };
+  }
+
   async storageHealth(): Promise<{
     availableBytes?: number;
     lowStorage: boolean;

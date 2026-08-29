@@ -7,13 +7,18 @@ import {
 import { toLegacyInkDocument } from "../sketch/legacyInk";
 import type { SketchRepository } from "../sketch/types";
 import type { PenNib } from "../sketch/types";
-import type { NativeOverlayShape } from "../native/contracts";
+import type {
+  NativeOverlayShape,
+  PencilKitPassthroughRect,
+} from "../native/contracts";
 import type { OverlayRect } from "../sketch/drawingOverlayLayout";
 
 export type NativeDrawingOverlayRequest = {
   owner: symbol;
   documentId: string;
   color: string;
+  material?: "solid" | "scripture-gold";
+  goldFinish?: "smooth" | "raised" | "sparkle";
   nib?: PenNib;
   width: number;
   opacity: number;
@@ -30,6 +35,8 @@ export type NativeDrawingOverlayRequest = {
   gridDocumentWidth?: number;
   gridDocumentHeight?: number;
   overlayShapes?: NativeOverlayShape[];
+  passthroughRects?: PencilKitPassthroughRect[];
+  visualHoleRects?: PencilKitPassthroughRect[];
   sketchRepository: SketchRepository;
   onError?: (message: string) => void;
 };
@@ -56,6 +63,8 @@ const defaultOperations: NativeDrawingOverlayOperations = {
     showNativeDrawingOverlay({
       documentId: request.documentId,
       color: request.color,
+      material: request.material,
+      goldFinish: request.goldFinish,
       nib: request.nib ?? "pen",
       width: request.width,
       opacity: request.opacity,
@@ -73,10 +82,14 @@ const defaultOperations: NativeDrawingOverlayOperations = {
       gridDocumentWidth: request.gridDocumentWidth,
       gridDocumentHeight: request.gridDocumentHeight,
       overlayShapes: request.overlayShapes,
+      passthroughRects: request.passthroughRects,
+      visualHoleRects: request.visualHoleRects,
     }),
   update: (request) =>
     updateNativeDrawingOverlay({
       color: request.color,
+      material: request.material,
+      goldFinish: request.goldFinish,
       nib: request.nib ?? "pen",
       width: request.width,
       opacity: request.opacity,
@@ -93,6 +106,8 @@ const defaultOperations: NativeDrawingOverlayOperations = {
       gridDocumentWidth: request.gridDocumentWidth,
       gridDocumentHeight: request.gridDocumentHeight,
       overlayShapes: request.overlayShapes,
+      passthroughRects: request.passthroughRects,
+      visualHoleRects: request.visualHoleRects,
     }),
 };
 

@@ -128,6 +128,10 @@ export const HELP_TIPS = {
     title: "Pen colour",
     body: "Choose a drawing colour from the custom selector or your favourites.",
   },
+  "scripture-gold": {
+    title: "Scripture Gold",
+    body: "Choose an illuminated gold pen. Its saved PencilKit strokes stay editable even when animation is reduced or unavailable.",
+  },
   "pen-thickness": {
     title: "Pen thickness",
     body: "Make the pen stroke thinner or thicker.",
@@ -168,17 +172,9 @@ export const HELP_TIPS = {
     title: "Text style",
     body: "Choose a clear bundled font and text colour. You can also add or remove a coloured background and outline.",
   },
-  "canvas-text-order": {
-    title: "Reading order",
-    body: "Move a stacked text block earlier or later. This order is also used in readable exports.",
-  },
-  "canvas-text-membership": {
-    title: "Structured or free text",
-    body: "Move text to the canvas for free placement, or return it to the page’s ordered text column.",
-  },
   "arrange-move": {
     title: "Move item",
-    body: "Drag this handle to move the item around the page.",
+    body: "Drag this handle to move the item around the page. Tap it to show the accessible move and size controls; tap it again to hide them.",
   },
   "arrange-resize": {
     title: "Resize item",
@@ -189,8 +185,8 @@ export const HELP_TIPS = {
     body: "Remove this item from the page.",
   },
   "arrange-layer": {
-    title: "Place above or below",
-    body: "Choose whether this item appears in front of or behind the drawing.",
+    title: "Page item order",
+    body: "Use Bring forward and Send backward to change how items stack with each other. Drawing always stays on top.",
   },
   "arrange-proportion": {
     title: "Keep photo shape",
@@ -209,7 +205,7 @@ export const HELP_TIPS = {
   "shape-rotate": { title: "Rotate shape", body: "Use the palette’s left and right buttons to rotate the shape in small steps." },
   "shape-scale": { title: "Scale shape", body: "Use the palette’s Larger and Smaller buttons to resize the shape evenly around its centre." },
   "shape-sort": { title: "Sort shape", body: "Move the shape one step forward or backward in the canvas stack." },
-  "shape-colour": { title: "Shape style", body: "Open Style to change or remove the fill and outline, and adjust outline thickness." },
+  "shape-colour": { title: "Shape style", body: "Change fill and outline colour, and outline thickness. A shape needs a fill, an outline, or both so it stays visible." },
   "shape-add-vertex": { title: "Add a vertex", body: "Tap plus, then tap a plus marker on the edge where you want a new corner. Circles cannot have vertices." },
   "shape-delete-vertex": { title: "Delete a vertex", body: "Select a vertex, then tap minus. A shape must keep at least three vertices." },
   "shape-vertex": { title: "Move a vertex", body: "Drag this vertex to reshape the object, or select it before using the minus button." },

@@ -49,12 +49,6 @@ export function AboutSettingsPanel({
               maxLength={60}
               onBlur={() => onSaveDisplayName(displayName)}
               onChange={(event) => onDisplayNameChange(event.target.value)}
-              onClick={() => {
-                displayNameInputRef.current?.focus({ preventScroll: true });
-              }}
-              onPointerDown={(event) => {
-                event.currentTarget.setAttribute("inputmode", "text");
-              }}
               ref={displayNameInputRef}
               type="text"
               value={displayName}

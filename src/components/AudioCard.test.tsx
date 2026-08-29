@@ -24,6 +24,26 @@ const recording: VoiceRecordingObject = {
 };
 
 describe("AudioCard transcription state", () => {
+  it("plays and selects the surrounding edit-mode object", async () => {
+    const audio = new BrowserJournalAudioMock();
+    const play = vi.spyOn(audio, "play");
+    const selectObject = vi.fn();
+    render(
+      <div className="page-object arrangeable" onClick={selectObject}>
+        <AudioCard audio={audio} recording={recording} />
+      </div>,
+    );
+
+    const playButton = screen.getByRole("button", { name: "Play voice recording" });
+    expect(playButton).toBeEnabled();
+    fireEvent.click(playButton);
+
+    await waitFor(() => expect(play).toHaveBeenCalledWith({
+      assetUri: recording.asset.localUri,
+    }));
+    expect(selectObject).toHaveBeenCalledOnce();
+  });
+
   it("returns to play when native playback finishes", async () => {
     let playbackEnded: ((event: { assetUri: string }) => void) | undefined;
     const audio = new BrowserJournalAudioMock();

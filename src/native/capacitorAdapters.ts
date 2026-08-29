@@ -229,6 +229,18 @@ export class CapacitorJournalFilesAdapter implements JournalFilesPlugin {
     await nativeCall("files", () => this.plugin.removeToTrash(options));
   }
 
+  async resolveStoredAssets(
+    options: Parameters<JournalFilesPlugin["resolveStoredAssets"]>[0],
+  ) {
+    const result = await nativeCall("files", () =>
+      this.plugin.resolveStoredAssets(options),
+    );
+    return {
+      resolvedAssetUris: result.resolvedAssetUris ?? {},
+      unresolvedAssetIds: result.unresolvedAssetIds ?? [],
+    };
+  }
+
   async storageHealth() {
     const result = await nativeCall("files", () => this.plugin.storageHealth());
     return {

@@ -1,6 +1,8 @@
 import { CloudDownload, History } from "lucide-react";
+import { useState } from "react";
 
 import type { BackupHistoryEntry } from "../domain/models";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 export function NewDeviceRecoveryDialog({
   busy,
@@ -17,7 +19,10 @@ export function NewDeviceRecoveryDialog({
   onRestoreLatest: () => void;
   onStartNew: () => void;
 }) {
+  const [confirmingNewDiary, setConfirmingNewDiary] = useState(false);
+
   return (
+    <>
     <div className="dialog-backdrop new-device-recovery-backdrop">
       <section aria-labelledby="new-device-recovery-heading" aria-modal="true" className="new-device-recovery-dialog" role="dialog">
         <CloudDownload aria-hidden="true" />
@@ -29,7 +34,7 @@ export function NewDeviceRecoveryDialog({
             <CloudDownload aria-hidden="true" />
             {busy ? "Restoring…" : "Restore latest diary"}
           </button>
-          <button disabled={busy} onClick={onStartNew} type="button">Start a new diary</button>
+          <button disabled={busy} onClick={() => setConfirmingNewDiary(true)} type="button">Start a new diary</button>
         </div>
         {entries.length ? (
           <div className="new-device-history">
@@ -48,5 +53,21 @@ export function NewDeviceRecoveryDialog({
         ) : null}
       </section>
     </div>
+    {confirmingNewDiary ? (
+      <ConfirmDialog
+        cancelLabel="Go back"
+        confirmClassName="confirm-delete"
+        confirmLabel="Start new diary"
+        onCancel={() => setConfirmingNewDiary(false)}
+        onConfirm={() => {
+          setConfirmingNewDiary(false);
+          onStartNew();
+        }}
+        title="WARNING! Start a new diary?"
+      >
+        <p>Your older diary will not be restored to this iPad. You can still recover it from iCloud backup and History.</p>
+      </ConfirmDialog>
+    ) : null}
+    </>
   );
 }

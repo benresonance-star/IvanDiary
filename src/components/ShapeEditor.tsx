@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Copy, GripHorizontal, Layers3, Magnet, Minus, Move, Palette, Plus, RotateCcw, RotateCw, Scaling, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Copy, Layers3, Magnet, Minus, Move, Plus, RotateCcw, RotateCw, Scaling, Sparkles, Trash2 } from "lucide-react";
 import {
   useLayoutEffect,
   useEffect,
@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 
 import type { ShapeObject } from "../domain/models";
 import { PAGE_LAYOUT_BOUNDS, clampPosition } from "./arrangeGeometry";
+import { ARRANGEABLE_LAYOUT_EVENT } from "./ArrangeablePageObject";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ShapeCard } from "./ShapeCard";
 import { shapeBoundaryVertices, shapeVertices } from "./shapeGeometry";
@@ -32,25 +33,15 @@ type DragState = {
   scaleAxis?: "horizontal" | "vertical";
 };
 type PalettePosition = { left: number; top: number };
-type PaletteDragState = {
-  frame?: number;
-  latest: PalettePosition;
-  maxLeft: number;
-  maxTop: number;
-  minLeft: number;
-  minTop: number;
-  offsetX: number;
-  offsetY: number;
-  origin: PalettePosition;
-  pointerId: number;
-};
-
-let retainedPalettePosition: PalettePosition | undefined;
+type PaletteSide = "left" | "right";
 let retainedSnapEnabled = true;
 let retainedShapeMode: ShapeMode = "move";
-type InspectorSection = "adjust" | "style";
-let retainedInspectorSection: InspectorSection = "adjust";
+type InspectorSection = "adjust" | "look";
 const SNAP_DISTANCE_PX = 20;
+const PALETTE_MARGIN = 12;
+const PANEL_GAP = 7;
+const PANEL_WIDTH = 300;
+const PANEL_MAX_HEIGHT = 390;
 
 const normalizedRotation = (degrees: number) => ((degrees % 360) + 360) % 360;
 const distance = (x: number, y: number, centreX: number, centreY: number) => Math.hypot(x - centreX, y - centreY);
@@ -116,13 +107,22 @@ function shapeStyle(shape: ShapeObject, stackIndex: number): CSSProperties {
     top: `${shape.position.y * 100}%`,
     transform: `rotate(${shape.rotationDegrees ?? 0}deg)`,
     width: `${frame.width * 100}%`,
-    zIndex: shape.layer === "behind-sketch" ? 0 : 20 + stackIndex,
+    zIndex: 1 + stackIndex,
   };
 }
 
 function editorNodePoints(shape: ShapeObject) {
   if (shape.shapeKind === "circle") return [{ x: 0.96, y: 0.5 }];
   return shape.shapeKind === "rectangle" ? shapeVertices(shape) : shapeBoundaryVertices(shape);
+}
+
+function canTurnOffShapeSurface(
+  current: Pick<ShapeObject, "fillColor" | "outlineColor">,
+  surface: "fill" | "outline",
+): boolean {
+  return surface === "fill"
+    ? Boolean(current.outlineColor)
+    : Boolean(current.fillColor);
 }
 
 function canvasNodePoints(shape: ShapeObject, page: DOMRect) {
@@ -172,12 +172,15 @@ export function ShapeEditor({
 }) {
   const [modeState, setModeState] = useState<{ value: ShapeMode }>({ value: retainedShapeMode });
   const [draft, setDraft] = useState<ShapeObject>();
-  const [inspectorSection, setInspectorSection] = useState<InspectorSection>(retainedInspectorSection);
+  const [inspectorSection, setInspectorSection] = useState<InspectorSection>();
   const [addingVertex, setAddingVertex] = useState(false);
   const [selectedVertex, setSelectedVertex] = useState<number>();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [controllerTarget, setControllerTarget] = useState<Element | null>(null);
-  const [palettePosition, setPalettePosition] = useState<CSSProperties>(retainedPalettePosition ?? { left: 12, top: 12 });
+  const [palettePosition, setPalettePosition] = useState<PalettePosition>({ left: 12, top: 84 });
+  const [panelPosition, setPanelPosition] = useState<PalettePosition>({ left: 139, top: 84 });
+  const [panelMaxHeight, setPanelMaxHeight] = useState(PANEL_MAX_HEIGHT);
+  const [paletteSide, setPaletteSide] = useState<PaletteSide>("right");
   const [announcement, setAnnouncement] = useState("");
   const [, setPaletteRevision] = useState(0);
   const draftRef = useRef<ShapeObject | undefined>(undefined);
@@ -185,23 +188,20 @@ export function ShapeEditor({
   const dragRef = useRef<DragState | undefined>(undefined);
   const vertexRef = useRef<{ pointerId: number; index: number; start: ShapeObject } | undefined>(undefined);
   const objectRef = useRef<HTMLDivElement>(null);
-  const paletteRef = useRef<HTMLDivElement>(null);
-  const paletteDragRef = useRef<PaletteDragState | undefined>(undefined);
-  const positionPaletteRef = useRef<() => void>(() => undefined);
+  const primaryRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const animationFrameRef = useRef<number | undefined>(undefined);
+  const panelAnimationFrameRef = useRef<number | undefined>(undefined);
+  const rememberedFillColourRef = useRef(shape.fillColor ?? "#d9a441");
+  const rememberedOutlineColourRef = useRef(shape.outlineColor ?? "#3f3528");
   const current = draft ?? shape;
-  const activePalettePlaced = Boolean(retainedPalettePosition);
-  const activePalettePosition = retainedPalettePosition ?? palettePosition;
   const frame = current.frame ?? { width: 0.24, height: 0.24 };
   const vertices = current.shapeKind === "circle" ? [] : current.shapeKind === "rectangle" ? shapeVertices(current) : shapeBoundaryVertices(current);
   const snapEnabled = retainedSnapEnabled;
   const activeMode = selected ? retainedShapeMode : modeState.value;
-  const activeInspectorSection = selected ? retainedInspectorSection : inspectorSection;
-  const activeStyleOpen = activeInspectorSection === "style";
 
   const toggleInspectorSection = (section: InspectorSection) => {
-    retainedInspectorSection = section;
-    setInspectorSection(retainedInspectorSection);
-    setPaletteRevision((revision) => revision + 1);
+    setInspectorSection((active) => active === section ? undefined : section);
   };
 
   const nearestSnapPoint = (x: number, y: number, page: DOMRect) => {
@@ -243,157 +243,218 @@ export function ShapeEditor({
   }, [shape]);
 
   useEffect(() => {
+    if (shape.fillColor) rememberedFillColourRef.current = shape.fillColor;
+    if (shape.outlineColor) rememberedOutlineColourRef.current = shape.outlineColor;
+  }, [shape.fillColor, shape.id, shape.outlineColor]);
+
+  useEffect(() => {
+    if (!selected) setInspectorSection(undefined);
+  }, [selected]);
+
+  useEffect(() => {
     setControllerTarget(pageRef.current?.isConnected ? pageRef.current : typeof document !== "undefined" ? document.body : null);
   }, [pageRef]);
 
   useLayoutEffect(() => {
-    positionPaletteRef.current = () => {
-      const palette = paletteRef.current?.getBoundingClientRect();
-      if (!palette) return;
-      const viewport = globalThis.visualViewport;
-      const margin = 12;
-      if (retainedPalettePosition) {
-        const viewportLeft = (viewport?.offsetLeft ?? 0) + margin;
-        const viewportTop = (viewport?.offsetTop ?? 0) + margin;
-        const viewportRight = (viewport?.offsetLeft ?? 0) + (viewport?.width ?? globalThis.innerWidth) - margin;
-        const viewportBottom = (viewport?.offsetTop ?? 0) + (viewport?.height ?? globalThis.innerHeight) - margin;
-        const clamped = {
-          left: Math.max(viewportLeft, Math.min(retainedPalettePosition.left, viewportRight - palette.width)),
-          top: Math.max(viewportTop, Math.min(retainedPalettePosition.top, viewportBottom - palette.height)),
-        };
-        retainedPalettePosition = clamped;
-        setPalettePosition((previous) => Number(previous.left) === clamped.left && Number(previous.top) === clamped.top ? previous : clamped);
-        return;
-      }
+    if (!selected || !arrange) return;
+    const anchorElement = objectRef.current;
+    const canvasElement = anchorElement?.closest<HTMLElement>(".paper-page") ?? pageRef.current;
+    const place = () => {
+      const primary = primaryRef.current?.getBoundingClientRect();
       const object = objectRef.current?.getBoundingClientRect();
-      const page = pageRef.current?.getBoundingClientRect();
-      if (!object || !page) return;
-      const leftBound = Math.max(page.left, viewport?.offsetLeft ?? 0) + margin;
-      const topBound = Math.max(page.top, viewport?.offsetTop ?? 0) + margin;
-      const rightBound = Math.min(page.right, (viewport?.offsetLeft ?? 0) + (viewport?.width ?? globalThis.innerWidth)) - margin;
-      const bottomBound = Math.min(page.bottom, (viewport?.offsetTop ?? 0) + (viewport?.height ?? globalThis.innerHeight)) - margin;
-      const candidates = [
-        { left: object.right + margin, top: object.top },
-        { left: object.left - palette.width - margin, top: object.top },
-        { left: object.left, top: object.bottom + margin },
-        { left: object.left, top: object.top - palette.height - margin },
-      ];
-      const fitting = candidates.find((candidate) => candidate.left >= leftBound && candidate.left + palette.width <= rightBound && candidate.top >= topBound && candidate.top + palette.height <= bottomBound);
-      const preferred = fitting ?? candidates[object.left + object.width / 2 < (leftBound + rightBound) / 2 ? 0 : 1]!;
-      const next = {
-        left: Math.max(leftBound, Math.min(preferred.left, rightBound - palette.width)),
-        top: Math.max(topBound, Math.min(preferred.top, bottomBound - palette.height)),
-      };
-      setPalettePosition((previous) => Number(previous.left) === next.left && Number(previous.top) === next.top ? previous : next);
+      const canvas = canvasElement?.getBoundingClientRect();
+      if (!primary || !object || !canvas) return;
+
+      const viewport = globalThis.visualViewport;
+      const viewportLeft = viewport?.offsetLeft ?? 0;
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const visibleLeft = Math.max(canvas.left, viewportLeft) + PALETTE_MARGIN;
+      const visibleTop = Math.max(canvas.top, viewportTop) + PALETTE_MARGIN;
+      const visibleRight = Math.min(
+        canvas.right,
+        viewportLeft + (viewport?.width ?? globalThis.innerWidth),
+      ) - PALETTE_MARGIN;
+      const visibleBottom = Math.min(
+        canvas.bottom,
+        viewportTop + (viewport?.height ?? globalThis.innerHeight),
+      ) - PALETTE_MARGIN;
+      const availableWidth = Math.max(0, visibleRight - visibleLeft);
+      const rightLeft = object.right + PALETTE_MARGIN;
+      const leftLeft = object.left - primary.width - PALETTE_MARGIN;
+      const anticipatedPanelWidth = Math.min(
+        PANEL_WIDTH,
+        Math.max(0, availableWidth - primary.width - PANEL_GAP),
+      );
+      const rightFits =
+        rightLeft + primary.width + PANEL_GAP + anticipatedPanelWidth <= visibleRight;
+      const leftFits =
+        leftLeft - PANEL_GAP - anticipatedPanelWidth >= visibleLeft;
+      const preferredSide: PaletteSide = object.left + object.width / 2 <
+        visibleLeft + availableWidth / 2 ? "right" : "left";
+      let nextSide: PaletteSide;
+      if (preferredSide === "right") {
+        nextSide = rightFits ? "right" : leftFits ? "left" : "right";
+      } else {
+        nextSide = leftFits ? "left" : rightFits ? "right" : "left";
+      }
+
+      const requestedRailLeft = nextSide === "right" ? rightLeft : leftLeft;
+      const railLeft = Math.max(
+        visibleLeft,
+        Math.min(requestedRailLeft, visibleRight - primary.width),
+      );
+      const railTop = Math.max(
+        visibleTop,
+        Math.min(object.top, visibleBottom - primary.height),
+      );
+      const nextPalettePosition = { left: railLeft, top: railTop };
+      setPaletteSide(nextSide);
+      setPalettePosition((previous) =>
+        previous.left === nextPalettePosition.left && previous.top === nextPalettePosition.top
+          ? previous
+          : nextPalettePosition);
     };
-  });
+    const schedulePlace = () => {
+      if (animationFrameRef.current !== undefined) return;
+      animationFrameRef.current = globalThis.requestAnimationFrame(() => {
+        animationFrameRef.current = undefined;
+        place();
+      });
+    };
+
+    place();
+    globalThis.addEventListener("resize", schedulePlace);
+    globalThis.addEventListener("scroll", schedulePlace, true);
+    globalThis.visualViewport?.addEventListener("resize", schedulePlace);
+    globalThis.visualViewport?.addEventListener("scroll", schedulePlace);
+    anchorElement?.addEventListener(ARRANGEABLE_LAYOUT_EVENT, place);
+    const observer = typeof ResizeObserver === "undefined"
+      ? undefined
+      : new ResizeObserver(schedulePlace);
+    for (const element of [
+      primaryRef.current,
+      objectRef.current,
+      canvasElement,
+    ]) {
+      if (element) observer?.observe(element);
+    }
+    return () => {
+      globalThis.removeEventListener("resize", schedulePlace);
+      globalThis.removeEventListener("scroll", schedulePlace, true);
+      globalThis.visualViewport?.removeEventListener("resize", schedulePlace);
+      globalThis.visualViewport?.removeEventListener("scroll", schedulePlace);
+      anchorElement?.removeEventListener(ARRANGEABLE_LAYOUT_EVENT, place);
+      observer?.disconnect();
+      if (animationFrameRef.current !== undefined) {
+        globalThis.cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = undefined;
+      }
+    };
+  }, [
+    arrange,
+    current.frame,
+    current.position,
+    current.rotationDegrees,
+    pageRef,
+    selected,
+  ]);
 
   useLayoutEffect(() => {
-    if (!selected || !arrange) return;
-    positionPaletteRef.current();
-  }, [activeInspectorSection, activePalettePlaced, arrange, current.frame, current.position, current.rotationDegrees, pageRef, selected]);
+    if (!selected || !arrange || !inspectorSection) return;
+    const panel = panelRef.current;
+    const canvasElement = objectRef.current?.closest<HTMLElement>(".paper-page") ?? pageRef.current;
+    const place = () => {
+      const panelBounds = panel?.getBoundingClientRect();
+      const primary = primaryRef.current?.getBoundingClientRect();
+      const canvas = canvasElement?.getBoundingClientRect();
+      if (!panelBounds || !primary || !canvas) return;
 
-  useEffect(() => {
-    if (!selected || !arrange) return;
-    const position = () => positionPaletteRef.current();
-    globalThis.addEventListener("resize", position);
-    globalThis.addEventListener("scroll", position, true);
-    globalThis.visualViewport?.addEventListener("resize", position);
-    globalThis.visualViewport?.addEventListener("scroll", position);
-    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(position);
-    if (paletteRef.current) observer?.observe(paletteRef.current);
+      const viewport = globalThis.visualViewport;
+      const viewportLeft = viewport?.offsetLeft ?? 0;
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const visibleLeft = Math.max(canvas.left, viewportLeft) + PALETTE_MARGIN;
+      const visibleTop = Math.max(canvas.top, viewportTop) + PALETTE_MARGIN;
+      const visibleRight = Math.min(
+        canvas.right,
+        viewportLeft + (viewport?.width ?? globalThis.innerWidth),
+      ) - PALETTE_MARGIN;
+      const visibleBottom = Math.min(
+        canvas.bottom,
+        viewportTop + (viewport?.height ?? globalThis.innerHeight),
+      ) - PALETTE_MARGIN;
+      const panelWidth = Math.min(panelBounds.width, Math.max(0, visibleRight - visibleLeft));
+      const preferredPanelLeft = paletteSide === "right"
+        ? primary.right + PANEL_GAP
+        : primary.left - panelWidth - PANEL_GAP;
+      const alternatePanelLeft = paletteSide === "right"
+        ? primary.left - panelWidth - PANEL_GAP
+        : primary.right + PANEL_GAP;
+      const panelFits = (left: number) =>
+        left >= visibleLeft && left + panelWidth <= visibleRight;
+      const panelLeft = panelFits(preferredPanelLeft)
+        ? preferredPanelLeft
+        : panelFits(alternatePanelLeft)
+          ? alternatePanelLeft
+          : Math.max(visibleLeft, Math.min(preferredPanelLeft, visibleRight - panelWidth));
+      const availableHeight = Math.max(0, visibleBottom - visibleTop);
+      const maxAllowed = Math.min(PANEL_MAX_HEIGHT, availableHeight);
+      const panelHeight = Math.min(
+        maxAllowed,
+        Math.max(panelBounds.height, panel?.scrollHeight ?? 0),
+      );
+      const panelTop = Math.max(
+        visibleTop,
+        Math.min(primary.top, visibleBottom - panelHeight),
+      );
+      const nextPanelPosition = { left: panelLeft, top: panelTop };
+      setPanelPosition((previous) =>
+        previous.left === nextPanelPosition.left && previous.top === nextPanelPosition.top
+          ? previous
+          : nextPanelPosition);
+      setPanelMaxHeight((previous) => previous === maxAllowed ? previous : maxAllowed);
+    };
+    const schedulePlace = () => {
+      if (panelAnimationFrameRef.current !== undefined) return;
+      panelAnimationFrameRef.current = globalThis.requestAnimationFrame(() => {
+        panelAnimationFrameRef.current = undefined;
+        place();
+      });
+    };
+
+    place();
+    globalThis.addEventListener("resize", schedulePlace);
+    globalThis.addEventListener("scroll", schedulePlace, true);
+    globalThis.visualViewport?.addEventListener("resize", schedulePlace);
+    globalThis.visualViewport?.addEventListener("scroll", schedulePlace);
+    const observer = typeof ResizeObserver === "undefined"
+      ? undefined
+      : new ResizeObserver(schedulePlace);
+    if (panel) observer?.observe(panel);
+    if (primaryRef.current) observer?.observe(primaryRef.current);
+    if (canvasElement) observer?.observe(canvasElement);
     return () => {
-      globalThis.removeEventListener("resize", position);
-      globalThis.removeEventListener("scroll", position, true);
-      globalThis.visualViewport?.removeEventListener("resize", position);
-      globalThis.visualViewport?.removeEventListener("scroll", position);
+      globalThis.removeEventListener("resize", schedulePlace);
+      globalThis.removeEventListener("scroll", schedulePlace, true);
+      globalThis.visualViewport?.removeEventListener("resize", schedulePlace);
+      globalThis.visualViewport?.removeEventListener("scroll", schedulePlace);
       observer?.disconnect();
+      if (panelAnimationFrameRef.current !== undefined) {
+        globalThis.cancelAnimationFrame(panelAnimationFrameRef.current);
+        panelAnimationFrameRef.current = undefined;
+      }
     };
-  }, [arrange, selected]);
-
-  const movePalette = (left: number, top: number) => {
-    const palette = paletteRef.current?.getBoundingClientRect();
-    const viewport = globalThis.visualViewport;
-    if (!palette) return;
-    const margin = 12;
-    const minLeft = (viewport?.offsetLeft ?? 0) + margin;
-    const minTop = (viewport?.offsetTop ?? 0) + margin;
-    const maxLeft = (viewport?.offsetLeft ?? 0) + (viewport?.width ?? globalThis.innerWidth) - palette.width - margin;
-    const maxTop = (viewport?.offsetTop ?? 0) + (viewport?.height ?? globalThis.innerHeight) - palette.height - margin;
-    const next = { left: Math.max(minLeft, Math.min(left, maxLeft)), top: Math.max(minTop, Math.min(top, maxTop)) };
-    retainedPalettePosition = next;
-    setPalettePosition(next);
-  };
-
-  const beginPaletteMove = (event: PointerEvent<HTMLButtonElement>) => {
-    const palette = paletteRef.current?.getBoundingClientRect();
-    if (!palette || event.button !== 0) return;
-    event.preventDefault();
-    const viewport = globalThis.visualViewport;
-    const margin = 12;
-    const origin = { left: palette.left, top: palette.top };
-    paletteDragRef.current = {
-      latest: origin,
-      maxLeft: (viewport?.offsetLeft ?? 0) + (viewport?.width ?? globalThis.innerWidth) - palette.width - margin,
-      maxTop: (viewport?.offsetTop ?? 0) + (viewport?.height ?? globalThis.innerHeight) - palette.height - margin,
-      minLeft: (viewport?.offsetLeft ?? 0) + margin,
-      minTop: (viewport?.offsetTop ?? 0) + margin,
-      offsetX: event.clientX - palette.left,
-      offsetY: event.clientY - palette.top,
-      origin,
-      pointerId: event.pointerId,
-    };
-    paletteRef.current?.classList.add("dragging");
-    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Continue while pointer events arrive. */ }
-  };
-
-  const updatePaletteMove = (event: PointerEvent<HTMLButtonElement>) => {
-    const active = paletteDragRef.current;
-    if (!active || active.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    active.latest = {
-      left: Math.max(active.minLeft, Math.min(event.clientX - active.offsetX, active.maxLeft)),
-      top: Math.max(active.minTop, Math.min(event.clientY - active.offsetY, active.maxTop)),
-    };
-    if (active.frame !== undefined) return;
-    active.frame = requestAnimationFrame(() => {
-      active.frame = undefined;
-      const palette = paletteRef.current;
-      if (!palette || paletteDragRef.current !== active) return;
-      palette.style.transform = `translate3d(${active.latest.left - active.origin.left}px, ${active.latest.top - active.origin.top}px, 0)`;
-    });
-  };
-
-  const finishPaletteMove = (event: PointerEvent<HTMLButtonElement>) => {
-    const active = paletteDragRef.current;
-    if (!active || active.pointerId !== event.pointerId) return;
-    if (active.frame !== undefined) cancelAnimationFrame(active.frame);
-    paletteDragRef.current = undefined;
-    if (paletteRef.current) {
-      paletteRef.current.style.transform = "";
-      paletteRef.current.classList.remove("dragging");
-    }
-    retainedPalettePosition = active.latest;
-    setPalettePosition(active.latest);
-  };
-
-  const cancelPaletteMove = (event: PointerEvent<HTMLButtonElement>) => {
-    const active = paletteDragRef.current;
-    if (!active || active.pointerId !== event.pointerId) return;
-    if (active.frame !== undefined) cancelAnimationFrame(active.frame);
-    paletteDragRef.current = undefined;
-    if (paletteRef.current) {
-      paletteRef.current.style.transform = "";
-      paletteRef.current.classList.remove("dragging");
-    }
-  };
-
-  const keyboardPaletteMove = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (!event.key.startsWith("Arrow")) return;
-    event.preventDefault();
-    const step = event.shiftKey ? 40 : 10;
-    movePalette((Number(activePalettePosition.left) || 0) + (event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0), (Number(activePalettePosition.top) || 0) + (event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0));
-  };
+  }, [
+    activeMode,
+    addingVertex,
+    arrange,
+    current.fillColor,
+    current.outlineColor,
+    current.shapeKind,
+    inspectorSection,
+    pageRef,
+    paletteSide,
+    selected,
+  ]);
 
   const commit = (next: ShapeObject, message: string) => {
     const committed = { ...next, revision: Math.max(shape.revision, next.revision) + 1 };
@@ -637,29 +698,25 @@ export function ShapeEditor({
   const activeModeLabel = activeMode[0]!.toUpperCase() + activeMode.slice(1);
 
   const palette = selected && arrange && typeof document !== "undefined" ? createPortal(
-    <div aria-label="Shape editing commands" className="shape-edit-palette" ref={paletteRef} role="toolbar" style={activePalettePosition}>
-      <header className="shape-inspector-heading">
-        <button
-          aria-label="Move shape editing palette"
-          className="shape-palette-heading-drag"
-          data-help-topic="shape-palette-move"
-          onKeyDown={keyboardPaletteMove}
-          onLostPointerCapture={finishPaletteMove}
-          onPointerCancel={cancelPaletteMove}
-          onPointerDown={beginPaletteMove}
-          onPointerMove={updatePaletteMove}
-          onPointerUp={finishPaletteMove}
-          type="button"
-        >
-          <span>{current.shapeKind.replace("freeform", "Freeform")}</span>
-          <GripHorizontal aria-hidden="true" />
-        </button>
-      </header>
-      <div aria-label="Shape editing section" className="shape-inspector-tabs" role="group">
-        <button aria-pressed={!activeStyleOpen} data-help-topic="shape-adjust" onClick={() => toggleInspectorSection("adjust")} type="button"><Move aria-hidden="true" />Adjust</button>
-        <button aria-pressed={activeStyleOpen} data-help-topic="shape-colour" onClick={() => toggleInspectorSection("style")} type="button"><Palette aria-hidden="true" />Style</button>
+    <aside
+      aria-label="Shape editing commands"
+      className={`shape-edit-palette side-${paletteSide}`}
+      style={palettePosition as CSSProperties}
+    >
+      <div aria-label="Shape editing toolbar" className="shape-inspector-tabs" ref={primaryRef} role="toolbar">
+        <button aria-controls="shape-adjust-options" aria-expanded={inspectorSection === "adjust"} aria-pressed={inspectorSection === "adjust"} data-help-topic="shape-adjust" onClick={() => toggleInspectorSection("adjust")} type="button"><Move aria-hidden="true" /><span>Adjust</span></button>
+        <button aria-controls="shape-look-options" aria-expanded={inspectorSection === "look"} aria-pressed={inspectorSection === "look"} data-help-topic="shape-colour" onClick={() => toggleInspectorSection("look")} type="button"><Sparkles aria-hidden="true" /><span>Look</span></button>
+        <button aria-label="Make a copy" data-help-topic="shape-duplicate" onClick={() => { retainedShapeMode = "move"; setModeState({ value: "move" }); onDuplicate(); }} type="button"><Copy aria-hidden="true" /><span>Copy</span></button>
+        <button aria-label="Delete" className="shape-edit-delete" data-help-topic="shape-delete" onClick={() => setDeleteOpen(true)} type="button"><Trash2 aria-hidden="true" /><span>Delete</span></button>
       </div>
-      {!activeStyleOpen ? <>
+      {inspectorSection ? <section
+        aria-label={inspectorSection === "look" ? "Shape look options" : "Shape adjust options"}
+        className="shape-inspector-panel"
+        id={inspectorSection === "look" ? "shape-look-options" : "shape-adjust-options"}
+        ref={panelRef}
+        style={{ ...panelPosition, maxHeight: panelMaxHeight }}
+      >
+        {inspectorSection === "adjust" ? <>
         <div className="shape-adjust-workspace">
           <div aria-label="Shape adjustment mode" className="shape-edit-mode-group" role="group">{(["move", "rotate", "scale", "sort"] as const).map((value) => {
             const Icon = value === "move" ? Move : value === "rotate" ? RotateCw : value === "scale" ? Scaling : Layers3;
@@ -689,18 +746,32 @@ export function ShapeEditor({
         </div>
         {current.shapeKind !== "circle" && current.shapeKind !== "rectangle" ? <div className="shape-context-section"><strong>Points</strong><div className="shape-point-actions"><button aria-label="Add a vertex" aria-pressed={addingVertex} data-help-topic="shape-add-vertex" onClick={() => setAddingVertex((adding) => !adding)} type="button"><Plus aria-hidden="true" />Add</button><button aria-label="Delete selected vertex" data-help-topic="shape-delete-vertex" disabled={selectedVertex === undefined || vertices.length <= 3} onClick={removeVertex} type="button"><Minus aria-hidden="true" />Remove</button></div></div> : null}
       </> : <div className="shape-colour-controls">
-        <div className="shape-colour-row">
-          <label>Fill <input aria-label="Shape fill colour" data-help-topic="shape-colour" disabled={!current.fillColor} onChange={(event) => commit({ ...current, fillColor: event.target.value }, "Fill colour changed")} type="color" value={current.fillColor ?? "#d9a441"} /></label>
-          <button aria-pressed={Boolean(current.fillColor)} data-help-topic="shape-colour" onClick={() => commit({ ...current, fillColor: current.fillColor ? undefined : "#d9a441" }, "Shape fill changed")} type="button">{current.fillColor ? "No Fill" : "Add Fill"}</button>
+        <div aria-label="Shape fill" className="shape-colour-row" role="group">
+          <span>Fill</span>
+          <label className="setting-switch">
+            <input aria-label="Shape fill" checked={Boolean(current.fillColor)} data-help-topic="shape-colour" disabled={Boolean(current.fillColor) && !canTurnOffShapeSurface(current, "fill")} onChange={(event) => {
+              if (!event.target.checked && !canTurnOffShapeSurface(current, "fill")) return;
+              commit({ ...current, fillColor: event.target.checked ? rememberedFillColourRef.current : undefined }, "Shape fill changed");
+            }} type="checkbox" />
+            <span aria-hidden="true" className="setting-switch-track"><span /></span>
+          </label>
+          {current.fillColor ? <input aria-label="Shape fill colour" data-help-topic="shape-colour" onChange={(event) => { rememberedFillColourRef.current = event.target.value; commit({ ...current, fillColor: event.target.value }, "Fill colour changed"); }} type="color" value={current.fillColor} /> : null}
         </div>
-        <div className="shape-colour-row">
-          <label>Outline <input aria-label="Shape outline colour" data-help-topic="shape-colour" disabled={!current.outlineColor} onChange={(event) => commit({ ...current, outlineColor: event.target.value }, "Outline colour changed")} type="color" value={current.outlineColor ?? "#3f3528"} /></label>
-          <button aria-pressed={Boolean(current.outlineColor)} data-help-topic="shape-colour" onClick={() => commit({ ...current, outlineColor: current.outlineColor ? undefined : "#3f3528" }, "Shape outline changed")} type="button">{current.outlineColor ? "No Outline" : "Add Outline"}</button>
+        <div aria-label="Shape outline" className="shape-colour-row" role="group">
+          <span>Outline</span>
+          <label className="setting-switch">
+            <input aria-label="Shape outline" checked={Boolean(current.outlineColor)} data-help-topic="shape-colour" disabled={Boolean(current.outlineColor) && !canTurnOffShapeSurface(current, "outline")} onChange={(event) => {
+              if (!event.target.checked && !canTurnOffShapeSurface(current, "outline")) return;
+              commit({ ...current, outlineColor: event.target.checked ? rememberedOutlineColourRef.current : undefined }, "Shape outline changed");
+            }} type="checkbox" />
+            <span aria-hidden="true" className="setting-switch-track"><span /></span>
+          </label>
+          {current.outlineColor ? <input aria-label="Shape outline colour" data-help-topic="shape-colour" onChange={(event) => { rememberedOutlineColourRef.current = event.target.value; commit({ ...current, outlineColor: event.target.value }, "Outline colour changed"); }} type="color" value={current.outlineColor} /> : null}
         </div>
-        <label className="shape-thickness-control">Thickness <output>{current.outlineWidth}</output><input aria-label="Shape outline thickness" data-help-topic="shape-colour" disabled={!current.outlineColor} max="12" min="1" onBlur={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} onChange={(event) => preview({ ...current, outlineWidth: Number(event.target.value) })} onKeyUp={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} onPointerUp={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} type="range" value={current.outlineWidth} /></label>
-      </div>}
-      <div className="shape-inspector-footer"><button className="shape-edit-delete" data-help-topic="shape-delete" onClick={() => setDeleteOpen(true)} type="button"><Trash2 aria-hidden="true" />Delete</button><button data-help-topic="shape-duplicate" onClick={() => { retainedShapeMode = "move"; setModeState({ value: "move" }); onDuplicate(); }} type="button"><Copy aria-hidden="true" />Make a copy</button></div>
-    </div>, document.body) : null;
+        {current.outlineColor ? <label className="shape-thickness-control"><span>Outline Thickness</span><output>{current.outlineWidth}</output><input aria-label="Outline Thickness" data-help-topic="shape-colour" max="12" min="1" onBlur={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} onChange={(event) => preview({ ...current, outlineWidth: Number(event.target.value) })} onKeyUp={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} onPointerUp={() => draftRef.current && commit(draftRef.current, "Outline thickness changed")} type="range" value={current.outlineWidth} /></label> : null}
+        </div>}
+      </section> : null}
+    </aside>, document.body) : null;
 
   const controllers = selected && arrange && controllerTarget ? createPortal(
     <div aria-label={`${shape.shapeKind} shape editing points`} className="shape-controller-overlay shape-editor" style={{ ...shapeStyle(current, stackIndex), zIndex: 850 }}>

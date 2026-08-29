@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ShapeObject } from "../domain/models";
+import { ARRANGEABLE_LAYOUT_EVENT } from "./ArrangeablePageObject";
 import { ShapeEditor } from "./ShapeEditor";
 
 const shape: ShapeObject = {
@@ -11,7 +12,7 @@ const shape: ShapeObject = {
   rotationDegrees: 0, revision: 0, createdAt: "2026-08-19T00:00:00.000Z",
 };
 
-function renderEditor(value: ShapeObject = shape, snapShapes: ShapeObject[] = []) {
+function renderEditor(value: ShapeObject = shape, snapShapes: ShapeObject[] = [], openAdjust = true) {
   const page = document.createElement("div");
   vi.spyOn(page, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800, toJSON: () => ({}) });
   const props = {
@@ -20,25 +21,27 @@ function renderEditor(value: ShapeObject = shape, snapShapes: ShapeObject[] = []
     pageRef: { current: page }, selected: true, shape: value, snapShapes, stackIndex: 2,
   };
   const view = render(<ShapeEditor {...props} />);
-  const adjust = screen.getByRole("button", { name: "Adjust" });
-  if (adjust.getAttribute("aria-pressed") !== "true") fireEvent.click(adjust);
-  const move = screen.getByRole("button", { name: "Move" });
-  if (move.getAttribute("aria-pressed") !== "true") fireEvent.click(move);
-  return { ...props, rerenderEditor: (next: ShapeObject) => view.rerender(<ShapeEditor {...props} shape={next} />) };
+  if (openAdjust) {
+    const adjust = screen.getByRole("button", { name: "Adjust" });
+    if (adjust.getAttribute("aria-pressed") !== "true") fireEvent.click(adjust);
+    const move = screen.getByRole("button", { name: "Move" });
+    if (move.getAttribute("aria-pressed") !== "true") fireEvent.click(move);
+  }
+  return { ...props, page, rerenderEditor: (next: ShapeObject) => view.rerender(<ShapeEditor {...props} shape={next} />) };
 }
 
 describe("ShapeEditor", () => {
   it("shows the plain-English command stack without the legacy edit handles", () => {
     renderEditor();
-    const toolbar = screen.getByRole("toolbar", { name: "Shape editing commands" });
-    expect(within(toolbar).getByRole("button", { name: "Move" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(toolbar).getByRole("button", { name: "Rotate" })).toBeVisible();
-    expect(within(toolbar).getByRole("button", { name: "Scale" })).toBeVisible();
+    const palette = screen.getByRole("complementary", { name: "Shape editing commands" });
+    expect(within(palette).getByRole("button", { name: "Move" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(palette).getByRole("button", { name: "Rotate" })).toBeVisible();
+    expect(within(palette).getByRole("button", { name: "Scale" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /Drag to resize/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("group", { name: /triangle shape/ })).toHaveStyle({ zIndex: 22 });
+    expect(screen.getByRole("group", { name: /triangle shape/ })).toHaveStyle({ zIndex: 3 });
     expect(screen.getByRole("button", { name: "Vertex 1" }).closest(".shape-controller-overlay")).toHaveStyle({ zIndex: 850 });
-    expect(within(toolbar).getByRole("button", { name: "Move" }).parentElement).toHaveClass("shape-edit-mode-group");
-    expect(within(toolbar).getByRole("button", { name: "Add a vertex" }).parentElement).toHaveClass("shape-point-actions");
+    expect(within(palette).getByRole("button", { name: "Move" }).parentElement).toHaveClass("shape-edit-mode-group");
+    expect(within(palette).getByRole("button", { name: "Add a vertex" }).parentElement).toHaveClass("shape-point-actions");
   });
 
   it.each(["Move", "Rotate", "Scale", "Sort"] as const)("connects %s mode to its semantic adaptive controller", (mode) => {
@@ -53,86 +56,88 @@ describe("ShapeEditor", () => {
     expect(controller.querySelector(".shape-active-mode-label")).not.toBeInTheDocument();
   });
 
-  it("switches modes without synchronously remeasuring the palette", () => {
+  it("keeps the compact primary rail stable across section changes", () => {
     renderEditor();
-    const toolbar = screen.getByRole("toolbar", { name: "Shape editing commands" });
-    const measurePalette = vi.spyOn(toolbar, "getBoundingClientRect");
+    const palette = screen.getByRole("complementary", { name: "Shape editing commands" });
+    const rail = screen.getByRole("toolbar", { name: "Shape editing toolbar" });
+    const before = { left: palette.style.left, top: palette.style.top };
 
-    fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
+    expect(within(rail).getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? button.textContent)).toEqual([
+      "Adjust",
+      "Look",
+      "Make a copy",
+      "Delete",
+    ]);
+    expect(screen.getByLabelText("Shape adjust options")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Move shape editing palette" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Look" }));
 
-    expect(screen.getByRole("group", { name: "Rotate controls" })).toBeVisible();
-    expect(measurePalette).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Shape look options")).toBeVisible();
+    expect({ left: palette.style.left, top: palette.style.top }).toEqual(before);
   });
 
-  it("renders a behind-sketch shape below the drawing surface", () => {
+  it("starts collapsed, positions the rail without a panel, and toggles closed", async () => {
+    const { page } = renderEditor(shape, [], false);
+    const adjust = screen.getByRole("button", { name: "Adjust" });
+    const look = screen.getByRole("button", { name: "Look" });
+    const shapeElement = screen.getByRole("group", { name: /triangle shape/ });
+    const rail = screen.getByRole("toolbar", { name: "Shape editing toolbar" });
+    expect(adjust).toHaveAttribute("aria-pressed", "false");
+    expect(look).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByLabelText(/Shape (adjust|look) options/)).not.toBeInTheDocument();
+    vi.spyOn(shapeElement, "getBoundingClientRect").mockReturnValue({
+      bottom: 340, height: 140, left: 200, right: 440, top: 200, width: 240, x: 200, y: 200, toJSON: () => ({}),
+    });
+    vi.spyOn(rail, "getBoundingClientRect").mockReturnValue({
+      bottom: 368, height: 168, left: 452, right: 568, top: 200, width: 116, x: 452, y: 200, toJSON: () => ({}),
+    });
+    vi.spyOn(page, "getBoundingClientRect").mockReturnValue({
+      bottom: 760, height: 720, left: 20, right: 980, top: 40, width: 960, x: 20, y: 40, toJSON: () => ({}),
+    });
+    fireEvent.resize(window);
+    const palette = screen.getByRole("complementary", { name: "Shape editing commands" });
+    await waitFor(() => expect(palette.style.left).toBe("452px"));
+
+    fireEvent.click(adjust);
+    expect(screen.getByLabelText("Shape adjust options")).toBeVisible();
+    expect(palette.style.left).toBe("452px");
+    fireEvent.click(adjust);
+    expect(screen.queryByLabelText("Shape adjust options")).not.toBeInTheDocument();
+    expect(palette.style.left).toBe("452px");
+  });
+
+  it("keeps a behind-sketch shape in the same object stack as other shapes", () => {
     renderEditor({ ...shape, layer: "behind-sketch" });
     const editor = screen.getByRole("group", { name: /triangle shape/ });
     expect(editor).toHaveClass("behind-sketch");
-    expect(editor).toHaveStyle({ zIndex: 0 });
+    expect(editor).toHaveStyle({ zIndex: 3 });
   });
 
-  it("lets keyboard users place the palette and keeps that fixed position", () => {
-    renderEditor();
-    const toolbar = screen.getByRole("toolbar", { name: "Shape editing commands" });
-    const handle = screen.getByRole("button", { name: "Move shape editing palette" });
-    const before = Number(toolbar.style.left.replace("px", ""));
-    fireEvent.keyDown(handle, { key: "ArrowRight" });
-    expect(Number(toolbar.style.left.replace("px", ""))).toBeGreaterThan(before);
-  });
-
-  it("uses the compact title area as the move handle", () => {
-    renderEditor();
-    const toolbar = screen.getByRole("toolbar", { name: "Shape editing commands" });
-    const titleHandle = screen.getByRole("button", { name: "Move shape editing palette" });
-
-    expect(titleHandle).toHaveClass("shape-palette-heading-drag");
-    expect(titleHandle).toHaveTextContent("triangle");
-    expect(titleHandle).not.toHaveTextContent("shape selected");
-    expect(screen.queryByRole("button", { name: "Finish editing shape" })).not.toBeInTheDocument();
-    expect(toolbar).toContainElement(titleHandle);
-  });
-
-  it("moves the palette with a transform and commits its position on release", () => {
-    renderEditor();
-    const toolbar = screen.getByRole("toolbar", { name: "Shape editing commands" });
-    const handle = screen.getByRole("button", { name: "Move shape editing palette" });
-    vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue({
-      x: 100, y: 100, left: 100, top: 100, right: 368, bottom: 500,
-      width: 268, height: 400, toJSON: () => ({}),
+  it("places the rail and panel beside the shape inside the visible canvas", async () => {
+    const { page } = renderEditor();
+    const shapeElement = screen.getByRole("group", { name: /triangle shape/ });
+    const rail = screen.getByRole("toolbar", { name: "Shape editing toolbar" });
+    const panel = screen.getByLabelText("Shape adjust options");
+    vi.spyOn(shapeElement, "getBoundingClientRect").mockReturnValue({
+      bottom: 340, height: 140, left: 200, right: 440, top: 200, width: 240, x: 200, y: 200, toJSON: () => ({}),
     });
-    const animationFrame = vi
-      .spyOn(globalThis, "requestAnimationFrame")
-      .mockImplementation((callback) => {
-        callback(0);
-        return 1;
-      });
+    vi.spyOn(rail, "getBoundingClientRect").mockReturnValue({
+      bottom: 320, height: 120, left: 452, right: 568, top: 200, width: 116, x: 452, y: 200, toJSON: () => ({}),
+    });
+    vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
+      bottom: 500, height: 300, left: 575, right: 875, top: 200, width: 300, x: 575, y: 200, toJSON: () => ({}),
+    });
+    vi.spyOn(page, "getBoundingClientRect").mockReturnValue({
+      bottom: 760, height: 720, left: 20, right: 980, top: 40, width: 960, x: 20, y: 40, toJSON: () => ({}),
+    });
 
-    fireEvent.pointerDown(handle, { button: 0, pointerId: 7, clientX: 120, clientY: 120 });
-    const leftBeforeMove = toolbar.style.left;
-    fireEvent.pointerMove(handle, { pointerId: 7, clientX: 180, clientY: 155 });
-    expect(toolbar.style.left).toBe(leftBeforeMove);
-    expect(toolbar.style.transform).toBe("translate3d(60px, 35px, 0)");
-    fireEvent.pointerUp(handle, { pointerId: 7, clientX: 180, clientY: 155 });
-    expect(toolbar.style.transform).toBe("");
-    expect(toolbar.style.left).toBe("160px");
-    expect(toolbar.style.top).toBe("135px");
-    animationFrame.mockRestore();
-  });
+    fireEvent.resize(window);
 
-  it("uses the user-set palette position when switching between mounted shapes", () => {
-    const page = document.createElement("div");
-    vi.spyOn(page, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800, toJSON: () => ({}) });
-    const common = {
-      arrange: true, canMoveDown: true, canMoveUp: true, onDelete: vi.fn(), onDeselect: vi.fn(), onDuplicate: vi.fn(),
-      onMoveDown: vi.fn(), onMoveUp: vi.fn(), onSelect: vi.fn(), onUpdate: vi.fn(), pageRef: { current: page }, snapShapes: [], stackIndex: 1,
-    };
-    const second = { ...shape, id: "shape-2", position: { x: .65, y: .55 } };
-    const view = render(<><ShapeEditor {...common} key="shape-1" selected shape={shape} /><ShapeEditor {...common} key="shape-2" selected={false} shape={second} /></>);
-    fireEvent.keyDown(screen.getByRole("button", { name: "Move shape editing palette" }), { key: "ArrowRight", shiftKey: true });
-    const placed = screen.getByRole("toolbar", { name: "Shape editing commands" }).getAttribute("style");
-
-    view.rerender(<><ShapeEditor {...common} key="shape-1" selected={false} shape={shape} /><ShapeEditor {...common} key="shape-2" selected shape={second} /></>);
-    expect(screen.getByRole("toolbar", { name: "Shape editing commands" })).toHaveAttribute("style", placed);
+    const palette = screen.getByRole("complementary", { name: "Shape editing commands" });
+    await waitFor(() => expect(palette.style.left).toBe("452px"));
+    await waitFor(() => expect(panel.style.left).toBe("575px"));
+    expect(Number.parseFloat(panel.style.maxHeight)).toBe(390);
+    expect(Number.parseFloat(panel.style.top) + Number.parseFloat(panel.style.maxHeight)).toBeLessThanOrEqual(748);
   });
 
   it("temporarily hides editing UI when arrange interaction is suspended", () => {
@@ -142,38 +147,83 @@ describe("ShapeEditor", () => {
       onMoveDown: vi.fn(), onMoveUp: vi.fn(), onSelect: vi.fn(), onUpdate: vi.fn(), pageRef: { current: page }, selected: true, shape, snapShapes: [], stackIndex: 1,
     };
     const view = render(<ShapeEditor {...props} />);
-    expect(screen.getByRole("toolbar", { name: "Shape editing commands" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Shape editing commands" })).toBeInTheDocument();
 
     view.rerender(<ShapeEditor {...props} arrange={false} />);
-    expect(screen.queryByRole("toolbar", { name: "Shape editing commands" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Shape editing commands" })).not.toBeInTheDocument();
 
     view.rerender(<ShapeEditor {...props} />);
-    expect(screen.getByRole("toolbar", { name: "Shape editing commands" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Shape editing commands" })).toBeInTheDocument();
   });
 
-  it("moves the Style palette upward to keep its bottom visible", () => {
-    renderEditor();
-    const toolbar = screen.getByRole("toolbar", { name: "Shape editing commands" });
-    let paletteHeight = 200;
-    vi.spyOn(toolbar, "getBoundingClientRect").mockImplementation(() => ({
-      x: 0, y: 0, left: 0, top: 0, right: 174, bottom: paletteHeight,
-      width: 174, height: paletteHeight, toJSON: () => ({}),
+  it("follows live layout events, changes sides, and caps the scrolling panel", async () => {
+    const { page } = renderEditor();
+    const shapeElement = screen.getByRole("group", { name: /triangle shape/ });
+    const rail = screen.getByRole("toolbar", { name: "Shape editing toolbar" });
+    const panel = screen.getByLabelText("Shape adjust options");
+    let shapeLeft = 100;
+    vi.spyOn(shapeElement, "getBoundingClientRect").mockImplementation(() => ({
+      bottom: 300, height: 100, left: shapeLeft, right: shapeLeft + 200,
+      top: 200, width: 200, x: shapeLeft, y: 200, toJSON: () => ({}),
     }));
-    const handle = screen.getByRole("button", { name: "Move shape editing palette" });
-    fireEvent.pointerDown(handle, { button: 0, pointerId: 22, clientX: 10, clientY: 10 });
-    fireEvent.pointerMove(handle, { pointerId: 22, clientX: 100, clientY: globalThis.innerHeight - 10 });
-    fireEvent.pointerUp(handle, { pointerId: 22 });
-    const collapsedTop = Number(toolbar.style.top.replace("px", ""));
+    vi.spyOn(rail, "getBoundingClientRect").mockImplementation(() => {
+      const left = shapeLeft === 700 ? 572 : 312;
+      return {
+        bottom: 320, height: 120, left, right: left + 116,
+        top: 200, width: 116, x: left, y: 200, toJSON: () => ({}),
+      };
+    });
+    vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
+      bottom: 500, height: 300, left: 435, right: 735, top: 200, width: 300, x: 435, y: 200, toJSON: () => ({}),
+    });
+    Object.defineProperty(panel, "scrollHeight", { configurable: true, value: 600 });
+    vi.spyOn(page, "getBoundingClientRect").mockReturnValue({
+      bottom: 800, height: 760, left: 20, right: 1000, top: 40, width: 980, x: 20, y: 40, toJSON: () => ({}),
+    });
 
-    paletteHeight = 500;
-    fireEvent.click(screen.getByRole("button", { name: "Style" }));
-    expect(Number(toolbar.style.top.replace("px", ""))).toBeLessThan(collapsedTop);
-    expect(Number(toolbar.style.top.replace("px", "")) + paletteHeight).toBeLessThanOrEqual(globalThis.innerHeight - 12);
+    fireEvent.resize(window);
+    const palette = screen.getByRole("complementary", { name: "Shape editing commands" });
+    await waitFor(() => expect(palette.style.left).toBe("312px"));
+    await waitFor(() => expect(panel.style.maxHeight).toBe("390px"));
+
+    shapeLeft = 700;
+    fireEvent(shapeElement, new Event(ARRANGEABLE_LAYOUT_EVENT));
+    expect(palette.style.left).toBe("572px");
+    await waitFor(() => expect(panel.style.left).toBe("265px"));
+  });
+
+  it("repositions after nested scroll and visual viewport changes", async () => {
+    const viewport = Object.assign(new EventTarget(), {
+      height: 760,
+      offsetLeft: 0,
+      offsetTop: 0,
+      width: 1000,
+    }) as VisualViewport;
+    vi.stubGlobal("visualViewport", viewport);
+    try {
+      renderEditor();
+      const shapeElement = screen.getByRole("group", { name: /triangle shape/ });
+      const measureShape = vi.spyOn(shapeElement, "getBoundingClientRect");
+      const measuredBeforeScroll = measureShape.mock.calls.length;
+
+      fireEvent.scroll(shapeElement);
+      await waitFor(() => expect(measureShape.mock.calls.length).toBeGreaterThan(measuredBeforeScroll));
+
+      const measuredBeforeViewport = measureShape.mock.calls.length;
+      viewport.dispatchEvent(new Event("scroll"));
+      await waitFor(() => expect(measureShape.mock.calls.length).toBeGreaterThan(measuredBeforeViewport));
+
+      const measuredBeforeResize = measureShape.mock.calls.length;
+      viewport.dispatchEvent(new Event("resize"));
+      await waitFor(() => expect(measureShape.mock.calls.length).toBeGreaterThan(measuredBeforeResize));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("provides help topics for every command", () => {
     renderEditor();
-    for (const name of ["Adjust", "Style", "Move", "Rotate", "Scale", "Sort", "Add a vertex", "Delete selected vertex", /Snap/, "Make a copy", "Delete"]) {
+    for (const name of ["Adjust", "Look", "Move", "Rotate", "Scale", "Sort", "Add a vertex", "Delete selected vertex", /Snap/, "Make a copy", "Delete"]) {
       expect(screen.getByRole("button", { name })).toHaveAttribute("data-help-topic");
     }
     fireEvent.click(screen.getByRole("button", { name: "Sort" }));
@@ -221,18 +271,51 @@ describe("ShapeEditor", () => {
     expect(onUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ rotationDegrees: 5 }), shape);
   });
 
-  it("keeps each Style colour and its toggle in a compact row", () => {
+  it("keeps the look and move panels tall enough when extra controls appear", async () => {
+    const { page } = renderEditor({ ...shape, outlineColor: undefined });
+    fireEvent.click(screen.getByRole("button", { name: "Look" }));
+    const panel = screen.getByLabelText("Shape look options");
+    const rail = screen.getByRole("toolbar", { name: "Shape editing toolbar" });
+    const shapeElement = screen.getByRole("group", { name: /triangle shape/ });
+    vi.spyOn(shapeElement, "getBoundingClientRect").mockReturnValue({
+      bottom: 340, height: 140, left: 200, right: 440, top: 200, width: 240, x: 200, y: 200, toJSON: () => ({}),
+    });
+    vi.spyOn(rail, "getBoundingClientRect").mockReturnValue({
+      bottom: 320, height: 120, left: 452, right: 568, top: 200, width: 116, x: 452, y: 200, toJSON: () => ({}),
+    });
+    vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
+      bottom: 348, height: 148, left: 575, right: 875, top: 200, width: 300, x: 575, y: 200, toJSON: () => ({}),
+    });
+    Object.defineProperty(panel, "scrollHeight", { configurable: true, value: 148 });
+    vi.spyOn(page, "getBoundingClientRect").mockReturnValue({
+      bottom: 760, height: 720, left: 20, right: 980, top: 40, width: 960, x: 20, y: 40, toJSON: () => ({}),
+    });
+
+    fireEvent.resize(window);
+    await waitFor(() => expect(panel.style.maxHeight).toBe("390px"));
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Shape outline" }));
+    expect(screen.getByRole("slider", { name: "Outline Thickness" })).toBeVisible();
+    expect(panel.style.maxHeight).toBe("390px");
+
+    fireEvent.click(screen.getByRole("button", { name: "Adjust" }));
+    fireEvent.click(screen.getByRole("button", { name: "Scale" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move" }));
+    expect(screen.getByRole("button", { name: "Move shape up" })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Snap/ })).toBeVisible();
+    expect(screen.getByLabelText("Shape adjust options").style.maxHeight).toBe("390px");
+  });
+
+  it("uses accessible Look switches and conditional circular colour pickers", () => {
     renderEditor();
-    fireEvent.click(screen.getByRole("button", { name: "Style" }));
+    fireEvent.click(screen.getByRole("button", { name: "Look" }));
     const fillPicker = screen.getByLabelText("Shape fill colour");
     const outlinePicker = screen.getByLabelText("Shape outline colour");
-    expect(fillPicker.closest(".shape-colour-row")).toContainElement(
-      screen.getByRole("button", { name: "No Fill" }),
-    );
-    expect(outlinePicker.closest(".shape-colour-row")).toContainElement(
-      screen.getByRole("button", { name: "No Outline" }),
-    );
-    expect(screen.getByLabelText("Shape outline thickness").closest("label"))
+    expect(fillPicker).toHaveAttribute("type", "color");
+    expect(outlinePicker).toHaveAttribute("type", "color");
+    expect(screen.getByRole("checkbox", { name: "Shape fill" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Shape outline" })).toBeChecked();
+    expect(screen.getByRole("slider", { name: "Outline Thickness" }).closest("label"))
       .toHaveClass("shape-thickness-control");
   });
 
@@ -417,9 +500,9 @@ describe("ShapeEditor", () => {
 
   it("switches sections and delegates ordering, copying, and confirmed deletion", () => {
     const props = renderEditor();
-    fireEvent.click(screen.getByRole("button", { name: "Style" }));
-    expect(screen.getByRole("slider", { name: "Shape outline thickness" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "No Outline" }));
+    fireEvent.click(screen.getByRole("button", { name: "Look" }));
+    expect(screen.getByRole("slider", { name: "Outline Thickness" })).toBeVisible();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Shape outline" }));
     expect(props.onUpdate).toHaveBeenCalledWith(expect.objectContaining({ outlineColor: undefined }), shape);
     fireEvent.click(screen.getByRole("button", { name: "Adjust" }));
     fireEvent.click(screen.getByRole("button", { name: "Sort" }));
@@ -434,26 +517,82 @@ describe("ShapeEditor", () => {
     expect(props.onDelete).toHaveBeenCalledOnce();
   });
 
-  it("keeps Adjust and Style mutually exclusive", () => {
+  it("keeps the last remaining fill or outline so the shape stays visible", () => {
+    const outlineOnly = { ...shape, fillColor: undefined, outlineColor: "#97531f" };
+    const props = renderEditor(outlineOnly);
+    fireEvent.click(screen.getByRole("button", { name: "Look" }));
+
+    const outlineSwitch = screen.getByRole("checkbox", { name: "Shape outline" });
+    expect(outlineSwitch).toBeDisabled();
+    fireEvent.click(outlineSwitch);
+    expect(props.onUpdate).not.toHaveBeenCalled();
+    expect(outlineSwitch).toBeChecked();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Shape fill" }));
+    const withBoth = props.onUpdate.mock.lastCall?.[0] as ShapeObject;
+    props.rerenderEditor(withBoth);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Shape outline" }));
+    const fillOnly = props.onUpdate.mock.lastCall?.[0] as ShapeObject;
+    expect(fillOnly.outlineColor).toBeUndefined();
+    props.rerenderEditor(fillOnly);
+
+    const fillSwitch = screen.getByRole("checkbox", { name: "Shape fill" });
+    const callsAfterLock = props.onUpdate.mock.calls.length;
+    expect(fillSwitch).toBeDisabled();
+    fireEvent.click(fillSwitch);
+    expect(props.onUpdate).toHaveBeenCalledTimes(callsAfterLock);
+    expect(fillSwitch).toBeChecked();
+  });
+
+  it("restores the selected fill and outline colours after toggling them off", () => {
+    const customised = { ...shape, fillColor: "#2468ac", outlineColor: "#97531f" };
+    const props = renderEditor(customised);
+    fireEvent.click(screen.getByRole("button", { name: "Look" }));
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Shape fill" }));
+    const withoutFill = props.onUpdate.mock.lastCall?.[0] as ShapeObject;
+    props.rerenderEditor(withoutFill);
+    expect(screen.queryByLabelText("Shape fill colour")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Shape fill" }));
+    expect(props.onUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ fillColor: "#2468ac" }),
+      withoutFill,
+    );
+
+    const restoredFill = props.onUpdate.mock.lastCall?.[0] as ShapeObject;
+    props.rerenderEditor(restoredFill);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Shape outline" }));
+    const withoutOutline = props.onUpdate.mock.lastCall?.[0] as ShapeObject;
+    props.rerenderEditor(withoutOutline);
+    expect(screen.queryByLabelText("Shape outline colour")).not.toBeInTheDocument();
+    expect(screen.queryByRole("slider", { name: "Outline Thickness" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Shape outline" }));
+    expect(props.onUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ outlineColor: "#97531f" }),
+      withoutOutline,
+    );
+  });
+
+  it("keeps Adjust and Look mutually exclusive", () => {
     renderEditor();
     const adjust = screen.getByRole("button", { name: "Adjust" });
-    const style = screen.getByRole("button", { name: "Style" });
+    const look = screen.getByRole("button", { name: "Look" });
     expect(adjust).toHaveAttribute("aria-pressed", "true");
-    expect(style).toHaveAttribute("aria-pressed", "false");
+    expect(look).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Move" })).toBeVisible();
 
-    fireEvent.click(style);
-    expect(style).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(look);
+    expect(look).toHaveAttribute("aria-pressed", "true");
     expect(adjust).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("slider", { name: "Shape outline thickness" })).toBeVisible();
+    expect(screen.getByRole("slider", { name: "Outline Thickness" })).toBeVisible();
 
     fireEvent.click(adjust);
     expect(adjust).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("slider", { name: "Shape outline thickness" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("slider", { name: "Outline Thickness" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Snap/ })).toBeVisible();
   });
 
-  it("retains mode and Style visibility when selecting another mounted shape", () => {
+  it("retains the adjustment mode but collapses the section when selection changes", () => {
     const page = document.createElement("div");
     const common = {
       arrange: true, canMoveDown: true, canMoveUp: true, onDelete: vi.fn(), onDeselect: vi.fn(), onDuplicate: vi.fn(),
@@ -463,11 +602,11 @@ describe("ShapeEditor", () => {
     const view = render(<><ShapeEditor {...common} key="first" selected shape={shape} /><ShapeEditor {...common} key="second" selected={false} shape={second} /></>);
     fireEvent.click(screen.getByRole("button", { name: "Adjust" }));
     fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
-    fireEvent.click(screen.getByRole("button", { name: "Style" }));
 
     view.rerender(<><ShapeEditor {...common} key="first" selected={false} shape={shape} /><ShapeEditor {...common} key="second" selected shape={second} /></>);
-    expect(screen.getByRole("button", { name: "Style" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("slider", { name: "Shape outline thickness" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Look" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByLabelText("Shape adjust options")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Shape look options")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Adjust" }));
     expect(screen.getByRole("button", { name: "Rotate" })).toHaveAttribute("aria-pressed", "true");
   });

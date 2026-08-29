@@ -13,6 +13,7 @@ import { isHexColor, readableTextColour } from "../utils/colour";
 import { webHttpUrl } from "../utils/webHttpUrl";
 import { normalizedStoryRenderOrder, renderItemKey } from "./storyRenderOrder";
 import { validPaperBackgroundColour } from "./paperBackground";
+import { materializeLegacyTextStack } from "./textLayout";
 
 export class OperationConflictError extends Error {
   constructor(message: string) {
@@ -703,10 +704,12 @@ export function applyDocumentOperation(
       next = updatePage(snapshot, operation.pageId, (page) => ({
         ...page,
         textStack: {
+          ...page.textStack,
           position: operation.position,
           frame: operation.frame,
           memberIds: page.textStack?.memberIds ?? [],
           layer: page.textStack?.layer ?? "above-sketch",
+          dock: "free",
         },
         revision: page.revision + 1,
         updatedAt: operation.createdAt,
@@ -728,6 +731,42 @@ export function applyDocumentOperation(
         };
       });
       break;
+    case "page-text-stack-dock-update":
+      next = updatePage(snapshot, operation.pageId, (page) => {
+        if (!page.textStack) throw new OperationConflictError("Text stack does not exist.");
+        return {
+          ...page,
+          textStack: { ...page.textStack, dock: operation.dock },
+          revision: page.revision + 1,
+          updatedAt: operation.createdAt,
+        };
+      });
+      break;
+    case "page-text-stack-appearance-update": {
+      const validColour = (value: string) => /^#[0-9a-f]{6}$/i.test(value);
+      if (
+        (operation.backgroundColor !== null && !validColour(operation.backgroundColor)) ||
+        (operation.outlineColor !== undefined && !validColour(operation.outlineColor)) ||
+        (operation.outlineWidth !== undefined && (!Number.isInteger(operation.outlineWidth) || operation.outlineWidth < 1 || operation.outlineWidth > 12))
+      ) {
+        throw new OperationConflictError("Text stack appearance is invalid.");
+      }
+      next = updatePage(snapshot, operation.pageId, (page) => {
+        if (!page.textStack) throw new OperationConflictError("Text stack does not exist.");
+        return {
+          ...page,
+          textStack: {
+            ...page.textStack,
+            backgroundColor: operation.backgroundColor === null ? null : operation.backgroundColor.toLowerCase(),
+            ...(operation.outlineColor ? { outlineColor: operation.outlineColor.toLowerCase() } : { outlineColor: undefined }),
+            ...(operation.outlineWidth ? { outlineWidth: operation.outlineWidth } : { outlineWidth: undefined }),
+          },
+          revision: page.revision + 1,
+          updatedAt: operation.createdAt,
+        };
+      });
+      break;
+    }
     case "page-text-stack-reorder":
       next = updatePage(snapshot, operation.pageId, (page) => {
         const currentIds = page.textStack?.memberIds ?? [];
@@ -766,10 +805,13 @@ export function applyDocumentOperation(
           return {
             ...page,
             textStack: {
+              ...page.textStack,
               position: page.textStack?.position ?? { x: 0.1, y: 0.1 },
               frame: page.textStack?.frame ?? { width: 0.8, height: 0.8 },
               memberIds,
               layer: page.textStack?.layer ?? "above-sketch",
+              dock: page.textStack?.dock ?? "free",
+              backgroundColor: page.textStack?.backgroundColor ?? "#fffaf0",
             },
             objects: page.objects.map((candidate) =>
               candidate.id === object.id
@@ -1237,10 +1279,26 @@ export function applyDocumentOperation(
     }
   }
 
+  const materializedNext =
+    operation.type === "page-text-stack-layout-update" ||
+    operation.type === "page-text-stack-layer-update" ||
+    operation.type === "page-text-stack-dock-update" ||
+    operation.type === "page-text-stack-appearance-update" ||
+    operation.type === "page-text-stack-reorder" ||
+    operation.type === "page-text-stack-membership-update"
+      ? {
+          ...next,
+          pages: next.pages.map((page) =>
+            page.id === operation.pageId
+              ? materializeLegacyTextStack(page, false)
+              : page),
+        }
+      : next;
+
   return {
-    ...next,
+    ...materializedNext,
     revision: operation.resultingRevision,
     updatedAt: operation.createdAt,
-    appliedOperationIds: [...next.appliedOperationIds, operation.id],
+    appliedOperationIds: [...materializedNext.appliedOperationIds, operation.id],
   };
 }

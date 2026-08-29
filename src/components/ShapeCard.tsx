@@ -2,7 +2,8 @@ import type { ShapeObject } from "../domain/models";
 import { freeformPath } from "./freeformGeometry";
 import { renderedShapeVertices, shapeVertices } from "./shapeGeometry";
 
-export function ShapeCard({ shape }: {
+export function ShapeCard({ preview = false, shape }: {
+  preview?: boolean;
   shape: ShapeObject;
   /** Retained temporarily for source compatibility while shape editing lives in ShapeEditor. */
   arrange?: boolean;
@@ -15,7 +16,7 @@ export function ShapeCard({ shape }: {
     pointerEvents: "visibleFill" as const,
     stroke: shape.outlineColor ?? "none",
     strokeWidth: shape.outlineColor ? shape.outlineWidth : 0,
-    vectorEffect: "non-scaling-stroke" as const,
+    vectorEffect: preview ? "none" as const : "non-scaling-stroke" as const,
   };
   return <svg aria-label={`${shape.shapeKind} shape`} className="canvas-shape" preserveAspectRatio="none" role="img" viewBox="0 0 100 100">
     {shape.shapeKind === "circle"

@@ -13,6 +13,7 @@ import type {
   MyStoryPage,
   SaveHealth,
 } from "../domain/models";
+import type { JournalFilesPlugin } from "../native/contracts";
 import {
   BrowserAppleTranscriptionMock,
   BrowserJournalAudioMock,
@@ -103,9 +104,9 @@ function storyPage(): MyStoryPage {
 function renderStory(
   commit = vi.fn(async () => true),
   page = storyPage(),
+  files: JournalFilesPlugin = new BrowserJournalFilesMock(),
 ) {
   const audio = new BrowserJournalAudioMock();
-  const files = new BrowserJournalFilesMock();
   const share = new BrowserNativeShareMock();
   const transcription = new BrowserAppleTranscriptionMock();
   function Harness() {
@@ -180,7 +181,7 @@ describe("MyStoryWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Triangle" }));
     await waitFor(() => expect(commit).toHaveBeenCalledWith(expect.objectContaining({
       type: "my-story-shape-add",
-      shape: expect.objectContaining({ type: "shape", shapeKind: "triangle", fillColor: "#171410", layer: "behind-sketch" }),
+      shape: expect.objectContaining({ type: "shape", shapeKind: "triangle", fillColor: "#171410", layer: "above-sketch" }),
     })));
   });
 
@@ -273,11 +274,12 @@ describe("MyStoryWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Link" }));
     fireEvent.change(
-      await screen.findByRole("textbox", { name: "Web address" }),
+      await screen.findByRole("textbox", { name: "Paste Web Link Address Here:" }),
       { target: { value: "https://example.com/memory" } },
     );
-    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
-      target: { value: "Family archive" },
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Link Name on the Canvas:" }),
+      { target: { value: "Family archive" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add link" }));
 
@@ -299,11 +301,12 @@ describe("MyStoryWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Link" }));
     fireEvent.change(
-      await screen.findByRole("textbox", { name: "Web address" }),
+      await screen.findByRole("textbox", { name: "Paste Web Link Address Here:" }),
       { target: { value: "https://example.com/memory" } },
     );
-    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
-      target: { value: "Family archive" },
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Link Name on the Canvas:" }),
+      { target: { value: "Family archive" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add link" }));
 
@@ -399,7 +402,7 @@ describe("MyStoryWorkspace", () => {
     ).toBeInTheDocument();
   });
 
-  it("opens contextual text and pane controls without changing the toolbar", () => {
+  it("opens contextual text and pane controls without changing the toolbar", async () => {
     const { commit } = renderStory();
 
     fireEvent.click(screen.getByText("Growing up"));
@@ -408,33 +411,38 @@ describe("MyStoryWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.click(screen.getByRole("button", { name: "Growing up" }));
     expect(screen.getByLabelText("My Story options")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("radio", { name: "Title" }));
+    fireEvent.click(screen.getByRole("button", { name: "Look" }));
+    fireEvent.click(screen.getByRole("button", { name: "Title" }));
     expect(commit).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "my-story-text-update",
         block: expect.objectContaining({ role: "title" }),
       }),
     );
-    fireEvent.change(screen.getByLabelText("Text colour"), {
+    fireEvent.input(screen.getByLabelText("Text colour"), {
       target: { value: "#fffaf0" },
     });
-    expect(commit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "my-story-layout-update",
-        textColor: "#000000",
-      }),
+    await waitFor(() =>
+      expect(commit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "my-story-layout-update",
+          textColor: "#000000",
+        }),
+      ),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Background colour" }));
-    fireEvent.change(screen.getByLabelText("Text side background colour"), {
+    fireEvent.input(screen.getByLabelText("Text side background colour"), {
       target: { value: "#245b8a" },
     });
-    expect(commit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "my-story-layout-update",
-        textBackgroundColor: "#245b8a",
-        textColor: "#ffffff",
-      }),
+    await waitFor(() =>
+      expect(commit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "my-story-layout-update",
+          textBackgroundColor: "#245b8a",
+          textColor: "#ffffff",
+        }),
+      ),
     );
     expect(
       screen.getByLabelText("Text side background colour"),
@@ -502,7 +510,7 @@ describe("MyStoryWorkspace", () => {
     );
   });
 
-  it("keeps Draw and Erase active while adding Story text", async () => {
+  it("leaves Draw and Erase so the text editor can open", async () => {
     renderStory();
 
     const draw = screen.getByRole("button", { name: "Draw" });
@@ -510,7 +518,7 @@ describe("MyStoryWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Text" }));
     expect(await screen.findByRole("dialog", { name: "Add story text" }))
       .toBeInTheDocument();
-    expect(draw).toHaveAttribute("aria-pressed", "true");
+    expect(draw).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     const erase = screen.getByRole("button", { name: "Erase" });
@@ -518,7 +526,7 @@ describe("MyStoryWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Text" }));
     expect(await screen.findByRole("dialog", { name: "Add story text" }))
       .toBeInTheDocument();
-    expect(erase).toHaveAttribute("aria-pressed", "true");
+    expect(erase).toHaveAttribute("aria-pressed", "false");
   });
 
   it("keeps existing Story text read-only in Draw and Erase modes", () => {

@@ -2,17 +2,9 @@ import type { JournalSnapshot, Page } from "../domain/models";
 
 function pageText(page: Page): string[] {
   const lines: string[] = [];
-  const stackedTextIds = new Set(page.textStack?.memberIds ?? []);
-  for (const objectId of page.textStack?.memberIds ?? []) {
-    const object = page.objects.find((candidate) => candidate.id === objectId);
-    if (object?.type === "text" && object.text.trim()) {
-      lines.push(object.text.trim());
-    }
-  }
   for (const object of page.objects) {
     if (
       object.type === "text" &&
-      !stackedTextIds.has(object.id) &&
       object.text.trim()
     ) {
       lines.push(object.text.trim());

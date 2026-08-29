@@ -71,6 +71,15 @@ function pluginDoubles(): CapacitorPluginContracts {
         checksum: "checksum-1",
       })),
       removeToTrash: vi.fn(async () => undefined),
+      resolveStoredAssets: vi.fn(async ({ assets }) => ({
+        resolvedAssetUris: Object.fromEntries(
+          assets.map((asset: { id: string; localUri: string }) => [
+            asset.id,
+            asset.localUri,
+          ]),
+        ),
+        unresolvedAssetIds: [],
+      })),
       storageHealth: vi.fn(async () => ({
         availableBytes: 4096,
         lowStorage: false,

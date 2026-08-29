@@ -49,6 +49,42 @@ describe("arrange geometry", () => {
     ).toEqual({ width: 0.6, height: 0.55 });
   });
 
+  it("snaps unlocked image width and height to nearby peer dimensions", () => {
+    const resized = resizeLayout(
+      START,
+      { width: 0.115, height: 0.095 },
+      {
+        snapPeerFrames: [{ width: 0.4, height: 0.3 }],
+      },
+    );
+    expect(resized.frame).toEqual({ width: 0.4, height: 0.3 });
+  });
+
+  it("preserves image proportions when snapping to a peer width", () => {
+    const resized = resizeLayout(
+      START,
+      { width: 0.115, height: 0 },
+      {
+        aspectRatio: 2,
+        maximum: MAXIMUM_PHOTO_FRAME,
+        snapPeerFrames: [{ width: 0.4, height: 0.4 }],
+      },
+    );
+    expect(resized.frame.width).toBeCloseTo(0.4);
+    expect(resized.frame.height).toBeCloseTo(0.2);
+  });
+
+  it("does not snap image dimensions outside the alignment threshold", () => {
+    const resized = resizeLayout(
+      START,
+      { width: 0.09, height: 0.06 },
+      {
+        snapPeerFrames: [{ width: 0.4, height: 0.3 }],
+      },
+    );
+    expect(resized.frame).toEqual({ width: 0.37, height: 0.26 });
+  });
+
   it("detects proximity to each safe canvas edge", () => {
     expect(layoutEdges({
       position: { x: 0.03, y: 0.04 },

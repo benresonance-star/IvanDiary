@@ -103,6 +103,28 @@ describe("document operations", () => {
     ).toHaveLength(1);
   });
 
+  it("persists an explicit inFrontOfSketch flag on page-object-update", () => {
+    const added = applyDocumentOperation(initial, textOperation(0));
+    const object = added.pages[0]!.objects.find(
+      (candidate): candidate is TextObject => candidate.id === "test-text",
+    )!;
+    const next = applyDocumentOperation(added, {
+      id: "promote-text",
+      type: "page-object-update",
+      journalId: initial.id,
+      baseRevision: 1,
+      resultingRevision: 2,
+      createdAt: "2026-08-03T10:01:00.000Z",
+      pageId: object.pageId,
+      object: { ...object, inFrontOfSketch: true, revision: 1 },
+    });
+    expect(
+      next.pages[0]?.objects.find((candidate) => candidate.id === "test-text"),
+    ).toEqual(
+      expect.objectContaining({ id: "test-text", inFrontOfSketch: true }),
+    );
+  });
+
   it("updates, reorders, and atomically releases structured canvas text", () => {
     const withFirst = applyDocumentOperation(initial, textOperation(0, "add-first"));
     const secondOperation = textOperation(1, "add-second");
@@ -171,6 +193,14 @@ describe("document operations", () => {
       "second-text",
       "test-text",
     ]);
+    expect(reordered.pages[0]?.objects.find(({ id }) => id === "second-text"))
+      .toEqual(expect.objectContaining({
+        position: { x: 0.1, y: 0.15 },
+      }));
+    expect(
+      reordered.pages[0]?.objects.find(({ id }) => id === "test-text")
+        ?.position.y,
+    ).toBeGreaterThan(0.15);
     expect(released.pages[0]?.textStack?.memberIds).toEqual(["test-text"]);
     expect(released.pages[0]?.objects.find(({ id }) => id === "second-text"))
       .toEqual(expect.objectContaining({
@@ -214,6 +244,30 @@ describe("document operations", () => {
     });
 
     expect(behindSketch.pages[0]?.textStack?.layer).toBe("behind-sketch");
+  });
+
+  it("persists text column docking and appearance", () => {
+    const layout = applyDocumentOperation(initial, {
+      id: "stack-layout-appearance", type: "page-text-stack-layout-update",
+      journalId: initial.id, baseRevision: 0, resultingRevision: 1,
+      createdAt: "2026-08-03T10:01:00.000Z", pageId: initial.pages[0]!.id,
+      position: { x: 0.1, y: 0.15 }, frame: { width: 0.4, height: 0.7 },
+    });
+    const docked = applyDocumentOperation(layout, {
+      id: "stack-dock", type: "page-text-stack-dock-update",
+      journalId: initial.id, baseRevision: 1, resultingRevision: 2,
+      createdAt: "2026-08-03T10:02:00.000Z", pageId: initial.pages[0]!.id, dock: "right",
+    });
+    const styled = applyDocumentOperation(docked, {
+      id: "stack-style", type: "page-text-stack-appearance-update",
+      journalId: initial.id, baseRevision: 2, resultingRevision: 3,
+      createdAt: "2026-08-03T10:03:00.000Z", pageId: initial.pages[0]!.id,
+      backgroundColor: null, outlineColor: "#AABBCC", outlineWidth: 4,
+    });
+
+    expect(styled.pages[0]?.textStack).toEqual(expect.objectContaining({
+      dock: "right", backgroundColor: null, outlineColor: "#aabbcc", outlineWidth: 4,
+    }));
   });
 
   it("sets and restores a page background colour", () => {

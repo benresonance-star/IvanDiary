@@ -3,7 +3,9 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import { migrateJournalSnapshot } from "../domain/migrations";
 import { applyDocumentOperation } from "../domain/operations";
 import type { DocumentOperation, JournalSnapshot } from "../domain/models";
-import type { NativeJournalStorePlugin } from "../native/contracts";
+import { CapacitorJournalFilesAdapter } from "../native/capacitorAdapters";
+import type { JournalFilesPlugin, NativeJournalStorePlugin } from "../native/contracts";
+import { repairLocalAssetUris } from "../native/localAssetResolution";
 import { BrowserJournalRepository, JournalCommitError } from "./browserJournalRepository";
 import type { JournalCommitResult, JournalLoadResult, JournalRepository } from "./journalRepository";
 
@@ -58,6 +60,7 @@ export class NativeJournalRepository implements JournalRepository {
   constructor(
     private readonly store: NativeJournalStorePlugin,
     private readonly browserFallback: JournalRepository = new BrowserJournalRepository(),
+    private readonly files?: JournalFilesPlugin,
   ) {}
 
   acknowledgeNewJournal(): void {
@@ -89,9 +92,14 @@ export class NativeJournalRepository implements JournalRepository {
 
       const envelope = parse(stored.contents);
       try {
-        const snapshot = migrateJournalSnapshot(envelope.snapshot);
-        this.#envelope = { ...envelope, snapshot };
-        if (snapshot !== envelope.snapshot) {
+        let snapshot = migrateJournalSnapshot(envelope.snapshot);
+        let baseline = migrateJournalSnapshot(envelope.baseline);
+        if (this.files) {
+          snapshot = (await repairLocalAssetUris(snapshot, this.files)).snapshot;
+          baseline = (await repairLocalAssetUris(baseline, this.files)).snapshot;
+        }
+        this.#envelope = { ...envelope, baseline, snapshot };
+        if (snapshot !== envelope.snapshot || baseline !== envelope.baseline) {
           await this.store.write({ contents: serialize(this.#envelope) });
         }
         return {
@@ -100,7 +108,10 @@ export class NativeJournalRepository implements JournalRepository {
           recoveredFromOperationLog: false,
         };
       } catch {
-        const snapshot = recover(envelope);
+        let snapshot = recover(envelope);
+        if (this.files) {
+          snapshot = (await repairLocalAssetUris(snapshot, this.files)).snapshot;
+        }
         this.#envelope = { ...envelope, snapshot };
         await this.store.write({ contents: serialize(this.#envelope) });
         return {
@@ -167,5 +178,11 @@ export class NativeJournalRepository implements JournalRepository {
 
 export function createJournalRepository(): JournalRepository {
   if (Capacitor.getPlatform() !== "ios") return new BrowserJournalRepository();
-  return new NativeJournalRepository(registerPlugin<NativeJournalStorePlugin>("NativeJournalStore"));
+  return new NativeJournalRepository(
+    registerPlugin<NativeJournalStorePlugin>("NativeJournalStore"),
+    new BrowserJournalRepository(),
+    new CapacitorJournalFilesAdapter(
+      registerPlugin<JournalFilesPlugin>("JournalFiles"),
+    ),
+  );
 }

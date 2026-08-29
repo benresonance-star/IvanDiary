@@ -10,6 +10,7 @@ import {
   type PointerEvent,
 } from "react";
 
+import { isInFrontOfSketch } from "../domain/inkStack";
 import {
   MAX_PAGES_PER_COLLECTION,
   type MyStoryPage,
@@ -18,22 +19,26 @@ import {
   type PaperStyle,
 } from "../domain/models";
 import { effectivePaperBackgroundColour } from "../domain/paperBackground";
+import { displayedTextLayout } from "../domain/textLayout";
 import type { SketchRepository } from "../sketch/types";
 import { displayAssetUri } from "../utils/displayAssetUri";
 import { defaultObjectFrame } from "./arrangeGeometry";
+import { canvasObjectZIndex } from "./canvasObjectStack";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ShapeCard } from "./ShapeCard";
 import { SketchThumbnail } from "./SketchThumbnail";
 
 function previewStyle(object: PageObject, stackIndex: number): CSSProperties {
-  const frame = defaultObjectFrame(object);
+  const layout = object.type === "text"
+    ? displayedTextLayout(object)
+    : { position: object.position, frame: defaultObjectFrame(object) };
   return {
-    left: `${object.position.x * 100}%`,
-    top: `${object.position.y * 100}%`,
-    width: `${frame.width * 100}%`,
-    height: `${frame.height * 100}%`,
+    left: `${layout.position.x * 100}%`,
+    top: `${layout.position.y * 100}%`,
+    width: `${layout.frame.width * 100}%`,
+    height: `${layout.frame.height * 100}%`,
     transform: object.type === "shape" ? `rotate(${object.rotationDegrees ?? 0}deg)` : undefined,
-    zIndex: object.layer === "behind-sketch" ? 0 : 10 + stackIndex,
+    zIndex: canvasObjectZIndex(stackIndex, isInFrontOfSketch(object)),
   };
 }
 
@@ -48,12 +53,16 @@ export function PagePreview({
 }) {
   const renderObject = (object: PageObject, stackIndex: number) => {
     switch (object.type) {
-      case "photo":
+      case "photo": {
+        const photoClassName = `page-preview-object preview-photo${
+          object.lockAspectRatio !== false ? " keep-proportions" : ""
+        }`;
         return object.asset.localUri.startsWith("demo://") ? (
-          <span className="page-preview-object preview-photo demo-photo" key={object.id} style={previewStyle(object, stackIndex)} />
+          <span className={`${photoClassName} demo-photo`} key={object.id} style={previewStyle(object, stackIndex)} />
         ) : (
-          <img alt="" className="page-preview-object preview-photo" key={object.id} src={displayAssetUri(object.asset.localUri)} style={previewStyle(object, stackIndex)} />
+          <img alt="" className={photoClassName} key={object.id} src={displayAssetUri(object.asset.localUri)} style={previewStyle(object, stackIndex)} />
         );
+      }
       case "voice":
         return <span className="page-preview-object preview-voice" key={object.id} style={previewStyle(object, stackIndex)} />;
       case "text":
@@ -67,16 +76,16 @@ export function PagePreview({
               border: object.outlineColor
                 ? `${object.outlineWidth ?? 2}px solid ${object.outlineColor}`
                 : "none",
-              color: object.color ?? "#201c17",
+              color: object.material === "scripture-gold" ? undefined : (object.color ?? "#201c17"),
             }}
           >
-            {object.text}
+            <span className={object.material === "scripture-gold" ? `scripture-gold-text scripture-gold-text-${object.goldFinish ?? "raised"}` : undefined}>{object.text}</span>
           </span>
         );
       case "link":
         return <span className="page-preview-object preview-link" key={object.id} style={previewStyle(object, stackIndex)}>{object.title}</span>;
       case "shape":
-        return <span className="page-preview-object preview-shape" key={object.id} style={previewStyle(object, stackIndex)}><ShapeCard shape={object} /></span>;
+        return <span className="page-preview-object preview-shape" key={object.id} style={previewStyle(object, stackIndex)}><ShapeCard preview shape={object} /></span>;
       case "transcript":
         return null;
       default: {
@@ -85,58 +94,25 @@ export function PagePreview({
       }
     }
   };
-  const stackIds = new Set(page.textStack?.memberIds ?? []);
-  const behindSketch = page.objects.filter(
-    (object) => object.layer === "behind-sketch" && !stackIds.has(object.id),
-  );
-  const aboveSketch = page.objects.filter(
-    (object) => object.layer !== "behind-sketch" && !stackIds.has(object.id),
-  );
-  const stackedTexts = (page.textStack?.memberIds ?? []).flatMap((id) => {
-    const object = page.objects.find((candidate) => candidate.id === id);
-    return object?.type === "text" ? [object] : [];
-  });
   return (
     <span
       aria-hidden="true"
       className={`diary-page-preview paper-${page.paperStyle} ${className}`}
       style={{ backgroundColor: effectivePaperBackgroundColour(page) }}
     >
-      {behindSketch.map((object) => renderObject(object, page.objects.indexOf(object)))}
+      {page.objects.map((object, index) =>
+        isInFrontOfSketch(object) ? null : renderObject(object, index),
+      )}
       {sketchRepository ? (
         <SketchThumbnail
           documentId={page.drawingDocumentId}
+          paperAspectRatio={16 / 9}
           repository={sketchRepository}
         />
       ) : null}
-      {page.textStack && stackedTexts.length > 0 ? (
-        <span
-          className="page-preview-text-stack"
-          style={{
-            left: `${page.textStack.position.x * 100}%`,
-            top: `${page.textStack.position.y * 100}%`,
-            width: `${page.textStack.frame.width * 100}%`,
-            height: `${page.textStack.frame.height * 100}%`,
-          }}
-        >
-          {stackedTexts.map((object) => (
-            <span
-              className={`preview-stacked-text canvas-text-${object.role ?? "body"} canvas-font-${object.font ?? "system-sans"}`}
-              key={object.id}
-              style={{
-                backgroundColor: object.backgroundColor ?? "transparent",
-                border: object.outlineColor
-                  ? `${object.outlineWidth ?? 2}px solid ${object.outlineColor}`
-                  : "none",
-                color: object.color ?? "#201c17",
-              }}
-            >
-              {object.text}
-            </span>
-          ))}
-        </span>
-      ) : null}
-      {aboveSketch.map((object) => renderObject(object, page.objects.indexOf(object)))}
+      {page.objects.map((object, index) =>
+        isInFrontOfSketch(object) ? renderObject(object, index) : null,
+      )}
     </span>
   );
 }

@@ -1,4 +1,4 @@
-import { Circle, Grid3X3, Highlighter, Paintbrush, PenLine, Pencil, Pentagon, RectangleHorizontal, Spline, Triangle } from "lucide-react";
+import { Circle, Grid3X3, Highlighter, Paintbrush, PenLine, Pencil, Pentagon, RectangleHorizontal, Sparkles, Spline, Triangle } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 
 import {
@@ -25,7 +25,11 @@ export type PenSettings = {
   nib?: PenNib;
   profiles?: Record<PenNib, { color: string; width: number; opacity: number }>;
   favouriteColours?: readonly string[];
+  material?: "solid" | "scripture-gold";
+  goldFinish?: "smooth" | "raised" | "sparkle";
 };
+
+export const SCRIPTURE_GOLD_COLOUR = "#b8862f";
 
 const NIBS = [
   { id: "pen", label: "Pen", Icon: PenLine },
@@ -67,6 +71,7 @@ export function PenSettingsHud({
     "--sample-colour": colourWithOpacity(settings.color, settings.opacity),
     "--sample-width": `${Math.max(2, Math.min(settings.width, 28))}px`,
   } as CSSProperties;
+  const scriptureGold = settings.material === "scripture-gold";
   const fingerDrawingActive = settings.fingerDrawing !== false;
   const fingerErasingActive = settings.fingerErasing === true;
   const hasGridPanel = Boolean(grid && onGridChange);
@@ -152,30 +157,6 @@ export function PenSettingsHud({
           id="pen-settings-panel"
           role={hasSectionTabs ? "tabpanel" : undefined}
         >
-          <button
-            aria-checked={fingerDrawingActive}
-            className={`finger-toggle${fingerDrawingActive ? " selected" : ""}`}
-            data-help-topic="finger-drawing"
-            onClick={() => changeSettings({
-              ...settings,
-              fingerDrawing: settings.fingerDrawing === false,
-            })}
-            role="switch"
-            type="button"
-          >
-            <span aria-hidden="true" className="grid-switch-track"><span /></span>
-            <span>Draw with finger</span>
-          </button>
-
-          <div
-            aria-label={`${NIBS.find(({ id }) => id === activeNib)?.label ?? "Pen"} preview`}
-            className={`pen-sample nib-${activeNib}`}
-            data-help-topic="pen-preview"
-            style={sampleStyle}
-          >
-            <span />
-          </div>
-
           <div aria-label="Pen nib" className="pen-nib-selector" role="group">
             {NIBS.map(({ id, label, Icon }) => (
               <button
@@ -194,17 +175,18 @@ export function PenSettingsHud({
           </div>
 
           <div className="pen-colour-layout">
-            <input
-              aria-label="Custom colour"
-              className={`pen-custom-colour${swatchSelected ? "" : " selected"}`}
-              data-help-topic="pen-colour"
-              onChange={(event) =>
-                changeSettings({ ...settings, color: event.target.value })
-              }
-              type="color"
-              value={settings.color}
-            />
-
+            <button
+              aria-pressed={scriptureGold}
+              className="scripture-gold-control"
+              data-help-topic="scripture-gold"
+              onClick={() => changeSettings({ ...settings, color: SCRIPTURE_GOLD_COLOUR, material: "scripture-gold", goldFinish: settings.goldFinish ?? "raised", nib: "pen" })}
+              type="button"
+            ><span aria-hidden="true" className="scripture-gold-orb"><Sparkles /></span><span><strong>Scripture Gold</strong><small>Illuminated gold</small></span></button>
+            {scriptureGold ? <div aria-label="Gold ink finish" className="scripture-gold-finish" role="group">
+              <button aria-pressed={(settings.goldFinish ?? "raised") === "smooth"} onClick={() => changeSettings({ ...settings, goldFinish: "smooth" })} type="button">Smooth</button>
+              <button aria-pressed={(settings.goldFinish ?? "raised") === "raised"} onClick={() => changeSettings({ ...settings, goldFinish: "raised" })} type="button">Raised ink</button>
+              <button aria-pressed={settings.goldFinish === "sparkle"} onClick={() => changeSettings({ ...settings, goldFinish: "sparkle" })} type="button">Sparkle</button>
+            </div> : null}
             <div
               aria-label="Pen colours"
               className="pen-colour-palette"
@@ -217,52 +199,90 @@ export function PenSettingsHud({
                     aria-pressed={settings.color === colour}
                     className="pen-colour-swatch"
                     data-help-topic="pen-colour"
-                    onClick={() => changeSettings({ ...settings, color: colour })}
+                    onClick={() => changeSettings({ ...settings, color: colour, material: "solid" })}
                     style={{ backgroundColor: colour }}
                     type="button"
                   />
                 </span>
               ))}
             </div>
+            <label className="pen-custom-colour-control">
+              <input
+                aria-label="Custom colour"
+                className={`pen-custom-colour${swatchSelected ? "" : " selected"}`}
+                data-help-topic="pen-colour"
+                onChange={(event) =>
+                  changeSettings({ ...settings, color: event.target.value, material: "solid" })
+                }
+                type="color"
+                value={settings.color}
+              />
+              <span>More</span>
+            </label>
           </div>
 
-          <label className="pen-width-control">
-            <span>Thickness</span>
-            <input
-              aria-label="Pen thickness"
-              data-help-topic="pen-thickness"
-              max={PEN_WIDTH_MAX}
-              min={PEN_WIDTH_MIN}
-              onChange={(event) =>
-                changeSettings({
-                  ...settings,
-                  width: clampWidth(Number(event.target.value)),
-                })
-              }
-              step="0.5"
-              type="range"
-              value={settings.width}
-            />
-          </label>
+          <div className="pen-stroke-controls">
+            <label className="pen-width-control">
+              <span>Thickness <strong>{settings.width.toFixed(1)}</strong></span>
+              <input
+                aria-label="Pen thickness"
+                data-help-topic="pen-thickness"
+                max={PEN_WIDTH_MAX}
+                min={PEN_WIDTH_MIN}
+                onChange={(event) =>
+                  changeSettings({
+                    ...settings,
+                    width: clampWidth(Number(event.target.value)),
+                  })
+                }
+                step="0.5"
+                type="range"
+                value={settings.width}
+              />
+            </label>
 
-          <label className="pen-width-control">
-            <span>Opacity {opacityPercent}%</span>
-            <input
-              aria-label="Pen opacity"
-              data-help-topic="pen-opacity"
-              max="100"
-              min="5"
-              onChange={(event) =>
-                changeSettings({
-                  ...settings,
-                  opacity: clampOpacity(Number(event.target.value) / 100),
-                })
-              }
-              step="1"
-              type="range"
-              value={opacityPercent}
-            />
-          </label>
+            <label className="pen-width-control">
+              <span>Opacity <strong>{opacityPercent}%</strong></span>
+              <input
+                aria-label="Pen opacity"
+                data-help-topic="pen-opacity"
+                max="100"
+                min="5"
+                onChange={(event) =>
+                  changeSettings({
+                    ...settings,
+                    opacity: clampOpacity(Number(event.target.value) / 100),
+                  })
+                }
+                step="1"
+                type="range"
+                value={opacityPercent}
+              />
+            </label>
+            <div
+              aria-label={`${NIBS.find(({ id }) => id === activeNib)?.label ?? "Pen"} preview`}
+              className={`pen-sample nib-${activeNib}${scriptureGold ? ` scripture-gold-sample scripture-gold-sample-${settings.goldFinish ?? "raised"}` : ""}`}
+              data-help-topic="pen-preview"
+              style={sampleStyle}
+            >
+              <span />
+            </div>
+          </div>
+
+            <button
+              aria-checked={fingerDrawingActive}
+              className={`finger-toggle${fingerDrawingActive ? " selected" : ""}`}
+              data-help-topic="finger-drawing"
+              onClick={() => changeSettings({
+                ...settings,
+                fingerDrawing: settings.fingerDrawing === false,
+              })}
+              role="switch"
+              type="button"
+            >
+              <span aria-hidden="true" className="grid-switch-track"><span /></span>
+              <span>Draw with finger</span>
+            </button>
         </div>
       ) : activePanel === "shapes" && onShapeSelect ? (
         <section aria-labelledby="shape-settings-tab" className="shape-picker" id="shape-settings-panel" role="tabpanel">

@@ -31,5 +31,22 @@ describe("StoryPagePreview", () => {
     expect(container.querySelector(".story-preview-photo")).toHaveStyle({ width: "75%" });
     expect(container.querySelector(".story-preview-shape")).toHaveStyle({ left: "10%", top: "20%", width: "30%", height: "25%", transform: "rotate(30deg)" });
     expect(container.querySelector(".story-preview-shape polygon")).toHaveAttribute("fill", "#abcdef");
+    expect(container.querySelector(".story-preview-shape polygon")).toHaveAttribute("vector-effect", "none");
+  });
+
+  it("stacks an over-ink shape above the sketch thumbnail", () => {
+    const over = {
+      ...page(),
+      shapes: [{
+        ...page().shapes![0]!,
+        inFrontOfSketch: true,
+      }],
+    };
+    const { container } = render(
+      <StoryPagePreview page={over} sketchRepository={new BrowserSketchRepository()} />,
+    );
+    expect(container.querySelector(".story-preview-shape")).toHaveStyle({
+      zIndex: 45 + 3,
+    });
   });
 });

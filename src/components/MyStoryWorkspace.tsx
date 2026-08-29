@@ -66,7 +66,6 @@ import {
   type SketchSurfaceHandle,
 } from "../sketch/SketchSurface";
 import { NativeSketchPreview } from "../sketch/NativeSketchPreview";
-import { nativeOverlayShapes } from "../sketch/nativeDrawingLayering";
 import { browserFileToAsset, readImageSize } from "../utils/assets";
 import { readableTextColour } from "../utils/colour";
 import { createId } from "../utils/id";
@@ -88,7 +87,7 @@ import {
   MyStoryInspector,
   type MyStorySelection,
 } from "./MyStoryInspector";
-import { PenSettingsHud, type PenSettings } from "./PenSettingsHud";
+import { PenSettingsHud, SCRIPTURE_GOLD_COLOUR, type PenSettings } from "./PenSettingsHud";
 import {
   controlShareRect,
   pageShareTitle,
@@ -273,6 +272,16 @@ export function MyStoryWorkspace({
   >(undefined);
   const suppressTextClickRef = useRef(false);
   const [selection, setSelection] = useState<MyStorySelection>();
+  const [textBackgroundPreview, setTextBackgroundPreview] = useState<{
+    pageId: string;
+    color: string;
+  }>();
+  const [textColorPreview, setTextColorPreview] = useState<{
+    pageId: string;
+    color: string;
+  }>();
+  const backgroundCommitTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const textColorCommitTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [textPendingDeletion, setTextPendingDeletion] =
     useState<MyStoryTextBlock>();
   const [selectedRecordingId, setSelectedRecordingId] = useState<string>();
@@ -290,6 +299,7 @@ export function MyStoryWorkspace({
   const [textEditorRequested, setTextEditorRequested] = useState(false);
   const [penSettings, setPenSettings] = useState<PenSettings>({
     color: penColor,
+    material: penColor.toLowerCase() === SCRIPTURE_GOLD_COLOUR ? "scripture-gold" : "solid",
     nib: penNib,
     profiles: penNibProfiles,
     width: penWidth,
@@ -308,9 +318,15 @@ export function MyStoryWorkspace({
   const [voiceDialogRequested, setVoiceDialogRequested] = useState(false);
   const autoStopStartedRef = useRef(false);
   const toggleVoiceRef = useRef<() => Promise<void>>(async () => undefined);
+  const displayedTextBackgroundColor =
+    textBackgroundPreview?.pageId === page.id
+      ? textBackgroundPreview.color
+      : page.textBackgroundColor;
   const pageTextColor = readableTextColour(
-    page.textColor ?? defaultTextColor,
-    page.textBackgroundColor,
+    textColorPreview?.pageId === page.id
+      ? textColorPreview.color
+      : page.textColor ?? defaultTextColor,
+    displayedTextBackgroundColor,
   );
   const textSelectionEnabled = tool === "arrange";
   const renderOrder = normalizedStoryRenderOrder(page);
@@ -321,22 +337,6 @@ export function MyStoryWorkspace({
     const previous = renderOrder;
     const index = previous.findIndex((item) => item.kind === "shape" && item.id === shape.id);
     const target = index + direction;
-    if (direction === -1 && shape.layer !== "behind-sketch" && target < 0) {
-      const next = { ...shape, layer: "behind-sketch" as const, revision: shape.revision + 1 };
-      void commitWithUndo(
-        { type: "my-story-shape-update", pageId: page.id, shape: next },
-        { type: "my-story-shape-update", pageId: page.id, shape },
-      );
-      return;
-    }
-    if (direction === 1 && shape.layer === "behind-sketch") {
-      const next = { ...shape, layer: "above-sketch" as const, revision: shape.revision + 1 };
-      void commitWithUndo(
-        { type: "my-story-shape-update", pageId: page.id, shape: next },
-        { type: "my-story-shape-update", pageId: page.id, shape },
-      );
-      return;
-    }
     if (index < 0 || target < 0 || target >= previous.length) return;
     const next = [...previous];
     [next[index], next[target]] = [next[target]!, next[index]!];
@@ -368,9 +368,9 @@ export function MyStoryWorkspace({
   const placeShape = async (shapeKind: Exclude<ShapeKind, "polygon" | "freeform">) => {
     const shape: ShapeObject = { id: createId(), type: "shape", shapeKind, pageId: page.id,
       position: { x: 0.38, y: 0.34 }, frame: { width: 0.24, height: 0.24 }, fillColor: penSettings.color,
-      outlineColor: "#3f3528", outlineWidth: 3, layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString() };
+      outlineColor: "#3f3528", outlineWidth: 3, layer: "above-sketch", revision: 0, createdAt: new Date().toISOString() };
     setPenHudOpen(false); onToolChange("arrange"); setSelectedShapeId(shape.id); setSelection(undefined); setSelectedRecordingId(undefined);
-    const saved = await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id });
+    const saved = await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape, renderIndex: renderOrder.length }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id });
     if (!saved) {
       setSelectedShapeId(undefined);
       onToolChange("pen");
@@ -394,8 +394,8 @@ export function MyStoryWorkspace({
     const clamped = clampPosition(position, frame);
     const shape: ShapeObject = { id: createId(), type: "shape", shapeKind: "freeform", pageId: page.id, position: clamped, frame,
       points: anchors.map(({ x, y }) => ({ x: (x - clamped.x) / frame.width, y: (y - clamped.y) / frame.height })),
-      fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3, layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString() };
-    if (await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id })) {
+      fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3, layer: "above-sketch", revision: 0, createdAt: new Date().toISOString() };
+    if (await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape, renderIndex: renderOrder.length }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id })) {
       setFreeformDraft(false); setNotice(undefined); onToolChange("arrange"); setSelectedShapeId(shape.id);
     }
   };
@@ -407,8 +407,8 @@ export function MyStoryWorkspace({
     const clamped = clampPosition(position, frame);
     const shape: ShapeObject = { id: createId(), type: "shape", shapeKind: "polygon", pageId: page.id, position: clamped, frame,
       points: polygonDraft.map(({ x, y }) => ({ x: (x - clamped.x) / frame.width, y: (y - clamped.y) / frame.height })),
-      fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3, layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString() };
-    if (await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id })) {
+      fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3, layer: "above-sketch", revision: 0, createdAt: new Date().toISOString() };
+    if (await commitWithUndo({ type: "my-story-shape-add", pageId: page.id, shape, renderIndex: renderOrder.length }, { type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id })) {
       setPolygonDraft(null); setNotice(undefined); onToolChange("arrange"); setSelectedShapeId(shape.id);
     }
   };
@@ -483,25 +483,41 @@ export function MyStoryWorkspace({
     };
   }, [page.drawingDocumentId, tool]);
 
+  const drawingInteractionRequiresView =
+    navigationObscured ||
+    shareChooserOpen ||
+    shareChooserRequested ||
+    shareInProgress ||
+    linkComposerRequested ||
+    linkEditing !== undefined ||
+    textEditorRequested ||
+    textEditing !== undefined ||
+    polygonDraft !== null ||
+    freeformDraft ||
+    voiceDialogOpen ||
+    voiceDialogRequested;
   const overlayEnabled =
-    !navigationObscured &&
     !penHudOpen &&
-    !shareChooserOpen &&
-    !shareChooserRequested &&
-    !shareInProgress &&
-    !linkComposerRequested &&
-    linkEditing === undefined &&
-    !textEditorRequested &&
-    textEditing === undefined &&
-    polygonDraft === null && !freeformDraft &&
-    !voiceDialogOpen &&
-    !voiceDialogRequested;
+    !drawingInteractionRequiresView;
+
+  useEffect(() => {
+    if (
+      !drawingInteractionRequiresView ||
+      (tool !== "pen" && tool !== "eraser")
+    ) {
+      return;
+    }
+    onToolChange("view");
+  }, [drawingInteractionRequiresView, onToolChange, tool]);
+
   const { overlayReady, suspendOverlay } =
     useNativeDrawingOverlay({
       documentId: page.drawingDocumentId,
       enabled: overlayEnabled,
       tool,
       color: penSettings.color,
+      material: penSettings.material,
+      goldFinish: penSettings.goldFinish,
       nib: penSettings.nib,
       width: penSettings.width,
       opacity: penSettings.opacity,
@@ -509,7 +525,7 @@ export function MyStoryWorkspace({
       ? penSettings.fingerErasing === true
       : penSettings.fingerDrawing !== false,
       twoFingerUndo: twoFingerUndoEnabled,
-      overlayShapes: nativeOverlayShapes(page.shapes ?? []),
+      voiceObjectIds: page.recordings.map((recording) => recording.id),
       paperRef,
       protectedHeaderRef: headerRef,
       toolPaletteRef,
@@ -1221,6 +1237,28 @@ export function MyStoryWorkspace({
     }
   };
 
+  const previewPageTextColor = (color: string) => {
+    setTextColorPreview({ pageId: page.id, color });
+    if (textColorCommitTimerRef.current) {
+      clearTimeout(textColorCommitTimerRef.current);
+    }
+    textColorCommitTimerRef.current = setTimeout(() => {
+      textColorCommitTimerRef.current = undefined;
+      updatePageTextColor(color);
+    }, 120);
+  };
+
+  const previewTextBackground = (color: string) => {
+    setTextBackgroundPreview({ pageId: page.id, color });
+    if (backgroundCommitTimerRef.current) {
+      clearTimeout(backgroundCommitTimerRef.current);
+    }
+    backgroundCommitTimerRef.current = setTimeout(() => {
+      backgroundCommitTimerRef.current = undefined;
+      updateTextBackground(color);
+    }, 120);
+  };
+
   const updateSelectedPhoto = (
     update: (photo: MyStoryPhoto) => MyStoryPhoto,
   ) => {
@@ -1242,29 +1280,6 @@ export function MyStoryWorkspace({
       ...recording,
       position: change.after.position,
       frame: change.after.frame,
-      revision: recording.revision + 1,
-    };
-    void commitWithUndo(
-      {
-        type: "my-story-recording-update",
-        pageId: page.id,
-        recording: updated,
-      },
-      {
-        type: "my-story-recording-update",
-        pageId: page.id,
-        recording,
-      },
-    );
-  };
-
-  const toggleRecordingLayer = (recording: MyStoryVoiceRecording) => {
-    const updated = {
-      ...recording,
-      layer:
-        recording.layer === "behind-sketch"
-          ? ("above-sketch" as const)
-          : ("behind-sketch" as const),
       revision: recording.revision + 1,
     };
     void commitWithUndo(
@@ -1582,7 +1597,7 @@ export function MyStoryWorkspace({
       >
         <SketchSurface
           capabilities={
-            overlayReady || tool === "arrange" || tool === "view"
+            overlayReady || penHudOpen || tool === "arrange" || tool === "view"
               ? {
                   kind: "readonly",
                   tools: [],
@@ -1610,7 +1625,7 @@ export function MyStoryWorkspace({
           tool={tool === "eraser" ? "eraser" : "pen"}
         />
         {overlayReady ? null : (
-          <NativeSketchPreview documentId={page.drawingDocumentId} />
+          <NativeSketchPreview documentId={page.drawingDocumentId} goldFinish={penSettings.goldFinish} />
         )}
         {polygonDraft ? <PolygonDraftEditor color={penSettings.color} onCancel={() => { setPolygonDraft(null); setNotice(undefined); onToolChange("pen"); }} onChange={setPolygonDraft} onFinish={() => void finishPolygon()} pageRef={paperRef} points={polygonDraft} /> : null}
         {freeformDraft ? <FreeformDraftEditor color={penSettings.color} onCancel={() => { setFreeformDraft(false); setNotice(undefined); onToolChange("pen"); }} onFinish={(anchors) => void finishFreeform(anchors)} onInvalid={() => setNotice("Draw a larger closed outline to create a freeform shape.")} pageRef={paperRef} /> : null}
@@ -1626,7 +1641,7 @@ export function MyStoryWorkspace({
           <div
             aria-hidden="true"
             className="story-text-background"
-            style={{ backgroundColor: page.textBackgroundColor }}
+            style={{ backgroundColor: displayedTextBackgroundColor }}
           />
           {tool === "arrange" ? (
             <button
@@ -1842,7 +1857,6 @@ export function MyStoryWorkspace({
               setSelection(undefined);
               setSelectedRecordingId(voice.id);
             }}
-            onToggleLayer={() => toggleRecordingLayer(voice)}
             pageRef={paperRef}
             position={
               voice.position ?? {
@@ -1856,9 +1870,10 @@ export function MyStoryWorkspace({
           >
             <AudioCard
               audio={audio}
-              disabled={tool === "arrange"}
+              gatePlaybackUntilSelected={tool === "arrange"}
               onConvertToText={() => void transcribeVoice(voice)}
               recording={voice}
+              selected={selectedRecordingId === voice.id}
             />
           </ArrangeablePageObject>
         ))}
@@ -1867,8 +1882,8 @@ export function MyStoryWorkspace({
           const stackIndex = stackFor("shape", shape.id);
           return <ShapeEditor
             arrange={tool === "arrange" && !shapeEditingObscured}
-            canMoveDown={shape.layer !== "behind-sketch"}
-            canMoveUp={shape.layer === "behind-sketch" || stackIndex < renderOrder.length - 1}
+            canMoveDown={stackIndex > 0}
+            canMoveUp={stackIndex < renderOrder.length - 1}
             key={shape.id}
             onDelete={() => { setSelectedShapeId(undefined); void commitWithUndo({ type: "my-story-shape-delete", pageId: page.id, shapeId: shape.id }, { type: "my-story-shape-add", pageId: page.id, shape, renderIndex: stackIndex }); }}
             onDeselect={() => setSelectedShapeId(undefined)}
@@ -1888,6 +1903,13 @@ export function MyStoryWorkspace({
 
         {selection && tool === "arrange" ? (
           <MyStoryInspector
+            key={selection.kind === "text"
+              ? selection.block.id
+              : selection.kind === "photo"
+                ? selection.photo.id
+                : selection.kind === "link"
+                  ? selection.link.id
+                  : "pane"}
             onClose={() => setSelection(undefined)}
             onDelete={() => {
               if (selection.kind === "text") {
@@ -1938,8 +1960,8 @@ export function MyStoryWorkspace({
                 revision: photo.revision + 1,
               }))
             }
-            onTextBackgroundChange={updateTextBackground}
-            onTextColorChange={updatePageTextColor}
+            onTextBackgroundChange={previewTextBackground}
+            onTextColorChange={previewPageTextColor}
             onTextRoleChange={(role) =>
               updateSelectedText((block) => ({
                 ...block,
@@ -1948,7 +1970,7 @@ export function MyStoryWorkspace({
               }))
             }
             selection={selection}
-            textBackgroundColor={page.textBackgroundColor}
+            textBackgroundColor={displayedTextBackgroundColor}
             textColor={pageTextColor}
           />
         ) : null}
@@ -2009,10 +2031,14 @@ export function MyStoryWorkspace({
 
       {linkEditing !== undefined ? (
         <LinkComposer
+          audio={audio}
+          contextualStrings={myWords.filter((word) => word.enabled).map((word) => word.text).slice(0, 100)}
+          files={files}
           initialTitle={linkEditing?.title}
           initialUrl={linkEditing?.url}
           onClose={() => setLinkEditing(undefined)}
           onSave={(url, title) => void saveLink(url, title)}
+          transcription={transcription}
         />
       ) : null}
 

@@ -19,6 +19,7 @@ export const MAXIMUM_PHOTO_FRAME = {
   width: PAGE_LAYOUT_BOUNDS.right - PAGE_LAYOUT_BOUNDS.left,
   height: PAGE_LAYOUT_BOUNDS.bottom - PAGE_LAYOUT_BOUNDS.top,
 } as const;
+export const MAXIMUM_TEXT_FRAME = MAXIMUM_PHOTO_FRAME;
 export const MAXIMUM_SHAPE_FRAME = MAXIMUM_PHOTO_FRAME;
 
 export type AlignmentGuides = {
@@ -35,6 +36,8 @@ export type ResizeOptions = {
   aspectRatio?: number;
   maximum?: Size;
   minimum?: Size;
+  snapPeerFrames?: Size[];
+  snapThreshold?: number;
 };
 
 export type LayoutEdges = {
@@ -50,9 +53,74 @@ export type ResizeAnchor = {
 };
 
 export const ADAPTIVE_CONTROL_EDGE_MARGIN = 0.04;
+export const ARRANGE_SNAP_THRESHOLD = 0.015;
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function nearestDimension(
+  value: number,
+  peers: Size[],
+  dimension: keyof Size,
+  threshold: number,
+): number | undefined {
+  return peers
+    .map((peer) => peer[dimension])
+    .filter((candidate) => Math.abs(candidate - value) <= threshold)
+    .sort(
+      (first, second) =>
+        Math.abs(first - value) - Math.abs(second - value),
+    )[0];
+}
+
+function snapFrame(
+  frame: Size,
+  options: ResizeOptions,
+  limits: { maximumWidth: number; maximumHeight: number; minimum: Size },
+  widthLed: boolean,
+): Size {
+  const peers = options.snapPeerFrames ?? [];
+  if (peers.length === 0) return frame;
+  const threshold = options.snapThreshold ?? ARRANGE_SNAP_THRESHOLD;
+  const aspectRatio = options.aspectRatio;
+  const width = nearestDimension(frame.width, peers, "width", threshold);
+  const height = nearestDimension(frame.height, peers, "height", threshold);
+  if (aspectRatio && aspectRatio > 0) {
+    if (
+      widthLed &&
+      width !== undefined &&
+      width >= limits.minimum.width &&
+      width <= limits.maximumWidth
+    ) {
+      const matchedHeight = width / aspectRatio;
+      if (
+        matchedHeight >= limits.minimum.height &&
+        matchedHeight <= limits.maximumHeight
+      ) return { width, height: matchedHeight };
+    }
+    if (
+      !widthLed &&
+      height !== undefined &&
+      height >= limits.minimum.height &&
+      height <= limits.maximumHeight
+    ) {
+      const matchedWidth = height * aspectRatio;
+      if (
+        matchedWidth >= limits.minimum.width &&
+        matchedWidth <= limits.maximumWidth
+      ) return { width: matchedWidth, height };
+    }
+    return frame;
+  }
+  return {
+    width: width === undefined
+      ? frame.width
+      : clamp(width, limits.minimum.width, limits.maximumWidth),
+    height: height === undefined
+      ? frame.height
+      : clamp(height, limits.minimum.height, limits.maximumHeight),
+  };
 }
 
 export function pageAspectFromImage(image: Size): number {
@@ -181,8 +249,8 @@ export function moveLayout(
   );
   const centreX = position.x + start.frame.width / 2;
   const centreY = position.y + start.frame.height / 2;
-  const vertical = Math.abs(centreX - 0.5) <= 0.015;
-  const horizontal = Math.abs(centreY - 0.5) <= 0.015;
+  const vertical = Math.abs(centreX - 0.5) <= ARRANGE_SNAP_THRESHOLD;
+  const horizontal = Math.abs(centreY - 0.5) <= ARRANGE_SNAP_THRESHOLD;
 
   if (vertical) {
     position = { ...position, x: 0.5 - start.frame.width / 2 };
@@ -248,29 +316,33 @@ export function resizeLayout(
         height = width / aspectRatio;
       }
     }
+    const frame = snapFrame({
+      width: clamp(width, minimum.width, maximumWidth),
+      height: clamp(height, minimum.height, maximumHeight),
+    }, options, { maximumWidth, maximumHeight, minimum }, widthLed);
     return {
       position: start.position,
-      frame: {
-        width: clamp(width, minimum.width, maximumWidth),
-        height: clamp(height, minimum.height, maximumHeight),
-      },
+      frame,
     };
   }
 
+  const frame = snapFrame({
+    width: clamp(
+      start.frame.width + delta.width,
+      minimum.width,
+      maximumWidth,
+    ),
+    height: clamp(
+      start.frame.height + delta.height,
+      minimum.height,
+      maximumHeight,
+    ),
+  }, options, { maximumWidth, maximumHeight, minimum }, (
+    Math.abs(delta.width) >= Math.abs(delta.height)
+  ));
   return {
     position: start.position,
-    frame: {
-      width: clamp(
-        start.frame.width + delta.width,
-        minimum.width,
-        maximumWidth,
-      ),
-      height: clamp(
-        start.frame.height + delta.height,
-        minimum.height,
-        maximumHeight,
-      ),
-    },
+    frame,
   };
 }
 

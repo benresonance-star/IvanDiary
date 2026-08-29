@@ -15,7 +15,7 @@ function doubles(finalize = vi.fn(async () => asset)) {
     recoverInterrupted: vi.fn(), play: vi.fn(), pausePlayback: vi.fn(),
     addListener: vi.fn(async () => ({ remove: async () => undefined })),
   };
-  const files: JournalFilesPlugin = { finaliseTemporaryAsset: finalize, removeToTrash: vi.fn(), storageHealth: vi.fn() };
+  const files: JournalFilesPlugin = { finaliseTemporaryAsset: finalize, removeToTrash: vi.fn(), resolveStoredAssets: vi.fn(), storageHealth: vi.fn() };
   return { audio, files, finalize };
 }
 

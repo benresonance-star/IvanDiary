@@ -33,9 +33,46 @@ describe("DiaryPageStrip", () => {
     }] };
     const { container } = render(<PagePreview page={previewPage} />);
     expect(screen.getByText("Canvas words")).toBeInTheDocument();
-    expect(container.querySelector(".preview-shape")).toHaveStyle({ left: "12%", top: "18%", width: "22%", height: "30%", transform: "rotate(45deg)", zIndex: 0 });
+    expect(container.querySelector(".preview-shape")).toHaveStyle({ left: "12%", top: "18%", width: "22%", height: "30%", transform: "rotate(45deg)", zIndex: 1 });
     expect(container.querySelector(".preview-shape polygon")).toHaveAttribute("fill", "#abcdef");
-    expect(container.querySelector(".preview-text")).toHaveStyle({ zIndex: 11 });
+    expect(container.querySelector(".preview-shape polygon")).toHaveAttribute("vector-effect", "none");
+    expect(container.querySelector(".preview-text")).toHaveStyle({ zIndex: 2 });
+  });
+
+  it("places over-ink preview objects above the sketch thumbnail", () => {
+    const page = pages()[0]!;
+    const previewPage: Page = {
+      ...page,
+      objects: [{
+        id: "under-text",
+        pageId: page.id,
+        type: "text",
+        text: "Under",
+        textScale: 1,
+        position: { x: 0.1, y: 0.1 },
+        frame: { width: 0.2, height: 0.1 },
+        revision: 0,
+        createdAt: page.createdAt,
+      }, {
+        id: "over-text",
+        pageId: page.id,
+        type: "text",
+        text: "Over",
+        textScale: 1,
+        position: { x: 0.4, y: 0.4 },
+        frame: { width: 0.2, height: 0.1 },
+        inFrontOfSketch: true,
+        revision: 0,
+        createdAt: page.createdAt,
+      }],
+    };
+    const { container } = render(<PagePreview page={previewPage} />);
+    const under = container.querySelector(".preview-text");
+    const texts = container.querySelectorAll(".preview-text");
+    expect(texts[0]).toHaveStyle({ zIndex: 1 });
+    expect(texts[1]).toHaveStyle({ zIndex: 46 });
+    expect(under?.textContent).toBe("Under");
+    expect(texts[1]?.textContent).toBe("Over");
   });
 
   it("shows a page's selected background colour in its preview", () => {
@@ -44,6 +81,32 @@ describe("DiaryPageStrip", () => {
     expect(container.querySelector(".diary-page-preview")).toHaveStyle({
       backgroundColor: "#aabbcc",
     });
+  });
+
+  it("matches the canvas photo fit mode in previews", () => {
+    const page = pages()[0]!;
+    const photo = {
+      id: "photo-one",
+      pageId: page.id,
+      type: "photo" as const,
+      asset: {
+        id: "asset-one",
+        kind: "photo" as const,
+        localUri: "file:///photo.jpg",
+        mimeType: "image/jpeg",
+        byteLength: 1,
+        checksum: "photo-checksum",
+      },
+      size: { width: 400, height: 300 },
+      position: { x: 0.2, y: 0.3 },
+      frame: { width: 0.4, height: 0.3 },
+      lockAspectRatio: true,
+      revision: 0,
+      createdAt: page.createdAt,
+    };
+    const { container } = render(<PagePreview page={{ ...page, objects: [photo] }} />);
+
+    expect(container.querySelector(".preview-photo")).toHaveClass("keep-proportions");
   });
 
   it("shows ordered visual pages and exposes the current page", () => {

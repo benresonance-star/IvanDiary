@@ -57,6 +57,17 @@ public enum NativeDrawingNib: String, Sendable {
     }
 }
 
+public enum NativeDrawingMaterial: String, Sendable {
+    case solid
+    case scriptureGold = "scripture-gold"
+}
+
+public enum NativeGoldFinish: String, Sendable {
+    case smooth
+    case raised
+    case sparkle
+}
+
 public struct ApplicationSupportPencilDrawingStore: PencilDrawingStore {
     public init() {}
 
@@ -99,7 +110,7 @@ public struct ApplicationSupportPencilDrawingStore: PencilDrawingStore {
     }
 
     public func remove(documentID: String) throws {
-        for fileExtension in ["pkdrawing", "png"] {
+        for fileExtension in ["pkdrawing", "png", "gold.png"] {
             let url = try fileURL(documentID: documentID, extension: fileExtension)
             if FileManager.default.fileExists(atPath: url.path) {
                 try FileManager.default.removeItem(at: url)
@@ -130,13 +141,11 @@ public struct ApplicationSupportPencilDrawingStore: PencilDrawingStore {
             forKeys: [.contentModificationDateKey]
         ).contentModificationDate ?? Date.distantPast
         if let preview = try loadPreview(documentID: documentID),
-           preview.modifiedAt >= drawingModifiedAt,
-           let image = UIImage(contentsOfFile: preview.fileURL.path) {
-            let requestedAspect = bounds.width / max(bounds.height, 1)
-            let previewAspect = image.size.width / max(image.size.height, 1)
-            if abs(requestedAspect - previewAspect) < 0.02 {
-                return preview
-            }
+           DrawingPreviewReusePolicy.canReusePreview(
+               modifiedAt: preview.modifiedAt,
+               forDrawingModifiedAt: drawingModifiedAt
+           ) {
+            return preview
         }
 
         // Cloud recovery restores the authoritative PKDrawing file. Older
@@ -151,6 +160,44 @@ public struct ApplicationSupportPencilDrawingStore: PencilDrawingStore {
         }
         try savePreview(previewData, documentID: documentID)
         return try loadPreview(documentID: documentID)
+    }
+
+    /// Rebuilds a transparent derivative containing only Scripture Gold ink.
+    /// The editable PKDrawing remains authoritative.
+    public func loadScriptureGoldMaskPreview(
+        documentID: String,
+        bounds: CGRect
+    ) throws -> PencilDrawingPreview? {
+        guard let data = try load(documentID: documentID) else { return nil }
+        let drawing = try PKDrawing(data: data)
+        let goldStrokes = drawing.strokes.filter { stroke in
+            var red: CGFloat = 0
+            var green: CGFloat = 0
+            var blue: CGFloat = 0
+            var alpha: CGFloat = 0
+            guard stroke.ink.color.getRed(
+                &red, green: &green, blue: &blue, alpha: &alpha
+            ) else { return false }
+            return abs(red - 184 / 255) < 0.025 &&
+                abs(green - 134 / 255) < 0.025 &&
+                abs(blue - 47 / 255) < 0.025
+        }
+        let url = try fileURL(documentID: documentID, extension: "gold.png")
+        guard !goldStrokes.isEmpty else {
+            try? FileManager.default.removeItem(at: url)
+            return nil
+        }
+        let image = PencilInkColor.renderPreview(
+            drawing: PKDrawing(strokes: goldStrokes),
+            bounds: bounds
+        )
+        guard let data = image.pngData() else { return nil }
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
+        let values = try url.resourceValues(forKeys: [.contentModificationDateKey])
+        return PencilDrawingPreview(
+            fileURL: url,
+            modifiedAt: values.contentModificationDate ?? Date()
+        )
     }
 
     private func fileURL(

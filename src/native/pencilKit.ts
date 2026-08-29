@@ -3,6 +3,7 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import type {
   LegacyInkDocument,
   PencilKitOverlayRect,
+  PencilKitPassthroughRect,
   PencilKitPlugin,
   PencilKitPreview,
   NativeOverlayShape,
@@ -17,6 +18,7 @@ export const NATIVE_DRAWING_LONG_PRESSED_EVENT =
 
 export type NativeDrawingPreview = PencilKitPreview & {
   previewSrc?: string;
+  goldMaskSrc?: string;
   didHide?: boolean;
 };
 
@@ -44,6 +46,10 @@ function rectKey(rect?: PencilKitOverlayRect): string {
   ].join(":");
 }
 
+function rectsKey(rects?: PencilKitPassthroughRect[]): string {
+  return (rects ?? []).map((rect) => rectKey(rect)).join(",");
+}
+
 let lastUpdateKey = "";
 
 export function hasNativePencilKit(): boolean {
@@ -56,6 +62,8 @@ export function hasNativePencilKit(): boolean {
 export async function openNativeDrawing(options: {
   documentId: string;
   color: string;
+  material?: "solid" | "scripture-gold";
+  goldFinish?: "smooth" | "raised" | "sparkle";
   width: number;
   opacity?: number;
   fingerDrawing?: boolean;
@@ -73,6 +81,8 @@ export async function openNativeDrawing(options: {
 export async function showNativeDrawingOverlay(options: {
   documentId: string;
   color: string;
+  material?: "solid" | "scripture-gold";
+  goldFinish?: "smooth" | "raised" | "sparkle";
   nib?: "pen" | "marker" | "pencil" | "brush";
   width: number;
   opacity?: number;
@@ -90,8 +100,14 @@ export async function showNativeDrawingOverlay(options: {
   gridDocumentWidth?: number;
   gridDocumentHeight?: number;
   overlayShapes?: NativeOverlayShape[];
+  passthroughRects?: PencilKitPassthroughRect[];
+  visualHoleRects?: PencilKitPassthroughRect[];
 }): Promise<{ importedLegacyStrokes: boolean }> {
-  lastUpdateKey = rectKey(options.rect);
+  lastUpdateKey = [
+    rectKey(options.rect),
+    rectsKey(options.passthroughRects),
+    rectsKey(options.visualHoleRects),
+  ].join("|");
   const result = await enqueueOverlayCall(() =>
     pencilKit.showOverlay(options),
   );
@@ -102,6 +118,8 @@ export async function showNativeDrawingOverlay(options: {
 
 export async function updateNativeDrawingOverlay(options: {
   color?: string;
+  material?: "solid" | "scripture-gold";
+  goldFinish?: "smooth" | "raised" | "sparkle";
   nib?: "pen" | "marker" | "pencil" | "brush";
   width?: number;
   opacity?: number;
@@ -118,9 +136,13 @@ export async function updateNativeDrawingOverlay(options: {
   gridDocumentWidth?: number;
   gridDocumentHeight?: number;
   overlayShapes?: NativeOverlayShape[];
+  passthroughRects?: PencilKitPassthroughRect[];
+  visualHoleRects?: PencilKitPassthroughRect[];
 }): Promise<void> {
   const key = [
     options.color ?? "",
+    options.material ?? "",
+    options.goldFinish ?? "",
     options.nib ?? "",
     options.width ?? "",
     options.opacity ?? "",
@@ -142,6 +164,8 @@ export async function updateNativeDrawingOverlay(options: {
     options.gridDocumentHeight ?? "",
     JSON.stringify(options.overlayShapes ?? []),
     rectKey(options.rect),
+    rectsKey(options.passthroughRects),
+    rectsKey(options.visualHoleRects),
   ].join("|");
   if (key === lastUpdateKey) {
     return;
@@ -254,8 +278,15 @@ function withWebPreview(preview: PencilKitPreview): NativeDrawingPreview {
     preview.modifiedAt === undefined
       ? source
       : `${source}${source.includes("?") ? "&" : "?"}v=${preview.modifiedAt}`;
+  const goldMaskSource = preview.goldMaskUri
+    ? Capacitor.convertFileSrc(preview.goldMaskUri)
+    : undefined;
+  const goldMaskSrc = goldMaskSource && preview.goldMaskModifiedAt !== undefined
+    ? `${goldMaskSource}${goldMaskSource.includes("?") ? "&" : "?"}v=${preview.goldMaskModifiedAt}`
+    : goldMaskSource;
   return {
     ...preview,
     previewSrc: versionedSource,
+    ...(goldMaskSrc ? { goldMaskSrc } : {}),
   };
 }

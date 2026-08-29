@@ -70,6 +70,17 @@ export interface JournalFilesPlugin {
     mimeType: string;
   }): Promise<AssetRef>;
   removeToTrash(options: { assetId: EntityId }): Promise<void>;
+  resolveStoredAssets(options: {
+    assets: Array<{
+      id: EntityId;
+      kind: "audio" | "photo";
+      localUri: string;
+      mimeType: string;
+    }>;
+  }): Promise<{
+    resolvedAssetUris: Record<string, string>;
+    unresolvedAssetIds: string[];
+  }>;
   storageHealth(): Promise<{
     availableBytes?: number;
     lowStorage: boolean;
@@ -240,6 +251,8 @@ export type PencilKitOverlayRect = {
   height: number;
 };
 
+export type PencilKitPassthroughRect = PencilKitOverlayRect;
+
 export type LegacyInkPoint = {
   x: number;
   y: number;
@@ -309,6 +322,8 @@ export interface PencilKitPlugin {
   open(options: {
     documentId: EntityId;
     color: string;
+    material?: "solid" | "scripture-gold";
+    goldFinish?: "smooth" | "raised" | "sparkle";
     width: number;
     opacity?: number;
     fingerDrawing?: boolean;
@@ -319,6 +334,8 @@ export interface PencilKitPlugin {
   showOverlay(options: {
     documentId: EntityId;
     color: string;
+    material?: "solid" | "scripture-gold";
+    goldFinish?: "smooth" | "raised" | "sparkle";
     nib?: "pen" | "marker" | "pencil" | "brush";
     width: number;
     opacity?: number;
@@ -336,9 +353,13 @@ export interface PencilKitPlugin {
     gridDocumentWidth?: number;
     gridDocumentHeight?: number;
     overlayShapes?: NativeOverlayShape[];
+    passthroughRects?: PencilKitPassthroughRect[];
+    visualHoleRects?: PencilKitPassthroughRect[];
   }): Promise<{ visible: boolean; importedLegacyStrokes?: boolean }>;
   updateOverlay(options: {
     color?: string;
+    material?: "solid" | "scripture-gold";
+    goldFinish?: "smooth" | "raised" | "sparkle";
     nib?: "pen" | "marker" | "pencil" | "brush";
     width?: number;
     opacity?: number;
@@ -355,6 +376,8 @@ export interface PencilKitPlugin {
     overlayShapes?: NativeOverlayShape[];
     gridDocumentWidth?: number;
     gridDocumentHeight?: number;
+    passthroughRects?: PencilKitPassthroughRect[];
+    visualHoleRects?: PencilKitPassthroughRect[];
   }): Promise<{ visible: boolean }>;
   hideOverlay(options?: { save?: boolean }): Promise<PencilKitPreview>;
   flushOverlay(): Promise<PencilKitPreview>;
@@ -378,4 +401,6 @@ export type PencilKitPreview = {
   didHide?: boolean;
   previewUri?: string;
   modifiedAt?: number;
+  goldMaskUri?: string;
+  goldMaskModifiedAt?: number;
 };

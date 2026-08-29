@@ -21,7 +21,6 @@ describe("ArrangeablePageObject", () => {
           onCommit={onCommit}
           onDelete={vi.fn()}
           onSelect={vi.fn()}
-          onToggleLayer={vi.fn()}
           pageRef={pageRef}
           position={{ x: 0.2, y: 0.3 }}
           selected
@@ -50,7 +49,54 @@ describe("ArrangeablePageObject", () => {
     );
   });
 
-  it("flips text-column controls inward and expands from fixed edges", () => {
+  it("keeps an optimistic drag position through stale and intermediate parent rerenders", () => {
+    const pageRef = createRef<HTMLDivElement>();
+    const onCommit = vi.fn();
+    const object = (position = { x: 0.2, y: 0.3 }) => (
+      <div ref={pageRef}>
+        <ArrangeablePageObject
+          arrange
+          className="page-object"
+          frame={{ width: 0.3, height: 0.2 }}
+          layer="above-sketch"
+          objectLabel="text block"
+          objectId="text-drag"
+          onCommit={onCommit}
+          onSelect={vi.fn()}
+          pageRef={pageRef}
+          position={position}
+          selected
+          showShortcuts={false}
+        >
+          <p>Move me</p>
+        </ArrangeablePageObject>
+      </div>
+    );
+    const view = render(object());
+    vi.spyOn(pageRef.current!, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800,
+      width: 1000, height: 800, toJSON: () => ({}),
+    });
+    const move = screen.getByRole("button", { name: "Drag to move text block" });
+    fireEvent.pointerDown(move, {
+      button: 0, pointerId: 9, clientX: 200, clientY: 240,
+    });
+    fireEvent.pointerMove(move, {
+      pointerId: 9, clientX: 300, clientY: 320,
+    });
+    fireEvent.pointerUp(move, { pointerId: 9 });
+
+    const frame = document.querySelector<HTMLElement>('[data-object-id="text-drag"]')!;
+    expect(Number.parseFloat(frame.style.left)).toBeCloseTo(30);
+    view.rerender(object({ x: 0.21, y: 0.31 }));
+    expect(Number.parseFloat(frame.style.left)).toBeCloseTo(30);
+    view.rerender(object({ x: 0.3, y: 0.4 }));
+    expect(Number.parseFloat(frame.style.left)).toBeCloseTo(30);
+    expect(onCommit).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Move left" })).not.toBeInTheDocument();
+  });
+
+  it("flips docked text controls inward and expands from fixed edges", () => {
     const pageRef = createRef<HTMLDivElement>();
     const onCommit = vi.fn();
     render(
@@ -61,8 +107,8 @@ describe("ArrangeablePageObject", () => {
           className="page-object canvas-text-stack"
           frame={{ width: 0.3, height: 0.2 }}
           layer="above-sketch"
-          objectLabel="text column"
-          objectId="page-text-stack"
+          objectLabel="text block"
+          objectId="text-1"
           onCommit={onCommit}
           onSelect={vi.fn()}
           pageRef={pageRef}
@@ -80,7 +126,7 @@ describe("ArrangeablePageObject", () => {
     });
 
     const resize = screen.getByRole("button", {
-      name: "Drag to resize text column",
+      name: "Drag to resize text block",
     });
     const overlay = resize.closest(".arrange-controller-overlay");
     expect(overlay).toHaveClass("controls-near-right", "controls-near-bottom");
@@ -113,7 +159,7 @@ describe("ArrangeablePageObject", () => {
     expect(change.after.frame.height).toBeCloseTo(0.3);
   });
 
-  it("keeps adaptive move and resize controls inside a top-edge column", () => {
+  it("keeps adaptive move and resize controls inside a top-edge text block", () => {
     const pageRef = createRef<HTMLDivElement>();
     render(
       <div ref={pageRef}>
@@ -123,8 +169,8 @@ describe("ArrangeablePageObject", () => {
           className="page-object canvas-text-stack"
           frame={{ width: 0.5, height: 0.4 }}
           layer="above-sketch"
-          objectLabel="text column"
-          objectId="page-text-stack"
+          objectLabel="text block"
+          objectId="text-1"
           onCommit={vi.fn()}
           onSelect={vi.fn()}
           pageRef={pageRef}
@@ -138,16 +184,16 @@ describe("ArrangeablePageObject", () => {
     );
 
     const move = screen.getByRole("button", {
-      name: "Drag to move text column",
+      name: "Drag to move text block",
     });
     const overlay = move.closest(".arrange-controller-overlay");
     expect(overlay).toHaveClass("adaptive-edge-controls", "controls-near-top");
     expect(overlay).toHaveAttribute("data-resize-horizontal", "right");
     expect(overlay).toHaveAttribute("data-resize-vertical", "bottom");
     expect(screen.getByRole("button", {
-      name: "Drag to resize text column",
+      name: "Drag to resize text block",
     })).toBeInTheDocument();
-    expect(screen.getByLabelText("Adjust text column").closest(
+    expect(screen.getByLabelText("Adjust text block").closest(
       ".controls-near-top",
     )).toBe(overlay);
   });
@@ -168,7 +214,6 @@ describe("ArrangeablePageObject", () => {
           onCommit={onCommit}
           onDelete={vi.fn()}
           onSelect={vi.fn()}
-          onToggleLayer={vi.fn()}
           pageRef={pageRef}
           position={{ x: 0.2, y: 0.3 }}
           selected
@@ -191,7 +236,7 @@ describe("ArrangeablePageObject", () => {
     );
   });
 
-  it("can hide the small shortcut buttons", () => {
+  it("toggles accessible move controls when the move handle is tapped", () => {
     const pageRef = createRef<HTMLDivElement>();
     render(
       <div ref={pageRef}>
@@ -206,9 +251,8 @@ describe("ArrangeablePageObject", () => {
           onCommit={vi.fn()}
           onDelete={vi.fn()}
           onSelect={vi.fn()}
-          onToggleLayer={vi.fn()}
           pageRef={pageRef}
-          position={{ x: 0.2, y: 0.3 }}
+          position={{ x: 0.68, y: 0.02 }}
           selected
           showShortcuts={false}
         >
@@ -220,14 +264,21 @@ describe("ArrangeablePageObject", () => {
     expect(
       screen.queryByRole("button", { name: "Move left" }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Drag to move image" }),
-    ).toBeInTheDocument();
+    const moveHandle = screen.getByRole("button", { name: "Drag to move image" });
+    expect(moveHandle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(moveHandle);
+    expect(screen.getByRole("button", { name: "Move left" })).toBeVisible();
+    expect(moveHandle.closest(".arrange-controller-overlay")).toHaveClass(
+      "nudge-near-top",
+      "nudge-near-right",
+    );
+    expect(moveHandle).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(moveHandle);
+    expect(screen.queryByRole("button", { name: "Move left" })).not.toBeInTheDocument();
   });
 
-  it("toggles an object's position in front of or behind the sketch", () => {
+  it("keeps stacked objects under the drawing layer and does not offer a vs-ink toggle", () => {
     const pageRef = createRef<HTMLDivElement>();
-    const onToggleLayer = vi.fn();
     render(
       <div ref={pageRef}>
         <ArrangeablePageObject
@@ -241,34 +292,21 @@ describe("ArrangeablePageObject", () => {
           onCommit={vi.fn()}
           onDelete={vi.fn()}
           onSelect={vi.fn()}
-          onToggleLayer={onToggleLayer}
           pageRef={pageRef}
           position={{ x: 0.2, y: 0.3 }}
           selected
           showShortcuts={false}
+          stackIndex={3}
         >
           <span>Image</span>
         </ArrangeablePageObject>
-      </div>,
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Move behind sketch: image" }),
-    );
-    expect(onToggleLayer).toHaveBeenCalledOnce();
-  });
-
-  it("renders behind-sketch objects below the drawing preview", () => {
-    const pageRef = createRef<HTMLDivElement>();
-    render(
-      <div ref={pageRef}>
         <ArrangeablePageObject
           arrange
           className="page-object canvas-text-stack"
           frame={{ width: 0.8, height: 0.7 }}
           layer="behind-sketch"
-          objectLabel="text column"
-          objectId="page-text-stack"
+          objectLabel="text block"
+          objectId="text-1"
           onCommit={vi.fn()}
           onSelect={vi.fn()}
           pageRef={pageRef}
@@ -282,8 +320,39 @@ describe("ArrangeablePageObject", () => {
       </div>,
     );
 
+    expect(screen.queryByRole("button", { name: /sketch: / })).not.toBeInTheDocument();
+    expect(screen.getByText("Image").parentElement).toHaveStyle({ zIndex: 4 });
     expect(screen.getByText("Stacked words").parentElement).toHaveStyle({
-      zIndex: 0,
+      zIndex: 4,
+    });
+  });
+
+  it("stacks over-ink objects above the drawing preview band", () => {
+    const pageRef = createRef<HTMLDivElement>();
+    render(
+      <div ref={pageRef}>
+        <ArrangeablePageObject
+          arrange
+          className="page-object"
+          frame={{ width: 0.3, height: 0.2 }}
+          inFrontOfSketch
+          layer="above-sketch"
+          objectLabel="image"
+          objectId="image-front"
+          onCommit={vi.fn()}
+          onSelect={vi.fn()}
+          pageRef={pageRef}
+          position={{ x: 0.2, y: 0.3 }}
+          selected={false}
+          showShortcuts={false}
+          stackIndex={1}
+        >
+          <span>Front image</span>
+        </ArrangeablePageObject>
+      </div>,
+    );
+    expect(screen.getByText("Front image").parentElement).toHaveStyle({
+      zIndex: 46,
     });
   });
 
@@ -307,7 +376,6 @@ describe("ArrangeablePageObject", () => {
           onDelete={vi.fn()}
           onSelect={vi.fn()}
           onToggleAspectLock={onToggleAspectLock}
-          onToggleLayer={vi.fn()}
           pageRef={pageRef}
           position={{ x: 0.2, y: 0.3 }}
           selected
@@ -342,7 +410,6 @@ describe("ArrangeablePageObject", () => {
           onCommit={vi.fn()}
           onDelete={onDelete}
           onSelect={vi.fn()}
-          onToggleLayer={vi.fn()}
           pageRef={pageRef}
           position={{ x: 0.2, y: 0.3 }}
           selected

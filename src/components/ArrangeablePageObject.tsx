@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -15,7 +16,6 @@ import {
   ArrowRight,
   ArrowUp,
   GripHorizontal,
-  Layers2,
   Maximize2,
   Ratio,
   StepBack,
@@ -24,7 +24,10 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
+export const ARRANGEABLE_LAYOUT_EVENT = "ivan-diary:arrangeable-layout";
+
 import type { Position, Size } from "../domain/models";
+import { canvasObjectZIndex } from "./canvasObjectStack";
 import {
   inwardResizeAnchor,
   layoutEdges,
@@ -52,6 +55,12 @@ type ActiveInteraction = {
   resizeAnchor?: ResizeAnchor;
 };
 
+type PendingPointer = {
+  pointerId: number;
+  clientX: number;
+  clientY: number;
+};
+
 const EMPTY_GUIDES: AlignmentGuides = {
   horizontal: false,
   vertical: false,
@@ -76,6 +85,7 @@ export function ArrangeablePageObject({
   className,
   deleteDescription = "",
   frame,
+  inFrontOfSketch = false,
   layer,
   maximumFrame,
   minimumFrame,
@@ -88,11 +98,12 @@ export function ArrangeablePageObject({
   onNativeDragStart,
   onSelect,
   onToggleAspectLock,
-  onToggleLayer,
   pageRef,
   position,
   selected,
-  showShortcuts,
+  showControls = true,
+  showShortcuts = false,
+  snapPeerFrames,
   stackIndex,
 }: {
   adaptiveEdgeControls?: boolean;
@@ -104,6 +115,7 @@ export function ArrangeablePageObject({
   className: string;
   deleteDescription?: string;
   frame: Size;
+  inFrontOfSketch?: boolean;
   layer: "above-sketch" | "behind-sketch";
   maximumFrame?: Size;
   minimumFrame?: Size;
@@ -116,19 +128,28 @@ export function ArrangeablePageObject({
   onNativeDragStart?: (event: DragEvent<HTMLDivElement>) => void;
   onSelect: () => void;
   onToggleAspectLock?: () => void;
-  onToggleLayer?: () => void;
   pageRef: RefObject<HTMLDivElement | null>;
   position: Position;
   selected: boolean;
-  showShortcuts: boolean;
+  showControls?: boolean;
+  showShortcuts?: boolean;
+  snapPeerFrames?: Size[];
   stackIndex?: number;
 }) {
   const activeRef = useRef<ActiveInteraction | undefined>(undefined);
+  const animationFrameRef = useRef<number | undefined>(undefined);
+  const pendingCommitRef = useRef<{
+    before: PageLayout;
+    after: PageLayout;
+  } | undefined>(undefined);
+  const pendingPointerRef = useRef<PendingPointer | undefined>(undefined);
+  const suppressMoveClickRef = useRef(false);
   const [layout, setLayout] = useState<PageLayout>({ position, frame });
   const layoutRef = useRef<PageLayout>(layout);
   const [guides, setGuides] = useState<AlignmentGuides>(EMPTY_GUIDES);
   const [portalTarget, setPortalTarget] = useState<HTMLDivElement | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const updateLayout = (next: PageLayout) => {
     layoutRef.current = next;
@@ -137,15 +158,29 @@ export function ArrangeablePageObject({
 
   useEffect(() => {
     if (!activeRef.current) {
-      const next = { position, frame };
+      const next = {
+        position: { x: position.x, y: position.y },
+        frame: { width: frame.width, height: frame.height },
+      };
+      const pending = pendingCommitRef.current;
+      if (pending && !layoutsEqual(next, pending.after)) return;
+      if (pending) {
+        pendingCommitRef.current = undefined;
+      }
       layoutRef.current = next;
       setLayout(next);
     }
-  }, [frame, position]);
+  }, [frame.height, frame.width, position.x, position.y]);
 
   useEffect(() => {
     setPortalTarget(pageRef.current);
   }, [pageRef]);
+
+  useLayoutEffect(() => {
+    document.querySelector<HTMLElement>(
+      `[data-object-id="${objectId}"]`,
+    )?.dispatchEvent(new Event(ARRANGEABLE_LAYOUT_EVENT));
+  }, [layout, objectId]);
 
   const beginInteraction = (
     event: PointerEvent<HTMLButtonElement>,
@@ -153,6 +188,7 @@ export function ArrangeablePageObject({
   ) => {
     event.preventDefault();
     event.stopPropagation();
+    suppressMoveClickRef.current = false;
     onSelect();
     activeRef.current = {
       pointerId: event.pointerId,
@@ -171,16 +207,18 @@ export function ArrangeablePageObject({
     }
   };
 
-  const updateInteraction = (event: PointerEvent<HTMLButtonElement>) => {
+  const applyPendingInteraction = () => {
     const active = activeRef.current;
     const page = pageRef.current;
-    if (!active || !page || event.pointerId !== active.pointerId) {
+    const pending = pendingPointerRef.current;
+    pendingPointerRef.current = undefined;
+    animationFrameRef.current = undefined;
+    if (!active || !page || !pending || pending.pointerId !== active.pointerId) {
       return;
     }
-    event.preventDefault();
     const bounds = page.getBoundingClientRect();
-    const deltaX = (event.clientX - active.clientX) / bounds.width;
-    const deltaY = (event.clientY - active.clientY) / bounds.height;
+    const deltaX = (pending.clientX - active.clientX) / bounds.width;
+    const deltaY = (pending.clientY - active.clientY) / bounds.height;
 
     if (active.kind === "move") {
       const moved = moveLayout(active.start, { x: deltaX, y: deltaY });
@@ -193,6 +231,7 @@ export function ArrangeablePageObject({
       aspectRatio: aspectLock ? aspectRatio : undefined,
       maximum: maximumFrame,
       minimum: minimumFrame,
+      snapPeerFrames,
     };
     updateLayout(active.resizeAnchor
       ? resizeLayoutFromAnchor(
@@ -208,15 +247,42 @@ export function ArrangeablePageObject({
         ));
   };
 
+  const updateInteraction = (event: PointerEvent<HTMLButtonElement>) => {
+    const active = activeRef.current;
+    if (!active || event.pointerId !== active.pointerId) return;
+    event.preventDefault();
+    pendingPointerRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    };
+    if (animationFrameRef.current === undefined) {
+      animationFrameRef.current = globalThis.requestAnimationFrame(
+        applyPendingInteraction,
+      );
+    }
+  };
+
   const finishInteraction = (event: PointerEvent<HTMLButtonElement>) => {
     const active = activeRef.current;
     if (!active || event.pointerId !== active.pointerId) {
       return;
     }
+    if (pendingPointerRef.current) {
+      if (animationFrameRef.current !== undefined) {
+        globalThis.cancelAnimationFrame(animationFrameRef.current);
+      }
+      applyPendingInteraction();
+    }
     activeRef.current = undefined;
     setGuides(EMPTY_GUIDES);
     const current = layoutRef.current;
-    if (!layoutsEqual(active.start, current)) {
+    const changed = !layoutsEqual(active.start, current);
+    if (active.kind === "move") {
+      suppressMoveClickRef.current = changed;
+    }
+    if (changed) {
+      pendingCommitRef.current = { before: active.start, after: current };
       onCommit({ kind: active.kind, before: active.start, after: current });
     }
   };
@@ -227,9 +293,20 @@ export function ArrangeablePageObject({
       return;
     }
     activeRef.current = undefined;
+    pendingPointerRef.current = undefined;
+    if (animationFrameRef.current !== undefined) {
+      globalThis.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = undefined;
+    }
     updateLayout(active.start);
     setGuides(EMPTY_GUIDES);
   };
+
+  useEffect(() => () => {
+    if (animationFrameRef.current !== undefined) {
+      globalThis.cancelAnimationFrame(animationFrameRef.current);
+    }
+  }, []);
 
   const applyMove = (delta: Position) => {
     const moved = moveLayout(layout, delta);
@@ -243,6 +320,7 @@ export function ArrangeablePageObject({
       aspectRatio: aspectLock ? aspectRatio : undefined,
       maximum: maximumFrame,
       minimum: minimumFrame,
+      snapPeerFrames,
     };
     const anchor = adaptiveEdgeControls
       ? inwardResizeAnchor(layout)
@@ -309,11 +387,12 @@ export function ArrangeablePageObject({
     height: `${layout.frame.height * 100}%`,
     ...(stackIndex === undefined
       ? {}
-      : { zIndex: layer === "behind-sketch" ? 0 : 20 + stackIndex }),
+      : { zIndex: canvasObjectZIndex(stackIndex, inFrontOfSketch) }),
   };
   const adaptiveEdges = adaptiveEdgeControls
     ? layoutEdges(layout)
     : undefined;
+  const nudgeEdges = layoutEdges(layout);
   const adaptiveAnchor = adaptiveEdgeControls
     ? inwardResizeAnchor(layout)
     : undefined;
@@ -324,6 +403,8 @@ export function ArrangeablePageObject({
     adaptiveEdges?.right ? "controls-near-right" : "",
     adaptiveEdges?.bottom ? "controls-near-bottom" : "",
     adaptiveEdges?.left ? "controls-near-left" : "",
+    nudgeEdges.top ? "nudge-near-top" : "",
+    nudgeEdges.right ? "nudge-near-right" : "",
   ].filter(Boolean).join(" ");
 
   return (
@@ -354,7 +435,7 @@ export function ArrangeablePageObject({
       tabIndex={arrange ? 0 : undefined}
     >
       {children}
-      {arrange && selected && portalTarget ? createPortal(
+      {arrange && selected && showControls && portalTarget ? createPortal(
         <div
           className={controllerClassName}
           data-resize-horizontal={adaptiveAnchor?.horizontal}
@@ -382,10 +463,20 @@ export function ArrangeablePageObject({
             </button>
           ) : null}
           <button
+            aria-controls={`arrange-nudge-${objectId}`}
+            aria-expanded={showShortcuts || shortcutsOpen}
             aria-label={`Drag to move ${objectLabel}`}
             className="arrange-handle move-handle"
             data-help-title={`Move ${objectLabel.toLowerCase()}`}
             data-help-topic="arrange-move"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (suppressMoveClickRef.current) {
+                suppressMoveClickRef.current = false;
+                return;
+              }
+              setShortcutsOpen((open) => !open);
+            }}
             onLostPointerCapture={finishInteraction}
             onPointerCancel={cancelInteraction}
             onPointerDown={(event) => beginInteraction(event, "move")}
@@ -422,28 +513,11 @@ export function ArrangeablePageObject({
           >
             <Trash2 aria-hidden="true" />
           </button> : null}
-          {onToggleLayer ? <button
-            aria-label={`${layer === "behind-sketch" ? "Move in front of" : "Move behind"} sketch: ${objectLabel}`}
-            className="arrange-layer-toggle"
-            data-help-title={`Layer ${objectLabel.toLowerCase()}`}
-            data-help-topic="arrange-layer"
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleLayer();
-            }}
-            type="button"
-          >
-            <Layers2 aria-hidden="true" className="layer-stack-icon" />
-            {layer === "behind-sketch" ? (
-              <ArrowUp aria-hidden="true" className="layer-direction-icon" />
-            ) : (
-              <ArrowDown aria-hidden="true" className="layer-direction-icon" />
-            )}
-          </button> : null}
-          {onMoveForward ? <button aria-label={`Bring ${objectLabel} forward`} className="arrange-order arrange-order-forward" onClick={(event) => { event.stopPropagation(); onMoveForward(); }} type="button"><StepForward aria-hidden="true" /></button> : null}
-          {onMoveBackward ? <button aria-label={`Send ${objectLabel} backward`} className="arrange-order arrange-order-backward" onClick={(event) => { event.stopPropagation(); onMoveBackward(); }} type="button"><StepBack aria-hidden="true" /></button> : null}
-          {showShortcuts ? (
+          {onMoveForward ? <button aria-label={`Bring ${objectLabel} forward`} className="arrange-order arrange-order-forward" data-help-topic="arrange-layer" onClick={(event) => { event.stopPropagation(); onMoveForward(); }} type="button"><StepForward aria-hidden="true" /></button> : null}
+          {onMoveBackward ? <button aria-label={`Send ${objectLabel} backward`} className="arrange-order arrange-order-backward" data-help-topic="arrange-layer" onClick={(event) => { event.stopPropagation(); onMoveBackward(); }} type="button"><StepBack aria-hidden="true" /></button> : null}
+          {showShortcuts || shortcutsOpen ? (
             <div
+              id={`arrange-nudge-${objectId}`}
               className="arrange-nudge-controls"
               aria-label={`Adjust ${objectLabel}`}
             >

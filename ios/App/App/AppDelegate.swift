@@ -143,6 +143,8 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         )
         let width = max(1, min(call.getDouble("width") ?? 4, 28))
         let nib = NativeDrawingNib(rawValue: call.getString("nib") ?? "") ?? .pen
+        let material = NativeDrawingMaterial(rawValue: call.getString("material") ?? "") ?? .solid
+        let goldFinish = NativeGoldFinish(rawValue: call.getString("goldFinish") ?? "") ?? .raised
         let fingerDrawing = call.getBool("fingerDrawing") ?? true
         let twoFingerUndo = call.getBool("twoFingerUndo") ?? true
         let tool = NativeDrawingTool(
@@ -152,6 +154,8 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         let clipToCircle = call.getString("clipShape") == "circle"
         let grid = drawingGrid(from: call)
         let overlayShapes = nativeOverlayShapes(from: call)
+        let passthroughRects = nativePassthroughRects(from: call)
+        let visualHoleRects = nativeVisualHoleRects(from: call)
 
         Task { @MainActor [weak self] in
             guard let self else {
@@ -171,6 +175,8 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
                     color: color,
                     width: CGFloat(width),
                     nib: nib,
+                    material: material,
+                    goldFinish: goldFinish,
                     fingerDrawing: fingerDrawing,
                     twoFingerUndo: twoFingerUndo,
                     tool: tool,
@@ -178,7 +184,9 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
                     frame: frame,
                     clipToCircle: clipToCircle,
                     legacyInk: legacyInk,
-                    overlayShapes: overlayShapes
+                    overlayShapes: overlayShapes,
+                    passthroughRects: passthroughRects,
+                    visualHoleRects: visualHoleRects
                 )
                 call.resolve([
                     "visible": true,
@@ -198,6 +206,8 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         }
         let width = call.getDouble("width").map { max(1, min($0, 28)) }
         let nib = call.getString("nib").flatMap(NativeDrawingNib.init(rawValue:))
+        let material = call.getString("material").flatMap(NativeDrawingMaterial.init(rawValue:))
+        let goldFinish = call.getString("goldFinish").flatMap(NativeGoldFinish.init(rawValue:))
         let fingerDrawing = call.getBool("fingerDrawing")
         let twoFingerUndo = call.getBool("twoFingerUndo")
         let tool = call.getString("tool").flatMap(NativeDrawingTool.init(rawValue:))
@@ -209,6 +219,12 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         let overlayShapes = call.getArray("overlayShapes") == nil
             ? nil
             : nativeOverlayShapes(from: call)
+        let passthroughRects = call.getArray("passthroughRects") == nil
+            ? nil
+            : nativePassthroughRects(from: call)
+        let visualHoleRects = call.getArray("visualHoleRects") == nil
+            ? nil
+            : nativeVisualHoleRects(from: call)
 
         Task { @MainActor [weak self] in
             guard let self else {
@@ -221,13 +237,17 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
                 color: color,
                 width: width.map { CGFloat($0) },
                 nib: nib,
+                material: material,
+                goldFinish: goldFinish,
                 fingerDrawing: fingerDrawing,
                 twoFingerUndo: twoFingerUndo,
                 tool: tool,
                 grid: grid,
                 frame: frame,
                 clipToCircle: clipToCircle,
-                overlayShapes: overlayShapes
+                overlayShapes: overlayShapes,
+                passthroughRects: passthroughRects,
+                visualHoleRects: visualHoleRects
             )
             call.resolve(["visible": overlay.isPresented])
         }
@@ -290,6 +310,42 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
                 outlineWidth: CGFloat(doubleValue(value["outlineWidth"]) ?? 0)
             )
         }
+    }
+
+    private func nativeVisualHoleRects(
+        from call: CAPPluginCall
+    ) -> [CGRect] {
+        nativeRects(from: call, key: "visualHoleRects")
+    }
+
+    private func nativePassthroughRects(
+        from call: CAPPluginCall
+    ) -> [CGRect] {
+        nativeRects(from: call, key: "passthroughRects")
+    }
+
+    private func nativeRects(
+        from call: CAPPluginCall,
+        key: String
+    ) -> [CGRect] {
+        (call.getArray(key, JSObject.self) ?? [])
+            .prefix(100)
+            .compactMap { value in
+                guard let x = doubleValue(value["x"]),
+                      let y = doubleValue(value["y"]),
+                      let width = doubleValue(value["width"]),
+                      let height = doubleValue(value["height"]),
+                      width > 0,
+                      height > 0 else {
+                    return nil
+                }
+                return CGRect(
+                    x: x,
+                    y: y,
+                    width: width,
+                    height: height
+                )
+            }
     }
 
     @objc public func hideOverlay(_ call: CAPPluginCall) {
@@ -399,12 +455,22 @@ public final class PencilKitPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugin 
         do {
             let width = max(call.getDouble("width") ?? 1200, 1)
             let height = max(call.getDouble("height") ?? 820, 1)
-            let preview = try ApplicationSupportPencilDrawingStore()
-                .loadContentPreview(
+            let store = ApplicationSupportPencilDrawingStore()
+            let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+            let preview = try store.loadContentPreview(
                     documentID: documentID,
-                    bounds: CGRect(x: 0, y: 0, width: width, height: height)
+                    bounds: bounds
                 )
-            call.resolve(response(saved: true, preview: preview))
+            let goldMask = try store.loadScriptureGoldMaskPreview(
+                documentID: documentID,
+                bounds: bounds
+            )
+            var value = response(saved: true, preview: preview)
+            if let goldMask {
+                value["goldMaskUri"] = goldMask.fileURL.absoluteString
+                value["goldMaskModifiedAt"] = goldMask.modifiedAt.timeIntervalSince1970 * 1000
+            }
+            call.resolve(value)
         } catch {
             call.reject("The drawing preview could not be loaded.", nil, error)
         }

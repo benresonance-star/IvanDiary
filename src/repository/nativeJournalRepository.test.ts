@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createInitialJournalSnapshot } from "../domain/initialState";
 import { migrateJournalSnapshot } from "../domain/migrations";
 import type { DocumentOperation, JournalSnapshot } from "../domain/models";
-import type { NativeJournalStorePlugin } from "../native/contracts";
+import type { JournalFilesPlugin, NativeJournalStorePlugin } from "../native/contracts";
 import { NativeJournalRepository } from "./nativeJournalRepository";
 import type { JournalRepository } from "./journalRepository";
 
@@ -86,5 +86,52 @@ describe("NativeJournalRepository", () => {
     store.failWrites = false;
     const committed = await repository.commit(settingsOperation(seed, "retry-operation"));
     expect(committed.snapshot.revision).toBe(1);
+  });
+
+  it("repairs stale restored asset paths durably before exposing a reopened journal", async () => {
+    const store = new MemoryNativeStore();
+    const seed = createInitialJournalSnapshot(new Date("2026-08-23T09:00:00.000Z"));
+    await new NativeJournalRepository(store, fallback(seed)).load();
+    const envelope = JSON.parse(store.contents!) as {
+      snapshot: JournalSnapshot;
+      baseline: JournalSnapshot;
+    };
+    const voice = envelope.snapshot.pages[0]!.objects.find(
+      (object) => object.type === "voice",
+    )!;
+    for (const storedSnapshot of [envelope.snapshot, envelope.baseline]) {
+      storedSnapshot.pages[0]!.objects = storedSnapshot.pages[0]!.objects.map(
+        (object) => object.id === voice.id
+          ? {
+              ...voice,
+              asset: { ...voice.asset, localUri: "file:///old-container/voice.m4a" },
+            }
+          : object,
+      );
+    }
+    store.contents = JSON.stringify(envelope);
+    const resolvedUri = "file:///current-container/voice.m4a";
+    const files: JournalFilesPlugin = {
+      finaliseTemporaryAsset: async () => voice.asset,
+      removeToTrash: async () => undefined,
+      resolveStoredAssets: async ({ assets }) => ({
+        resolvedAssetUris: Object.fromEntries(
+          assets.map((asset) => [asset.id, resolvedUri]),
+        ),
+        unresolvedAssetIds: [],
+      }),
+      storageHealth: async () => ({ lowStorage: false }),
+    };
+
+    const reopened = await new NativeJournalRepository(
+      store,
+      fallback(seed),
+      files,
+    ).load();
+    const repairedVoice = reopened.snapshot.pages[0]!.objects.find(
+      (object) => object.type === "voice",
+    )!;
+    expect(repairedVoice.asset.localUri).toBe(resolvedUri);
+    expect(store.contents).toContain(resolvedUri);
   });
 });

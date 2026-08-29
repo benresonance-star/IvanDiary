@@ -23,13 +23,18 @@ import {
   Undo2,
 } from "lucide-react";
 
+import {
+  canMoveInkStack,
+  isInFrontOfSketch,
+  resolveInkStackMove,
+  withInFrontOfSketch,
+} from "../domain/inkStack";
 import type {
   DocumentOperationInput,
   LinkObject,
   MyWord,
   Page,
   PageObject,
-  PageTextStack,
   PhotoObject,
   Position,
   SaveHealth,
@@ -64,12 +69,12 @@ import {
 } from "../native/textEditor";
 import type { BrowserSketchRepository } from "../repository/browserSketchRepository";
 import { measureDrawingOverlayLayout } from "../sketch/drawingOverlayLayout";
+import { nativeOverlayShapes } from "../sketch/nativeDrawingLayering";
 import {
   SketchSurface,
   type SketchSurfaceHandle,
 } from "../sketch/SketchSurface";
 import { NativeSketchPreview } from "../sketch/NativeSketchPreview";
-import { nativeOverlayShapes } from "../sketch/nativeDrawingLayering";
 import type { SketchTool } from "../sketch/types";
 import { browserFileToAsset, readImageSize } from "../utils/assets";
 import { localDateKey } from "../utils/date";
@@ -78,11 +83,12 @@ import {
   defaultPaperBackgroundColour,
   effectivePaperBackgroundColour,
 } from "../domain/paperBackground";
+import { displayedTextLayout } from "../domain/textLayout";
 import { displayAssetUri } from "../utils/displayAssetUri";
 import { openExternalUrl } from "../utils/openExternalUrl";
 import { AudioCard } from "./AudioCard";
 import { CanvasBackgroundChooser } from "./CanvasBackgroundChooser";
-import { CanvasTextInspector } from "./CanvasTextInspector";
+import { ContextualTextEditor } from "./ContextualTextToolbar";
 import {
   ArrangeablePageObject,
   type LayoutChange,
@@ -94,6 +100,7 @@ import {
   defaultPhotoPosition,
   clampPosition,
   MAXIMUM_PHOTO_FRAME,
+  MAXIMUM_TEXT_FRAME,
   pageAspectFromImage,
   VOICE_FRAME,
 } from "./arrangeGeometry";
@@ -108,6 +115,7 @@ import { FreeformDraftEditor } from "./FreeformDraftEditor";
 import { LinkComposer } from "./LinkComposer";
 import {
   PenSettingsHud,
+  SCRIPTURE_GOLD_COLOUR,
   type PenSettings,
 } from "./PenSettingsHud";
 import {
@@ -161,7 +169,6 @@ type PageAction =
   | { kind: "create"; objects: PageObject[] }
   | { kind: "update"; before: PageObject; after: PageObject }
   | { kind: "reorder"; beforeIds: string[]; afterIds: string[] }
-  | { kind: "text-stack"; before?: PageTextStack; after?: PageTextStack }
   | { kind: "delete"; objects: PageObject[] };
 
 function deletionDescription(
@@ -288,6 +295,7 @@ export function PageWorkspace({
   const [penHudOpen, setPenHudOpen] = useState(false);
   const [penSettings, setPenSettings] = useState<PenSettings>({
     color: penColor,
+    material: penColor.toLowerCase() === SCRIPTURE_GOLD_COLOUR ? "scripture-gold" : "solid",
     nib: penNib,
     profiles: penNibProfiles,
     width: penWidth,
@@ -299,13 +307,14 @@ export function PageWorkspace({
   const drawingGrid = page.drawingGrid ?? DEFAULT_DRAWING_GRID;
   const photoCount = page.objects.filter((object) => object.type === "photo").length;
   const [selectedObjectId, setSelectedObjectId] = useState<string>();
+  const [textInspectorPanelOpen, setTextInspectorPanelOpen] = useState(false);
+  const [textAppearancePreview, setTextAppearancePreview] = useState<TextObject>();
   const [favouriteConfirmation, setFavouriteConfirmation] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [linkComposerOpen, setLinkComposerOpen] = useState(false);
   const [linkComposerRequested, setLinkComposerRequested] = useState(false);
   const [textComposerOpen, setTextComposerOpen] = useState(false);
   const [textBeingEdited, setTextBeingEdited] = useState<TextObject>();
-  const [draggedTextId, setDraggedTextId] = useState<string>();
   const [textComposerRequested, setTextComposerRequested] = useState(false);
   const [nativeTextEditorUnavailable, setNativeTextEditorUnavailable] =
     useState(false);
@@ -351,11 +360,38 @@ export function PageWorkspace({
     return () => window.clearInterval(timer);
   }, [audio, recording?.state]);
 
+  const drawingInteractionRequiresView =
+    navigationObscured ||
+    calendarOpen ||
+    Boolean(favouriteConfirmation) ||
+    linkComposerOpen ||
+    linkComposerRequested ||
+    textComposerOpen ||
+    textComposerRequested ||
+    voiceDialogOpen ||
+    voiceDialogRequested ||
+    shareChooserOpen ||
+    shareChooserRequested ||
+    shareInProgress;
+  const drawingInteractionObscured =
+    penHudOpen || drawingInteractionRequiresView;
+
+  useEffect(() => {
+    if (
+      drawingInteractionRequiresView &&
+      (tool === "pen" || tool === "eraser")
+    ) {
+      setTool("view");
+    }
+  }, [drawingInteractionRequiresView, setTool, tool]);
+
   const { overlayActive, overlayReady, suspendOverlay } = useNativeDrawingOverlay({
     documentId: page.drawingDocumentId,
-    enabled: hasNativePencilKit() && polygonDraft === null && !freeformDraft && !navigationObscured && !penHudOpen && !calendarOpen && !favouriteConfirmation && !linkComposerOpen && !linkComposerRequested && !textComposerOpen && !textComposerRequested && !voiceDialogOpen && !voiceDialogRequested && !shareChooserOpen && !shareChooserRequested && !shareInProgress,
+    enabled: hasNativePencilKit() && polygonDraft === null && !freeformDraft && !drawingInteractionObscured,
     tool,
     color: penSettings.color,
+    material: penSettings.material,
+    goldFinish: penSettings.goldFinish,
     nib: penSettings.nib,
     width: penSettings.width,
     opacity: penSettings.opacity,
@@ -364,7 +400,19 @@ export function PageWorkspace({
       : penSettings.fingerDrawing !== false,
     twoFingerUndo: twoFingerUndoEnabled,
     grid: drawingGrid,
-    overlayShapes: nativeOverlayShapes(page.objects.filter((object): object is ShapeObject => object.type === "shape")),
+    overlayShapes: nativeOverlayShapes(
+      page.objects.filter((object): object is ShapeObject => object.type === "shape"),
+    ),
+    voiceObjectIds: page.objects
+      .filter((object) => object.type === "voice")
+      .map((object) => object.id),
+    visualHoleObjectIds: page.objects
+      .filter((object) =>
+        object.type !== "transcript" &&
+        object.type !== "shape" &&
+        isInFrontOfSketch(object),
+      )
+      .map((object) => object.id),
     paperRef,
     protectedHeaderRef: pageHeaderRef,
     toolPaletteRef,
@@ -590,9 +638,7 @@ export function PageWorkspace({
       )
       .map((transcript) => [transcript.recordingId, transcript]),
   );
-  const updateObject = (
-    object: TextObject | TranscriptObject | LinkObject | ShapeObject,
-  ) => {
+  const updateObject = (object: PageObject) => {
     void commit({
       type: "page-object-update",
       pageId: page.id,
@@ -605,10 +651,10 @@ export function PageWorkspace({
       id: createId(), type: "shape", shapeKind, pageId: page.id,
       position: { x: 0.38, y: 0.34 }, frame: { width: 0.24, height: 0.24 },
       fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3,
-      layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString(),
+      layer: "above-sketch", revision: 0, createdAt: new Date().toISOString(),
     };
     setPenHudOpen(false); setTool("arrange"); setSelectedObjectId(shape.id);
-    const saved = await commit({ type: "page-object-add", pageId: page.id, object: shape });
+    const saved = await commit({ type: "page-object-add", pageId: page.id, object: shape, renderIndex: page.objects.length });
     if (!saved) {
       setSelectedObjectId(undefined);
       setTool("pen");
@@ -638,9 +684,9 @@ export function PageWorkspace({
       id: createId(), type: "shape", shapeKind: "freeform", pageId: page.id, position, frame,
       points: anchors.map(({ x, y }) => ({ x: (x - position.x) / frame.width, y: (y - position.y) / frame.height })),
       fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3,
-      layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString(),
+      layer: "above-sketch", revision: 0, createdAt: new Date().toISOString(),
     };
-    if (await commit({ type: "page-object-add", pageId: page.id, object: shape })) {
+    if (await commit({ type: "page-object-add", pageId: page.id, object: shape, renderIndex: page.objects.length })) {
       actionTimelineRef.current.push({ kind: "create", objects: [shape] });
       setFreeformDraft(false); setNotice(undefined); setTool("arrange"); setSelectedObjectId(shape.id);
     }
@@ -656,39 +702,53 @@ export function PageWorkspace({
       id: createId(), type: "shape", shapeKind: "polygon", pageId: page.id, position, frame,
       points: polygonDraft.map(({ x, y }) => ({ x: (x - position.x) / frame.width, y: (y - position.y) / frame.height })),
       fillColor: penSettings.color, outlineColor: "#3f3528", outlineWidth: 3,
-      layer: "behind-sketch", revision: 0, createdAt: new Date().toISOString(),
+      layer: "above-sketch", revision: 0, createdAt: new Date().toISOString(),
     };
-    if (await commit({ type: "page-object-add", pageId: page.id, object: shape })) {
+    if (await commit({ type: "page-object-add", pageId: page.id, object: shape, renderIndex: page.objects.length })) {
       actionTimelineRef.current.push({ kind: "create", objects: [shape] });
       setPolygonDraft(null); setNotice(undefined); setTool("arrange"); setSelectedObjectId(shape.id);
     }
   };
 
-  const moveObjectOrder = (objectId: string, direction: -1 | 1) => {
-    const beforeIds = page.objects.map(({ id }) => id); const ids = [...beforeIds]; const index = ids.indexOf(objectId);
-    let target = index + direction;
-    while (target >= 0 && target < page.objects.length && page.objects[target]?.type === "transcript") target += direction;
-    if (index < 0 || target < 0 || target >= ids.length) return;
-    [ids[index], ids[target]] = [ids[target]!, ids[index]!];
-    actionTimelineRef.current.push({ kind: "reorder", beforeIds, afterIds: ids });
-    void commit({ type: "page-objects-reorder", pageId: page.id, objectIds: ids });
+  const movePageObjectInStack = (
+    pageObject: Exclude<PageObject, TranscriptObject>,
+    direction: -1 | 1,
+  ) => {
+    const move = resolveInkStackMove(page.objects, pageObject.id, direction);
+    if (move.kind === "noop") {
+      return;
+    }
+    if (move.kind === "reorder") {
+      const beforeIds = page.objects.map(({ id }) => id);
+      const ids = [...beforeIds];
+      const index = ids.indexOf(pageObject.id);
+      const target = ids.indexOf(move.neighborId);
+      if (index < 0 || target < 0) {
+        return;
+      }
+      [ids[index], ids[target]] = [ids[target]!, ids[index]!];
+      actionTimelineRef.current.push({ kind: "reorder", beforeIds, afterIds: ids });
+      void commit({ type: "page-objects-reorder", pageId: page.id, objectIds: ids });
+      return;
+    }
+    const next = {
+      ...withInFrontOfSketch(pageObject, move.kind === "promote"),
+      revision: pageObject.revision + 1,
+    };
+    actionTimelineRef.current.push({ kind: "update", before: pageObject, after: next });
+    updateObject(next);
   };
 
-  const movePageShapeInStack = (shape: ShapeObject, direction: -1 | 1) => {
-    const index = page.objects.findIndex(({ id }) => id === shape.id);
-    const hasRenderableObjectBelow = page.objects
-      .slice(0, index)
-      .some((object) => object.type !== "transcript");
-    if (direction === -1 && shape.layer !== "behind-sketch" && !hasRenderableObjectBelow) {
-      toggleObjectLayer(shape);
-      return;
-    }
-    if (direction === 1 && shape.layer === "behind-sketch") {
-      toggleObjectLayer(shape);
-      return;
-    }
-    moveObjectOrder(shape.id, direction);
-  };
+  const inkStackHandlers = (
+    pageObject: Exclude<PageObject, TranscriptObject>,
+  ) => ({
+    onMoveBackward: canMoveInkStack(page.objects, pageObject.id, -1)
+      ? () => movePageObjectInStack(pageObject, -1)
+      : undefined,
+    onMoveForward: canMoveInkStack(page.objects, pageObject.id, 1)
+      ? () => movePageObjectInStack(pageObject, 1)
+      : undefined,
+  });
 
   const updateShape = (shape: ShapeObject) => {
     const before = page.objects.find((object) => object.id === shape.id);
@@ -748,6 +808,7 @@ export function PageWorkspace({
       if (!saved) {
         setNotice("The edited text could not be saved.");
       } else {
+        setTextAppearancePreview(undefined);
         actionTimelineRef.current.push({
           kind: "update",
           before: object,
@@ -826,18 +887,6 @@ export function PageWorkspace({
     twoFingerTapRecognizerRef.current.pointerCancel(event.nativeEvent);
   };
 
-  const toggleObjectLayer = (object: Exclude<PageObject, TranscriptObject>) => {
-    void commit({
-      type: "page-object-update",
-      pageId: page.id,
-      object: {
-        ...object,
-        layer: object.layer === "behind-sketch" ? "above-sketch" : "behind-sketch",
-        revision: object.revision + 1,
-      },
-    });
-  };
-
   const togglePhotoAspectLock = (object: PhotoObject) => {
     const lockAspectRatio = object.lockAspectRatio === false;
     const aspectRatio = pageAspectFromImage(object.size);
@@ -880,40 +929,6 @@ export function PageWorkspace({
     }
   };
 
-  const restoreTextStack = async (target?: PageTextStack) => {
-    const targetIds = new Set(target?.memberIds ?? []);
-    for (const objectId of page.textStack?.memberIds ?? []) {
-      if (targetIds.has(objectId)) continue;
-      const object = page.objects.find((candidate) => candidate.id === objectId);
-      if (!object || object.type !== "text") continue;
-      await commit({
-        type: "page-text-stack-membership-update",
-        pageId: page.id,
-        objectId,
-        membership: {
-          kind: "free",
-          position: object.position,
-          frame: defaultObjectFrame(object),
-        },
-      });
-    }
-    if (!target) return;
-    await commit({
-      type: "page-text-stack-layout-update",
-      pageId: page.id,
-      position: target.position,
-      frame: target.frame,
-    });
-    for (const [index, objectId] of target.memberIds.entries()) {
-      await commit({
-        type: "page-text-stack-membership-update",
-        pageId: page.id,
-        objectId,
-        membership: { kind: "stack", index },
-      });
-    }
-  };
-
   const undoLastAction = () => {
     if (overlayActive) {
       void undoNativeDrawingOverlay();
@@ -949,11 +964,6 @@ export function PageWorkspace({
       void commit({ type: "page-objects-reorder", pageId: page.id, objectIds: action.beforeIds });
       return;
     }
-    if (action.kind === "text-stack") {
-      void restoreTextStack(action.before);
-      return;
-    }
-
     const operation: DocumentOperationInput =
       action.change.kind === "move"
         ? {
@@ -1029,12 +1039,13 @@ export function PageWorkspace({
 
   async function addText(text = textDraft.text): Promise<boolean> {
     const width = 0.42;
+    const height = 0.24;
     const object: TextObject = {
       id: createId(),
       type: "text",
       pageId: page.id,
-      position: { x: (1 - width) / 2, y: 0.3 },
-      frame: { width, height: 0.24 },
+      position: { x: 0.29, y: 0.38 },
+      frame: { width, height },
       createdAt: new Date().toISOString(),
       revision: 0,
       text: text.trim(),
@@ -1051,21 +1062,6 @@ export function PageWorkspace({
       object,
     });
     if (saved) {
-      const joinedStack = await commit({
-        type: "page-text-stack-membership-update",
-        pageId: page.id,
-        objectId: object.id,
-        membership: { kind: "stack" },
-      });
-      if (!joinedStack) {
-        await commit({
-          type: "page-object-delete",
-          pageId: page.id,
-          objectId: object.id,
-        });
-        setNotice("The text block could not be added to the page.");
-        return false;
-      }
       actionTimelineRef.current.push({ kind: "create", objects: [object] });
       setTextComposerOpen(false);
       setSelectedObjectId(object.id);
@@ -1100,6 +1096,7 @@ export function PageWorkspace({
       before: textBeingEdited,
       after: next,
     });
+    setTextAppearancePreview(undefined);
     setTextBeingEdited(undefined);
     setTextComposerOpen(false);
     setTextDraft(EMPTY_TEXT_DRAFT);
@@ -1409,19 +1406,14 @@ export function PageWorkspace({
     }
   };
 
-  const textStack = page.textStack;
-  const textStackIds = new Set(textStack?.memberIds ?? []);
-  const stackedTexts = (textStack?.memberIds ?? []).flatMap((id) => {
-    const object = page.objects.find((candidate) => candidate.id === id);
-    return object?.type === "text" ? [object] : [];
-  });
   const selectedText = page.objects.find(
     (object): object is TextObject =>
       object.id === selectedObjectId && object.type === "text",
   );
-  const selectedTextStackIndex = selectedText
-    ? (textStack?.memberIds.indexOf(selectedText.id) ?? -1)
-    : -1;
+  const displayedSelectedText =
+    textAppearancePreview?.id === selectedText?.id
+      ? textAppearancePreview
+      : selectedText;
 
   const updateCanvasText = (object: TextObject) => {
     const before = page.objects.find(
@@ -1429,101 +1421,9 @@ export function PageWorkspace({
         candidate.id === object.id && candidate.type === "text",
     );
     if (!before) return;
+    setTextAppearancePreview(object);
     actionTimelineRef.current.push({ kind: "update", before, after: object });
     updateObject(object);
-  };
-
-  const reorderStackText = (objectId: string, direction: -1 | 1) => {
-    if (!textStack) return;
-    const index = textStack.memberIds.indexOf(objectId);
-    const target = index + direction;
-    if (index < 0 || target < 0 || target >= textStack.memberIds.length) return;
-    const memberIds = [...textStack.memberIds];
-    [memberIds[index], memberIds[target]] = [memberIds[target]!, memberIds[index]!];
-    const after = { ...textStack, memberIds };
-    actionTimelineRef.current.push({ kind: "text-stack", before: textStack, after });
-    void commit({
-      type: "page-text-stack-reorder",
-      pageId: page.id,
-      memberIds,
-    });
-  };
-
-  const placeTextInStackAt = (objectId: string, targetIndex: number) => {
-    const before = textStack;
-    const memberIds = (before?.memberIds ?? []).filter((id) => id !== objectId);
-    const index = Math.max(0, Math.min(targetIndex, memberIds.length));
-    memberIds.splice(index, 0, objectId);
-    const after: PageTextStack = {
-      position: before?.position ?? { x: 0.1, y: 0.12 },
-      frame: before?.frame ?? { width: 0.8, height: 0.76 },
-      memberIds,
-      layer: before?.layer ?? "above-sketch",
-    };
-    actionTimelineRef.current.push({ kind: "text-stack", before, after });
-    if (before?.memberIds.includes(objectId)) {
-      void commit({
-        type: "page-text-stack-reorder",
-        pageId: page.id,
-        memberIds,
-      });
-    } else {
-      void commit({
-        type: "page-text-stack-membership-update",
-        pageId: page.id,
-        objectId,
-        membership: { kind: "stack", index },
-      });
-    }
-    setSelectedObjectId(objectId);
-    setDraggedTextId(undefined);
-  };
-
-  const toggleTextStackMembership = (object: TextObject) => {
-    const before = textStack;
-    if (textStackIds.has(object.id)) {
-      const index = textStack?.memberIds.indexOf(object.id) ?? 0;
-      const element = document.querySelector<HTMLElement>(
-        `[data-stack-text-id="${object.id}"]`,
-      );
-      const paperRect = paperRef.current?.getBoundingClientRect();
-      const blockRect = element?.getBoundingClientRect();
-      const frame = paperRect && blockRect
-        ? {
-            width: Math.min(0.5, blockRect.width / paperRect.width),
-            height: Math.min(0.3, Math.max(0.1, blockRect.height / paperRect.height)),
-          }
-        : { width: 0.44, height: 0.16 };
-      const position = paperRect && blockRect
-        ? clampPosition({
-            x: (blockRect.left - paperRect.left) / paperRect.width,
-            y: (blockRect.top - paperRect.top) / paperRect.height,
-          }, frame)
-        : { x: 0.28, y: Math.min(0.72, 0.18 + index * 0.1) };
-      const after = before
-        ? { ...before, memberIds: before.memberIds.filter((id) => id !== object.id) }
-        : undefined;
-      actionTimelineRef.current.push({ kind: "text-stack", before, after });
-      void commit({
-        type: "page-text-stack-membership-update",
-        pageId: page.id,
-        objectId: object.id,
-        membership: { kind: "free", position, frame },
-      });
-      return;
-    }
-    const after: PageTextStack = {
-      position: before?.position ?? { x: 0.1, y: 0.12 },
-      frame: before?.frame ?? { width: 0.8, height: 0.76 },
-      memberIds: [...(before?.memberIds ?? []), object.id],
-    };
-    actionTimelineRef.current.push({ kind: "text-stack", before, after });
-    void commit({
-      type: "page-text-stack-membership-update",
-      pageId: page.id,
-      objectId: object.id,
-      membership: { kind: "stack" },
-    });
   };
 
   return (
@@ -1739,7 +1639,10 @@ export function PageWorkspace({
         type="file"
       />
 
-      <header className="page-date" ref={pageHeaderRef}>
+      <header
+        className={`page-date${context.kind === "diary" ? " diary-page-date" : ""}`}
+        ref={pageHeaderRef}
+      >
         {context.kind === "sketchbook" ? (
           <button
             aria-label="Back to sketchbooks"
@@ -1832,54 +1735,19 @@ export function PageWorkspace({
             }]);
             return;
           }
-          if (!placingTextId || !(event.target instanceof Element)) return;
+          if (!(event.target instanceof Element)) return;
+          if (!event.currentTarget.contains(event.target)) return;
+          if (event.target.closest(".arrange-controller-overlay")) return;
           const clickedObject = event.target.closest<HTMLElement>("[data-object-id]");
-          if (clickedObject?.dataset.objectId === placingTextId) return;
-          finishTextPlacement();
-        }}
-        onDragOver={(event) => {
-          if (draggedTextId && tool === "arrange") event.preventDefault();
-        }}
-        onDrop={(event) => {
-          if (!draggedTextId || tool !== "arrange") return;
-          if (
-            event.target instanceof Element &&
-            event.target.closest(".canvas-text-stack")
-          ) return;
-          event.preventDefault();
-          const object = page.objects.find(
-            (candidate): candidate is TextObject =>
-              candidate.id === draggedTextId && candidate.type === "text",
-          );
-          const bounds = paperRef.current?.getBoundingClientRect();
-          if (!object || !bounds || !textStackIds.has(object.id)) {
-            setDraggedTextId(undefined);
+          if (placingTextId) {
+            if (clickedObject?.dataset.objectId === placingTextId) return;
+            finishTextPlacement();
             return;
           }
-          const frame = { width: 0.44, height: 0.16 };
-          const position = clampPosition({
-            x: (event.clientX - bounds.left) / bounds.width - frame.width / 2,
-            y: (event.clientY - bounds.top) / bounds.height - frame.height / 2,
-          }, frame);
-          const after = textStack
-            ? {
-                ...textStack,
-                memberIds: textStack.memberIds.filter((id) => id !== object.id),
-              }
-            : undefined;
-          actionTimelineRef.current.push({
-            kind: "text-stack",
-            before: textStack,
-            after,
-          });
-          void commit({
-            type: "page-text-stack-membership-update",
-            pageId: page.id,
-            objectId: object.id,
-            membership: { kind: "free", position, frame },
-          });
-          setSelectedObjectId(object.id);
-          setDraggedTextId(undefined);
+          if (tool === "arrange" && selectedObjectId && !clickedObject) {
+            setSelectedObjectId(undefined);
+            setTextInspectorPanelOpen(false);
+          }
         }}
         onPointerCancelCapture={handleTwoFingerPointerCancel}
         onPointerDownCapture={handleTwoFingerPointerDown}
@@ -1907,7 +1775,7 @@ export function PageWorkspace({
         ) : null}
         <SketchSurface
           capabilities={
-            overlayReady || tool === "arrange" || tool === "view"
+            overlayReady || penHudOpen || tool === "arrange" || tool === "view"
               ? {
                   kind: "readonly",
                   tools: [],
@@ -1942,133 +1810,15 @@ export function PageWorkspace({
           <NativeSketchPreview
             contentInsetTop={sketchPreviewInsetTop}
             documentId={page.drawingDocumentId}
+            goldFinish={penSettings.goldFinish}
           />
         )}
 
         {polygonDraft ? <PolygonDraftEditor color={penSettings.color} onCancel={() => { setPolygonDraft(null); setNotice(undefined); setTool("pen"); }} onChange={setPolygonDraft} onFinish={() => void finishPolygon()} pageRef={paperRef} points={polygonDraft} /> : null}
         {freeformDraft ? <FreeformDraftEditor color={penSettings.color} onCancel={() => { setFreeformDraft(false); setNotice(undefined); setTool("pen"); }} onFinish={(anchors) => void finishFreeform(anchors)} onInvalid={() => setNotice("Draw a larger closed outline to create a freeform shape.")} pageRef={paperRef} /> : null}
 
-        {textStack && stackedTexts.length > 0 ? (
-          <ArrangeablePageObject
-            adaptiveEdgeControls
-            arrange={tool === "arrange"}
-            className="page-object canvas-text-stack"
-            frame={textStack.frame}
-            layer={textStack.layer ?? "above-sketch"}
-            objectLabel="text column"
-            objectId="page-text-stack"
-            onCommit={(change) => {
-              const after = {
-                ...textStack,
-                ...(change.kind === "move"
-                  ? { position: change.after.position }
-                  : { frame: change.after.frame }),
-              };
-              actionTimelineRef.current.push({
-                kind: "text-stack",
-                before: textStack,
-                after,
-              });
-              void commit({
-                type: "page-text-stack-layout-update",
-                pageId: page.id,
-                position: after.position,
-                frame: after.frame,
-              });
-            }}
-            onSelect={() => setSelectedObjectId("page-text-stack")}
-            onToggleLayer={() => void commit({
-              type: "page-text-stack-layer-update",
-              pageId: page.id,
-              layer: textStack.layer === "behind-sketch"
-                ? "above-sketch"
-                : "behind-sketch",
-            })}
-            pageRef={paperRef}
-            position={textStack.position}
-            selected={
-              selectedObjectId === "page-text-stack" ||
-              selectedTextStackIndex >= 0
-            }
-            showShortcuts={selectedObjectId === "page-text-stack"}
-            stackIndex={page.objects.length + 1}
-          >
-            {/* Drag-and-drop supplements the inspector’s keyboard-accessible
-                earlier/later and stack-membership controls. */}
-            {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
-            <section
-              aria-label="Page text"
-              className="canvas-text-stack-flow"
-              onDragOver={(event) => {
-                if (draggedTextId) event.preventDefault();
-              }}
-              onDrop={(event) => {
-                if (!draggedTextId) return;
-                event.preventDefault();
-                event.stopPropagation();
-                placeTextInStackAt(draggedTextId, stackedTexts.length);
-              }}
-            >
-              {stackedTexts.map((object, stackIndex) => (
-                // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-                <div
-                  aria-label={tool === "arrange" ? `Select text block: ${object.text}` : undefined}
-                  className={`canvas-text-stack-block${selectedObjectId === object.id ? " selected" : ""}`}
-                  data-stack-text-id={object.id}
-                  draggable={tool === "arrange"}
-                  key={object.id}
-                  onDragStart={(event) => {
-                    event.stopPropagation();
-                    event.dataTransfer.effectAllowed = "move";
-                    setDraggedTextId(object.id);
-                  }}
-                  onDragEnd={() => setDraggedTextId(undefined)}
-                  onDragOver={(event) => {
-                    if (draggedTextId && draggedTextId !== object.id) {
-                      event.preventDefault();
-                    }
-                  }}
-                  onDrop={(event) => {
-                    if (!draggedTextId || draggedTextId === object.id) return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    placeTextInStackAt(draggedTextId, stackIndex);
-                  }}
-                  onClick={(event) => {
-                    if (tool !== "arrange") return;
-                    event.stopPropagation();
-                    setSelectedObjectId(object.id);
-                  }}
-                  onDoubleClick={() => tool === "arrange" && editTextObject(object)}
-                  onKeyDown={(event) => {
-                    if (
-                      tool === "arrange" &&
-                      (event.key === "Enter" || event.key === " ")
-                    ) {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setSelectedObjectId(object.id);
-                    }
-                  }}
-                  role={tool === "arrange" ? "button" : undefined}
-                  tabIndex={tool === "arrange" ? 0 : undefined}
-                >
-                  <TextCard
-                    object={object}
-                    onSave={updateObject}
-                    readOnly
-                  />
-                </div>
-              ))}
-            </section>
-          </ArrangeablePageObject>
-        ) : null}
-
         {page.objects.map((object, index) => {
           if (object.type === "transcript") {
-            return null;
-          }
-          if (object.type === "text" && textStackIds.has(object.id)) {
             return null;
           }
           switch (object.type) {
@@ -2081,6 +1831,7 @@ export function PageWorkspace({
                   className="page-object voice-object"
                   deleteDescription={deletionDescription(object, transcript)}
                   frame={defaultObjectFrame(object)}
+                  inFrontOfSketch={isInFrontOfSketch(object)}
                   key={object.id}
                   layer={object.layer ?? "above-sketch"}
                   objectLabel="voice recording"
@@ -2089,22 +1840,24 @@ export function PageWorkspace({
                     commitLayoutChange(object.id, change)
                   }
                   onDelete={() => deletePageObject(object)}
+                  {...inkStackHandlers(object)}
                   onSelect={() => setSelectedObjectId(object.id)}
-                  onToggleLayer={() => toggleObjectLayer(object)}
                   pageRef={paperRef}
                   position={object.position}
                   selected={selectedObjectId === object.id}
+                  showControls={!textInspectorPanelOpen}
                   showShortcuts={false}
                   stackIndex={index}
                 >
                   <AudioCard
-                    disabled={tool === "arrange"}
                     audio={audio}
+                    gatePlaybackUntilSelected={tool === "arrange"}
                     onConvertToText={!transcript &&
                       object.transcriptionStatus !== "complete"
                       ? () => void transcribeVoice(object)
                       : undefined}
                     recording={object}
+                    selected={selectedObjectId === object.id}
                   />
                   {transcript ? (
                     <TranscriptEditor
@@ -2133,14 +1886,14 @@ export function PageWorkspace({
             case "shape":
               return <ShapeEditor
                 arrange={tool === "arrange" && !shapeEditingObscured}
-                canMoveDown={object.layer !== "behind-sketch"}
-                canMoveUp={object.layer === "behind-sketch" || index < page.objects.length - 1}
+                canMoveDown={canMoveInkStack(page.objects, object.id, -1)}
+                canMoveUp={canMoveInkStack(page.objects, object.id, 1)}
                 key={object.id}
                 onDelete={() => deletePageObject(object)}
                 onDeselect={() => setSelectedObjectId(undefined)}
                 onDuplicate={() => duplicatePageShape(object)}
-                onMoveDown={() => movePageShapeInStack(object, -1)}
-                onMoveUp={() => movePageShapeInStack(object, 1)}
+                onMoveDown={() => movePageObjectInStack(object, -1)}
+                onMoveUp={() => movePageObjectInStack(object, 1)}
                 onSelect={() => setSelectedObjectId(object.id)}
                 onUpdate={(next) => updateShape(next)}
                 pageRef={paperRef}
@@ -2159,6 +1912,7 @@ export function PageWorkspace({
                   className={`page-object photo-object${lockAspectRatio ? " keep-proportions" : ""}`}
                   deleteDescription={deletionDescription(object)}
                   frame={defaultObjectFrame(object)}
+                  inFrontOfSketch={isInFrontOfSketch(object)}
                   key={object.id}
                   layer={object.layer ?? "above-sketch"}
                   maximumFrame={MAXIMUM_PHOTO_FRAME}
@@ -2168,13 +1922,21 @@ export function PageWorkspace({
                     commitLayoutChange(object.id, change)
                   }
                   onDelete={() => deletePageObject(object)}
+                  {...inkStackHandlers(object)}
                   onSelect={() => setSelectedObjectId(object.id)}
                   onToggleAspectLock={() => togglePhotoAspectLock(object)}
-                  onToggleLayer={() => toggleObjectLayer(object)}
                   pageRef={paperRef}
                   position={object.position}
                   selected={selectedObjectId === object.id}
+                  showControls={!textInspectorPanelOpen}
                   showShortcuts={false}
+                  snapPeerFrames={page.objects
+                    .filter(
+                      (candidate): candidate is PhotoObject =>
+                        candidate.type === "photo" &&
+                        candidate.id !== object.id,
+                    )
+                    .map(defaultObjectFrame)}
                   stackIndex={index}
                 >
                   {object.asset.localUri === "demo://garden-flowers" ? (
@@ -2188,41 +1950,51 @@ export function PageWorkspace({
                 </ArrangeablePageObject>
               );
             }
-            case "text":
+            case "text": {
+              const displayedObject =
+                textAppearancePreview?.id === object.id
+                  ? textAppearancePreview
+                  : object;
+              const textLayout = displayedTextLayout(displayedObject);
               return (
                 <ArrangeablePageObject
                   arrange={tool === "arrange"}
                   className="page-object text-object"
                   deleteDescription={deletionDescription(object)}
-                  frame={defaultObjectFrame(object)}
+                  frame={textLayout.frame}
+                  inFrontOfSketch={isInFrontOfSketch(object)}
                   key={object.id}
                   layer={object.layer ?? "above-sketch"}
+                  maximumFrame={MAXIMUM_TEXT_FRAME}
                   objectLabel="text block"
                   objectId={object.id}
-                  onCommit={(change) =>
-                    commitLayoutChange(object.id, change)
-                  }
-                  onDelete={() => deletePageObject(object)}
-                  onNativeDragStart={(event) => {
-                    event.dataTransfer.effectAllowed = "move";
-                    setDraggedTextId(object.id);
+                  onCommit={(change) => {
+                    commitLayoutChange(object.id, change);
                   }}
-                  onSelect={() => setSelectedObjectId(object.id)}
-                  onToggleLayer={() => toggleObjectLayer(object)}
+                  onDelete={() => deletePageObject(object)}
+                  {...inkStackHandlers(object)}
+                  onSelect={() => {
+                    if (selectedObjectId === object.id && textInspectorPanelOpen) {
+                      setTextInspectorPanelOpen(false);
+                    }
+                    setSelectedObjectId(object.id);
+                  }}
                   pageRef={paperRef}
-                  position={object.position}
+                  position={textLayout.position}
                   selected={selectedObjectId === object.id}
+                  showControls={!textInspectorPanelOpen}
                   showShortcuts={false}
                   stackIndex={index}
                 >
                   <TextCard
-                    object={object}
+                    object={displayedObject}
                     onEdit={tool === "arrange" ? () => editTextObject(object) : undefined}
                     onSave={updateCanvasText}
                     readOnly={tool !== "arrange"}
                   />
                 </ArrangeablePageObject>
               );
+            }
             case "link":
               return (
                 <ArrangeablePageObject
@@ -2230,6 +2002,7 @@ export function PageWorkspace({
                   className="page-object link-object-frame"
                   deleteDescription={deletionDescription(object)}
                   frame={defaultObjectFrame(object)}
+                  inFrontOfSketch={isInFrontOfSketch(object)}
                   key={object.id}
                   layer={object.layer ?? "above-sketch"}
                   objectLabel="web link"
@@ -2238,8 +2011,8 @@ export function PageWorkspace({
                     commitLayoutChange(object.id, change)
                   }
                   onDelete={() => deletePageObject(object)}
+                  {...inkStackHandlers(object)}
                   onSelect={() => setSelectedObjectId(object.id)}
-                  onToggleLayer={() => toggleObjectLayer(object)}
                   pageRef={paperRef}
                   position={object.position}
                   selected={selectedObjectId === object.id}
@@ -2291,6 +2064,9 @@ export function PageWorkspace({
 
         {linkComposerOpen ? (
           <LinkComposer
+            audio={audio}
+            contextualStrings={myWords.filter((word) => word.enabled).map((word) => word.text).slice(0, 100)}
+            files={files}
             initialTitle={linkBeingEdited?.title}
             initialUrl={linkBeingEdited?.url}
             key={linkBeingEdited?.id ?? "new-link"}
@@ -2299,25 +2075,19 @@ export function PageWorkspace({
               setLinkBeingEdited(undefined);
             }}
             onSave={(url, title) => void saveLink(url, title)}
+            transcription={transcription}
           />
         ) : null}
 
-        {tool === "arrange" && selectedText ? (
-          <CanvasTextInspector
-            canMoveEarlier={selectedTextStackIndex > 0}
-            canMoveLater={
-              selectedTextStackIndex >= 0 &&
-              selectedTextStackIndex < (textStack?.memberIds.length ?? 0) - 1
-            }
-            key={selectedText.id}
-            object={selectedText}
-            onDelete={() => deletePageObject(selectedText)}
-            onEdit={() => editTextObject(selectedText)}
-            onMoveEarlier={() => reorderStackText(selectedText.id, -1)}
-            onMoveLater={() => reorderStackText(selectedText.id, 1)}
-            onToggleStack={() => toggleTextStackMembership(selectedText)}
+        {tool === "arrange" && displayedSelectedText ? (
+          <ContextualTextEditor
+            key={displayedSelectedText.id}
+            object={displayedSelectedText}
+            onEdit={() => editTextObject(displayedSelectedText)}
+            panelOpen={textInspectorPanelOpen}
+            onPanelOpenChange={setTextInspectorPanelOpen}
+            onPreview={setTextAppearancePreview}
             onUpdate={updateCanvasText}
-            stacked={selectedTextStackIndex >= 0}
           />
         ) : null}
 

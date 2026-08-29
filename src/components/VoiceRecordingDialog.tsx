@@ -8,11 +8,15 @@ const durationLabel = (milliseconds: number) => {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 };
 
-function MicrophoneMeter({ level, active }: { level: number; active: boolean }) {
-  return <div aria-label={active ? "Microphone level" : "Microphone inactive"} className="voice-microphone-meter" role="img">
+function MicrophoneMeter({ level, mode }: { level: number; mode: "ready" | "recording" | "inactive" }) {
+  return <div
+    aria-label={mode === "ready" ? "Microphone ready" : mode === "recording" ? "Microphone level" : "Microphone inactive"}
+    className={`voice-microphone-meter ${mode}`}
+    role="img"
+  >
     {Array.from({ length: 7 }, (_, index) => {
       const wave = 1 - Math.abs(index - 3) / 4;
-      const scale = active ? Math.max(0.15, Math.min(1, 0.15 + level * (0.65 + wave * 0.8))) : 0.15;
+      const scale = mode === "recording" ? Math.max(0.15, Math.min(1, 0.15 + level * (0.65 + wave * 0.8))) : 0.15;
       return <span key={index} style={{ transform: `scaleY(${scale})` }} />;
     })}
   </div>;
@@ -166,11 +170,12 @@ export function VoiceRecordingDialog({ audio, files, initialRecording, onCancel,
   const active = recording?.state === "recording";
   const paused = recording?.state === "paused";
   const interrupted = recording?.state === "interrupted";
+  const microphoneMode = !recording && !busy ? "ready" : active ? "recording" : "inactive";
 
   return <div aria-labelledby="voice-recording-title" aria-modal="true" className="voice-recording-backdrop" role="dialog">
     <section className="voice-recording-dialog">
       <header><div><h2 id="voice-recording-title">Voice recording</h2><p>Record, listen, then place it on your canvas.</p></div><button aria-label="Cancel voice recording" className="secondary-action" onClick={cancel} type="button">Cancel</button></header>
-      <MicrophoneMeter active={active} level={recording?.powerLevel ?? 0} />
+      <MicrophoneMeter level={recording?.powerLevel ?? 0} mode={microphoneMode} />
       <strong className="voice-recording-time">{durationLabel(recording?.elapsedMs ?? 0)}</strong>
       {!reviewing ? <div className="voice-recording-actions">
         {!recording ? <button className="large-action" disabled={busy} onClick={() => void start()} type="button"><Mic aria-hidden="true" />Start recording</button> : active || paused ? <button className="large-action" disabled={busy} onClick={() => void togglePause()} type="button">{active ? <Pause aria-hidden="true" /> : <Mic aria-hidden="true" />}{active ? "Pause recording" : "Resume recording"}</button> : null}

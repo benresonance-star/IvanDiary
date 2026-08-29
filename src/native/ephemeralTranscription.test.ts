@@ -44,6 +44,7 @@ function doubles() {
   const files: JournalFilesPlugin = {
     finaliseTemporaryAsset: vi.fn(),
     removeToTrash: vi.fn(async () => undefined),
+    resolveStoredAssets: vi.fn(),
     storageHealth: vi.fn(),
   };
   const requestPermission = vi.fn(async () => ({ granted: true }));

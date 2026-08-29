@@ -42,7 +42,9 @@ describe("VoiceRecordingDialog", () => {
     expect(startMonitoring).not.toHaveBeenCalled();
     expect(startRecording).not.toHaveBeenCalled();
     expect(addPlaybackListener).not.toHaveBeenCalled();
-    expect(screen.getByRole("img", { name: "Microphone inactive" })).toBeVisible();
+    const readyMeter = screen.getByRole("img", { name: "Microphone ready" });
+    expect(readyMeter).toBeVisible();
+    expect(readyMeter).toHaveClass("ready");
 
     fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
     expect(await screen.findByRole("button", { name: "Pause recording" })).toBeVisible();

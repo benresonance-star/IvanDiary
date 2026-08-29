@@ -872,6 +872,20 @@ public final class CloudBackupPlugin: CAPPlugin, @preconcurrency CAPBridgedPlugi
                 return (fallback, false)
             }
         }
+        if kind == "photo" {
+            let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            let directory = root.appendingPathComponent("JournalAssets/OriginalFiles", isDirectory: true)
+            let safeID = safeFileName(id)
+            let fallback = try? FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil
+            ).first {
+                $0.deletingPathExtension().lastPathComponent == safeID
+            }
+            if let fallback {
+                return (fallback, false)
+            }
+        }
         if uri.hasPrefix("data:"), let separator = uri.firstIndex(of: ",") {
             let encoded = String(uri[uri.index(after: separator)...])
             guard let data = Data(base64Encoded: encoded) else { throw CocoaError(.fileReadCorruptFile) }
@@ -1052,6 +1066,13 @@ public final class JournalAudioPlugin: CAPPlugin, @preconcurrency CAPBridgedPlug
             do {
                 notifyPlaybackEnded()
                 let url = try resolvedAudioURL(requestedURL)
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(
+                    .playback,
+                    mode: .spokenAudio,
+                    options: []
+                )
+                try session.setActive(true)
                 let player = try AVAudioPlayer(contentsOf: url)
                 player.delegate = self
                 if let startMs = call.getInt("startMs") {
@@ -1178,6 +1199,7 @@ public final class JournalFilesPlugin: CAPPlugin, @preconcurrency CAPBridgedPlug
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "finaliseTemporaryAsset", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "removeToTrash", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resolveStoredAssets", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "storageHealth", returnType: CAPPluginReturnPromise)
     ]
     private lazy var store = try? JournalFileStore()
@@ -1199,6 +1221,60 @@ public final class JournalFilesPlugin: CAPPlugin, @preconcurrency CAPBridgedPlug
         guard let assetID = call.getString("assetId"), let store else { call.reject("An asset ID is required."); return }
         do { try store.moveToTrash(assetID: assetID); call.resolve() }
         catch { call.reject("The asset could not be moved to recoverable trash.", "NATIVE_FAILURE", error) }
+    }
+
+    @objc public func resolveStoredAssets(_ call: CAPPluginCall) {
+        guard let assets = call.getArray("assets", JSObject.self) else {
+            call.reject("Asset details are required.", "ASSET_MISSING")
+            return
+        }
+        do {
+            let support = try FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+            var resolved: JSObject = [:]
+            var unresolved: [String] = []
+            for asset in assets {
+                guard let id = asset["id"] as? String,
+                      let kind = asset["kind"] as? String,
+                      let localURI = asset["localUri"] as? String else {
+                    continue
+                }
+                if let current = URL(string: localURI),
+                   current.isFileURL,
+                   FileManager.default.fileExists(atPath: current.path) {
+                    resolved[id] = current.absoluteString
+                    continue
+                }
+                let safeID = String(id.map {
+                    $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "_"
+                })
+                let subdirectory = kind == "audio" ? "OriginalAudio" : "OriginalFiles"
+                let directory = support
+                    .appendingPathComponent("JournalAssets", isDirectory: true)
+                    .appendingPathComponent(subdirectory, isDirectory: true)
+                let match = try? FileManager.default.contentsOfDirectory(
+                    at: directory,
+                    includingPropertiesForKeys: nil
+                ).first {
+                    $0.deletingPathExtension().lastPathComponent == safeID
+                }
+                if let match {
+                    resolved[id] = match.absoluteString
+                } else {
+                    unresolved.append(id)
+                }
+            }
+            call.resolve([
+                "resolvedAssetUris": resolved,
+                "unresolvedAssetIds": unresolved
+            ])
+        } catch {
+            call.reject("Stored assets could not be resolved.", "NATIVE_FAILURE", error)
+        }
     }
 
     @objc public func storageHealth(_ call: CAPPluginCall) {

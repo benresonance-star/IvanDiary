@@ -15,7 +15,7 @@ import {
 } from "../sketch/SketchSurface";
 import type { SketchRepository, SketchTool } from "../sketch/types";
 import { WELCOME_DRAWING_DOCUMENT_ID } from "../sketch/specialDocuments";
-import { PenSettingsHud, type PenSettings } from "./PenSettingsHud";
+import { PenSettingsHud, SCRIPTURE_GOLD_COLOUR, type PenSettings } from "./PenSettingsHud";
 
 export type WelcomeCopy = {
   greeting: string;
@@ -67,6 +67,7 @@ export function WelcomeScreen({
   const [penHudOpen, setPenHudOpen] = useState(false);
   const [penSettings, setPenSettings] = useState<PenSettings>({
     color: penColor,
+    material: penColor.toLowerCase() === SCRIPTURE_GOLD_COLOUR ? "scripture-gold" : "solid",
     nib: penNib,
     profiles: penNibProfiles,
     width: penWidth,
@@ -90,6 +91,8 @@ export function WelcomeScreen({
       editing && !interactionObscured && !penHudOpen && hasNativePencilKit(),
     tool,
     color: penSettings.color,
+    material: penSettings.material,
+    goldFinish: penSettings.goldFinish,
     nib: penSettings.nib,
     width: penSettings.width,
     opacity: penSettings.opacity,

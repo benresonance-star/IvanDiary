@@ -70,6 +70,52 @@ describe("TextCard", () => {
     expect(screen.getByText("Original words")).toHaveRole("paragraph");
   });
 
+  it("centres text vertically by default and supports top positioning", () => {
+    const view = render(
+      <TextCard object={object} onSave={vi.fn()} readOnly />,
+    );
+    expect(screen.getByRole("paragraph")).toHaveStyle({
+      alignContent: "center",
+      display: "grid",
+    });
+
+    view.rerender(
+      <TextCard
+        object={{ ...object, verticalAlign: "top" }}
+        onSave={vi.fn()}
+        readOnly
+      />,
+    );
+    expect(screen.getByRole("paragraph")).toHaveStyle({
+      alignContent: "start",
+    });
+  });
+
+  it("keeps the same inset and vertical position in View and Edit", () => {
+    const view = render(
+      <TextCard
+        object={{ ...object, role: "title" }}
+        onSave={vi.fn()}
+        readOnly
+      />,
+    );
+    const viewed = screen.getByRole("heading", { level: 1 });
+    expect(Number.parseFloat(globalThis.getComputedStyle(viewed).margin)).toBe(0);
+    expect(viewed).toHaveStyle({ alignContent: "center", display: "grid" });
+
+    view.rerender(
+      <TextCard
+        object={{ ...object, role: "title" }}
+        onEdit={vi.fn()}
+        onSave={vi.fn()}
+        readOnly={false}
+      />,
+    );
+    const editable = screen.getByRole("button", { name: "Edit journal text" });
+    expect(Number.parseFloat(globalThis.getComputedStyle(editable).margin)).toBe(0);
+    expect(editable).toHaveStyle({ alignContent: "center", display: "grid" });
+  });
+
   it("preserves line returns between editing and viewing", () => {
     const multiline = "First line\n\nSecond paragraph\nThird line";
     const onSave = vi.fn();
@@ -108,6 +154,35 @@ describe("TextCard", () => {
     );
 
     expect(screen.getByRole("paragraph")).toHaveStyle({ color: "#d02020" });
+  });
+
+  it("renders raised Scripture Gold as a durable text material", () => {
+    render(
+      <TextCard
+        object={{ ...object, material: "scripture-gold", goldFinish: "raised" }}
+        onSave={vi.fn()}
+        readOnly
+      />,
+    );
+
+    expect(screen.getByText("Original words")).toHaveClass(
+      "scripture-gold-text",
+      "scripture-gold-text-raised",
+    );
+  });
+
+  it("renders the optional Scripture Gold sparkle inside the glyph layer", () => {
+    render(
+      <TextCard
+        object={{ ...object, material: "scripture-gold", goldFinish: "sparkle" }}
+        onSave={vi.fn()}
+        readOnly
+      />,
+    );
+
+    expect(screen.getByText("Original words")).toHaveClass(
+      "scripture-gold-text-sparkle",
+    );
   });
 
   it("applies per-block scale without changing semantic text roles", () => {

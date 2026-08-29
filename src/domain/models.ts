@@ -58,6 +58,7 @@ type PageObjectBase = {
   position: Position;
   frame?: Size;
   layer?: "above-sketch" | "behind-sketch";
+  inFrontOfSketch?: boolean;
   createdAt: IsoDateTime;
   revision: number;
 };
@@ -109,9 +110,12 @@ export type TextObject = PageObjectBase & {
   /** Retained for compatibility; canvas text size follows JournalSettings.textScale. */
   textScale: number;
   textAlign?: "left" | "center";
+  verticalAlign?: "top" | "center";
   role?: CanvasTextRole;
   font?: CanvasTextFont;
   color?: string;
+  material?: "solid" | "scripture-gold";
+  goldFinish?: "smooth" | "raised" | "sparkle";
   backgroundColor?: string;
   outlineColor?: string;
   outlineWidth?: number;
@@ -125,6 +129,11 @@ export type PageTextStack = {
   frame: Size;
   memberIds: EntityId[];
   layer?: "above-sketch" | "behind-sketch";
+  dock?: "free" | "left" | "right";
+  /** `null` is the explicit No Background choice; absent is legacy warm paper. */
+  backgroundColor?: string | null;
+  outlineColor?: string;
+  outlineWidth?: number;
 };
 
 export type LinkObject = PageObjectBase & {
@@ -220,6 +229,7 @@ export type MyStoryVoiceRecording = {
   position?: Position;
   frame?: Size;
   layer?: "above-sketch" | "behind-sketch";
+  inFrontOfSketch?: boolean;
   revision: number;
   createdAt: IsoDateTime;
 };
@@ -492,6 +502,18 @@ export type DocumentOperation = OperationBase &
       type: "page-text-stack-layer-update";
       pageId: EntityId;
       layer: "above-sketch" | "behind-sketch";
+    }
+    | {
+      type: "page-text-stack-dock-update";
+      pageId: EntityId;
+      dock: "free" | "left" | "right";
+    }
+    | {
+      type: "page-text-stack-appearance-update";
+      pageId: EntityId;
+      backgroundColor: string | null;
+      outlineColor?: string;
+      outlineWidth?: number;
     }
     | {
       type: "page-text-stack-reorder";

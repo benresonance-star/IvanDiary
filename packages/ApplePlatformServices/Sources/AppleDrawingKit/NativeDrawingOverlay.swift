@@ -27,6 +27,8 @@ public struct NativeOverlayShape: Sendable {
 public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGestureRecognizerDelegate {
     public private(set) var documentID: String?
     public private(set) var isPresented = false
+    public private(set) var passthroughRects: [CGRect] = []
+    public private(set) var visualHoleRects: [CGRect] = []
     public var onDrawingChanged: ((String) -> Void)?
     public var onCanvasTapped: ((CGPoint) -> Void)?
     public var onCanvasLongPressed: ((CGPoint) -> Void)?
@@ -43,6 +45,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
     private let gridGuideView = DrawingGridGuideView()
     private let gridInputView = GridStrokeInputView()
     private let shapeOverlayView = UIView()
+    private let scriptureGoldOverlayView = ScriptureGoldOverlayView()
     private let store: any PencilDrawingStore
     private lazy var twoFingerUndoRecognizer: UITapGestureRecognizer = {
         let recognizer = UITapGestureRecognizer(
@@ -81,9 +84,12 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
     private var grid: DrawingGridSettings = .off
     private var selectedTool: NativeDrawingTool = .pen
     private var selectedNib: NativeDrawingNib = .pen
+    private var selectedMaterial: NativeDrawingMaterial = .solid
+    private var selectedGoldFinish: NativeGoldFinish = .raised
     private var fingerDrawing = true
     private var loadError: Error?
     private var pendingSave: Task<Void, Never>?
+    private var pendingGoldRefresh: Task<Void, Never>?
     private var persistenceError: Error?
 
     private enum DrawingPersistenceError: Error {
@@ -135,6 +141,9 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         shapeOverlayView.isUserInteractionEnabled = false
         shapeOverlayView.backgroundColor = .clear
         addSubview(shapeOverlayView)
+        scriptureGoldOverlayView.translatesAutoresizingMaskIntoConstraints = false
+        scriptureGoldOverlayView.isUserInteractionEnabled = false
+        addSubview(scriptureGoldOverlayView)
         NSLayoutConstraint.activate([
             gridGuideView.leadingAnchor.constraint(equalTo: leadingAnchor),
             gridGuideView.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -151,7 +160,11 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
             shapeOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
             shapeOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
             shapeOverlayView.topAnchor.constraint(equalTo: topAnchor),
-            shapeOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            shapeOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            scriptureGoldOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scriptureGoldOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scriptureGoldOverlayView.topAnchor.constraint(equalTo: topAnchor),
+            scriptureGoldOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
         gridInputView.onStroke = { [weak self] points in
             self?.commitGridStroke(points)
@@ -173,12 +186,32 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         NotificationCenter.default.removeObserver(self)
     }
 
+    public override func hitTest(
+        _ point: CGPoint,
+        with event: UIEvent?
+    ) -> UIView? {
+        if DrawingInputPassthroughPolicy.passesThrough(
+            point: point,
+            regions: passthroughRects
+        ) {
+            return nil
+        }
+        return super.hitTest(point, with: event)
+    }
+
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+        applyVisualHoles()
+    }
+
     public func present(
         in host: UIView,
         documentID: String,
         color: UIColor,
         width: CGFloat,
         nib: NativeDrawingNib = .pen,
+        material: NativeDrawingMaterial = .solid,
+        goldFinish: NativeGoldFinish = .raised,
         fingerDrawing: Bool = true,
         twoFingerUndo: Bool = true,
         tool: NativeDrawingTool,
@@ -186,7 +219,9 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         frame: CGRect,
         clipToCircle: Bool = false,
         legacyInk: LegacyInkDocument? = nil,
-        overlayShapes: [NativeOverlayShape] = []
+        overlayShapes: [NativeOverlayShape] = [],
+        passthroughRects: [CGRect] = [],
+        visualHoleRects: [CGRect] = []
     ) throws -> Bool {
         pendingSave?.cancel()
         let previousDocumentID = self.documentID
@@ -197,14 +232,19 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         self.color = color
         self.width = width
         self.selectedNib = nib
+        self.selectedMaterial = material
+        self.selectedGoldFinish = goldFinish
         self.fingerDrawing = fingerDrawing
         twoFingerUndoRecognizer.isEnabled = twoFingerUndo
         canvasView.drawingPolicy = fingerDrawing ? .anyInput : .pencilOnly
         self.grid = grid
+        self.passthroughRects = passthroughRects
+        self.visualHoleRects = visualHoleRects
         updateGridInput()
         self.frame = frame
         layoutIfNeeded()
         applyClipping(circle: clipToCircle)
+        applyVisualHoles()
         apply(tool: tool)
         renderOverlayShapes(overlayShapes, grid: grid)
         // Hiding the overlay already persists the current drawing. Reopening
@@ -214,6 +254,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         if previousDocumentID != documentID || loadError != nil {
             try loadDrawing(documentID: documentID)
         }
+        refreshScriptureGoldPresentation()
         var importedLegacyStrokes = false
         if let legacyInk,
            !legacyInk.strokes.isEmpty {
@@ -252,13 +293,17 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         color: UIColor?,
         width: CGFloat?,
         nib: NativeDrawingNib? = nil,
+        material: NativeDrawingMaterial? = nil,
+        goldFinish: NativeGoldFinish? = nil,
         fingerDrawing: Bool? = nil,
         twoFingerUndo: Bool? = nil,
         tool: NativeDrawingTool?,
         grid: DrawingGridSettings? = nil,
         frame: CGRect?,
         clipToCircle: Bool? = nil,
-        overlayShapes: [NativeOverlayShape]? = nil
+        overlayShapes: [NativeOverlayShape]? = nil,
+        passthroughRects: [CGRect]? = nil,
+        visualHoleRects: [CGRect]? = nil
     ) {
         if let color {
             self.color = color
@@ -268,6 +313,12 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         }
         if let nib {
             self.selectedNib = nib
+        }
+        if let material {
+            self.selectedMaterial = material
+        }
+        if let goldFinish {
+            self.selectedGoldFinish = goldFinish
         }
         if let fingerDrawing {
             self.fingerDrawing = fingerDrawing
@@ -290,11 +341,19 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         if let overlayShapes {
             renderOverlayShapes(overlayShapes, grid: self.grid)
         }
+        if let passthroughRects {
+            self.passthroughRects = passthroughRects
+        }
+        if let visualHoleRects {
+            self.visualHoleRects = visualHoleRects
+            applyVisualHoles()
+        }
         if let tool {
             apply(tool: tool)
         } else if canvasView.tool is PKInkingTool {
             apply(tool: .pen)
         }
+        refreshScriptureGoldPresentation()
     }
 
     private func renderOverlayShapes(_ shapes: [NativeOverlayShape], grid: DrawingGridSettings) {
@@ -437,6 +496,30 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
         layer.cornerRadius = circle ? min(bounds.width, bounds.height) / 2 : 0
     }
 
+    private func applyVisualHoles() {
+        let bounds = canvasView.bounds
+        if visualHoleRects.isEmpty || bounds.isEmpty {
+            canvasView.layer.mask = nil
+            scriptureGoldOverlayView.layer.mask = nil
+            return
+        }
+        let path = DrawingOverlayMaskPolicy.maskPath(
+            bounds: bounds,
+            holes: visualHoleRects
+        )
+        canvasView.layer.mask = Self.visualHoleMask(path: path)
+        scriptureGoldOverlayView.layer.mask = Self.visualHoleMask(path: path)
+    }
+
+    private static func visualHoleMask(path: CGPath) -> CAShapeLayer {
+        let mask = CAShapeLayer()
+        mask.fillRule = DrawingOverlayMaskPolicy.usesEvenOddFill
+            ? .evenOdd
+            : .nonZero
+        mask.path = path
+        return mask
+    }
+
     private func dismissToolPicker() {
         canvasView.resignFirstResponder()
         PKToolPicker().setVisible(false, forFirstResponder: canvasView)
@@ -446,6 +529,7 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
     }
 
     public func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+        scheduleScriptureGoldRefresh()
         pendingSave?.cancel()
         pendingSave = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 800_000_000)
@@ -454,6 +538,25 @@ public final class NativeDrawingOverlay: UIView, PKCanvasViewDelegate, UIGesture
             }
             self.saveAndRememberFailure()
         }
+    }
+
+    private func scheduleScriptureGoldRefresh() {
+        guard pendingGoldRefresh == nil else { return }
+        pendingGoldRefresh = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.pendingGoldRefresh = nil
+            self.refreshScriptureGoldPresentation()
+        }
+    }
+
+    private func refreshScriptureGoldPresentation() {
+        scriptureGoldOverlayView.setDrawing(
+            canvasView.drawing,
+            canvasSize: canvasView.bounds.size,
+            active: selectedMaterial == .scriptureGold,
+            finish: selectedGoldFinish
+        )
     }
 
     public func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {

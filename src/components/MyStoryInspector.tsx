@@ -1,4 +1,5 @@
-import { ArrowDown, ArrowUp, Pencil, Trash2, X } from "lucide-react";
+import { useState } from "react";
+import { ArrowDown, ArrowUp, Pencil, Sparkles, Trash2, X } from "lucide-react";
 
 import type {
   MyStoryLink,
@@ -40,32 +41,32 @@ export function MyStoryInspector({
   textBackgroundColor: string;
   textColor: string;
 }) {
+  const [lookOpen, setLookOpen] = useState(false);
+
   return (
     <aside
       aria-label="My Story options"
-      className="my-story-inspector"
+      className={`my-story-inspector${selection.kind === "text" ? " contextual-story-text-editor" : ""}`}
     >
-      <header>
+      {selection.kind !== "text" ? <header>
         <strong>
           {selection.kind === "pane"
             ? "Text background"
-            : selection.kind === "text"
-              ? "Text style"
-              : selection.kind === "photo"
-                ? "Image size"
-                : "Web link"}
+            : selection.kind === "photo"
+              ? "Image size"
+              : "Web link"}
         </strong>
         <button aria-label="Close options" onClick={onClose} type="button">
           <X aria-hidden="true" />
         </button>
-      </header>
+      </header> : null}
 
       {selection.kind === "pane" ? (
         <label className="story-colour-control">
           <span>Background colour</span>
           <input
             aria-label="Text side background colour"
-            onChange={(event) =>
+            onInput={(event) =>
               onTextBackgroundChange(event.currentTarget.value)
             }
             type="color"
@@ -76,41 +77,63 @@ export function MyStoryInspector({
 
       {selection.kind === "text" ? (
         <>
-          <button onClick={onEditText} type="button">
-            <Pencil aria-hidden="true" />
-            Edit text
-          </button>
-          <div
-            aria-label="Text size"
-            className="story-segmented-control"
-            role="radiogroup"
-          >
-            {([
-              ["title", "Title"],
-              ["heading", "Heading"],
-              ["body", "Main text"],
-            ] as const).map(([role, label]) => (
-              <button
-                aria-checked={selection.block.role === role}
-                className={selection.block.role === role ? "selected" : ""}
-                key={role}
-                onClick={() => onTextRoleChange(role)}
-                role="radio"
-                type="button"
-              >
-                {label}
-              </button>
-            ))}
+          <div aria-label="Story text editing toolbar" className="contextual-story-text-primary" role="toolbar">
+            <button onClick={onEditText} type="button">
+              <Pencil aria-hidden="true" />
+              <span>Edit text</span>
+            </button>
+            <button aria-expanded={lookOpen} aria-pressed={lookOpen} onClick={() => setLookOpen((open) => !open)} type="button">
+              <Sparkles aria-hidden="true" />
+              <span>Look</span>
+            </button>
+            <button aria-label="Move earlier" disabled={selection.index === 0} onClick={() => onMove(-1)} type="button">
+              <ArrowUp aria-hidden="true" />
+              <span>Earlier</span>
+            </button>
+            <button aria-label="Move later" disabled={selection.index === selection.count - 1} onClick={() => onMove(1)} type="button">
+              <ArrowDown aria-hidden="true" />
+              <span>Later</span>
+            </button>
+            <button className="story-delete-control" onClick={onDelete} type="button">
+              <Trash2 aria-hidden="true" />
+              <span>Delete</span>
+            </button>
+            <button aria-label="Close options" onClick={onClose} type="button">
+              <X aria-hidden="true" />
+              <span>Close</span>
+            </button>
           </div>
-          <label className="story-colour-control">
-            <span>Text colour</span>
-            <input
-              aria-label="Text colour"
-              onChange={(event) => onTextColorChange(event.currentTarget.value)}
-              type="color"
-              value={textColor}
-            />
-          </label>
+          {lookOpen ? (
+            <section aria-label="Story text look options" className="contextual-story-text-look">
+              <div aria-label="Text structure" className="contextual-text-segments" role="group">
+                {([
+                  ["title", "Title"],
+                  ["heading", "Heading"],
+                  ["body", "Main text"],
+                ] as const).map(([role, label]) => (
+                  <button
+                    aria-pressed={selection.block.role === role}
+                    key={role}
+                    onClick={() => onTextRoleChange(role)}
+                    type="button"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="contextual-text-colour-row">
+                <label>
+                  <span>Text colour</span>
+                  <input
+                    aria-label="Text colour"
+                    onInput={(event) => onTextColorChange(event.currentTarget.value)}
+                    type="color"
+                    value={textColor}
+                  />
+                </label>
+              </div>
+            </section>
+          ) : null}
         </>
       ) : null}
 
@@ -146,7 +169,7 @@ export function MyStoryInspector({
         </button>
       ) : null}
 
-      {selection.kind !== "pane" ? (
+      {selection.kind === "photo" || selection.kind === "link" ? (
         <div className="my-story-inspector-actions">
           <button
             aria-label="Move earlier"

@@ -23,13 +23,17 @@ export function TextCard({
   }, [object.text.length, readOnly]);
   const role = object.role ?? "body";
   const className = `page-text-card canvas-text-${role} canvas-font-${object.font ?? "system-sans"}`;
+  const goldClass = object.material === "scripture-gold" ? `scripture-gold-text scripture-gold-text-${object.goldFinish ?? "raised"}` : undefined;
+  const content = goldClass ? <span className={goldClass}>{object.text}</span> : object.text;
   const style = {
     "--canvas-text-scale": object.textScale,
     backgroundColor: object.backgroundColor ?? "transparent",
     border: object.outlineColor
       ? `${object.outlineWidth ?? 2}px solid ${object.outlineColor}`
       : "none",
-    color: object.color ?? "#201c17",
+    color: object.material === "scripture-gold" ? undefined : (object.color ?? "#201c17"),
+    alignContent: (object.verticalAlign ?? "center") === "center" ? "center" : "start",
+    display: "grid",
     overflowWrap: "anywhere",
     textAlign: object.textAlign ?? "left",
     whiteSpace: "pre-wrap",
@@ -38,11 +42,11 @@ export function TextCard({
   if (readOnly) {
     switch (role) {
       case "title":
-        return <h1 className={className} style={style}>{object.text}</h1>;
+        return <h1 className={className} style={style}>{content}</h1>;
       case "heading":
-        return <h2 className={className} style={style}>{object.text}</h2>;
+        return <h2 className={className} style={style}>{content}</h2>;
       case "body":
-        return <p className={className} style={style}>{object.text}</p>;
+        return <p className={className} style={style}>{content}</p>;
       default: {
         const exhaustiveRole: never = role;
         throw new Error(`Unsupported canvas text role: ${exhaustiveRole}`);
@@ -59,7 +63,7 @@ export function TextCard({
         style={style}
         type="button"
       >
-        {object.text}
+        {content}
       </button>
     );
   }
@@ -67,7 +71,7 @@ export function TextCard({
   return (
     <textarea
       aria-label="Journal text"
-      className={className}
+      className={`${className}${object.material === "scripture-gold" ? " scripture-gold-text-editor" : ""}`}
       onBlur={() => {
         if (text !== object.text) {
           onSave({ ...object, text, revision: object.revision + 1 });

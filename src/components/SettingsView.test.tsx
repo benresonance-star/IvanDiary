@@ -70,6 +70,9 @@ describe("SettingsView name entry", () => {
     expect(input).toHaveAttribute("inputmode", "text");
     expect(input).toHaveAttribute("autocapitalize", "words");
     expect(input).toHaveAttribute("enterkeyhint", "done");
+    fireEvent.pointerDown(input, { button: 0, pointerType: "touch" });
+    input.focus();
+    expect(input).toHaveFocus();
   });
 
   it("records, transcribes, saves, and removes a spoken name", async () => {

@@ -55,6 +55,14 @@ const INITIAL_DRAWING_HEALTH: SaveHealth = {
 
 const RESTORE_COMPLETE_KEY = "ivan-diary-restore-complete";
 
+export function workspacePageTool(
+  activeTool: PageTool,
+  welcomeVisible: boolean,
+  welcomePreviewVisible: boolean,
+): PageTool {
+  return welcomeVisible || welcomePreviewVisible ? "view" : activeTool;
+}
+
 const SettingsView = lazy(() =>
   import("./components/SettingsView").then((module) => ({ default: module.SettingsView })),
 );
@@ -161,7 +169,7 @@ export default function App() {
       () => undefined,
     );
   }, [snapshot?.settings.standardAppAppearance]);
-  const [activePageTool, setActivePageTool] = useState<PageTool>("view");
+  const [activePageTool, setActivePageTool] = useState<PageTool>("pen");
   const [activeSketchbookId, setActiveSketchbookId] = useState<string>();
   const [activeSketchbookPageId, setActiveSketchbookPageId] =
     useState<string>();
@@ -174,6 +182,11 @@ export default function App() {
   const [helpModeActive, setHelpModeActive] = useState(false);
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [welcomePreview, setWelcomePreview] = useState<WelcomeCopy>();
+  const visibleWorkspaceTool = workspacePageTool(
+    activePageTool,
+    welcomeVisible,
+    Boolean(welcomePreview),
+  );
   const [portraitEditorOpen, setPortraitEditorOpen] = useState(false);
   const [restoreCompleteVisible, setRestoreCompleteVisible] = useState(
     () => globalThis.sessionStorage?.getItem(RESTORE_COMPLETE_KEY) === "true",
@@ -898,7 +911,7 @@ export default function App() {
             textEditorPreference={snapshot.settings.textEditorPreference}
             share={share}
             sketchRepository={sketchRepository}
-            tool={activePageTool}
+            tool={visibleWorkspaceTool}
             transcription={transcription}
           />
         ) : (
@@ -951,7 +964,7 @@ export default function App() {
           share={share}
           sketchRepository={sketchRepository}
           textEditorPreference={snapshot.settings.textEditorPreference}
-          tool={activePageTool}
+          tool={visibleWorkspaceTool}
           transcription={transcription}
           storyName={activeStory.name}
         />
@@ -1028,7 +1041,7 @@ export default function App() {
             textEditorPreference={snapshot.settings.textEditorPreference}
             share={share}
             sketchRepository={sketchRepository}
-            tool={activePageTool}
+            tool={visibleWorkspaceTool}
             transcription={transcription}
           />
         ) : activeSketchbook ? (

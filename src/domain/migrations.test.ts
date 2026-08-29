@@ -25,6 +25,7 @@ describe("journal migrations", () => {
       backgroundColor: "#fefefe",
       outlineColor: "#654321",
       outlineWidth: 4,
+      verticalAlign: "top",
       revision: 0,
       createdAt: current.updatedAt,
     } as const;
@@ -37,6 +38,7 @@ describe("journal migrations", () => {
       backgroundColor: "paper",
       outlineColor: "ink",
       outlineWidth: 99,
+      verticalAlign: "bottom",
     };
     const migrated = migrateJournalSnapshot({
       ...current,
@@ -56,20 +58,18 @@ describe("journal migrations", () => {
       }],
     });
 
-    expect(migrated.pages[0]?.textStack).toEqual({
-      position: { x: 0, y: 1 },
-      frame: { width: 1, height: 0.01 },
-      memberIds: ["structured-text", "legacy-text"],
-      layer: "above-sketch",
-    });
+    expect(migrated.pages[0]).not.toHaveProperty("textStack");
     expect(migrated.pages[0]?.objects[0]).toEqual(
       expect.objectContaining({
+        position: { x: 0, y: 0.99 },
+        frame: { width: 1, height: 0.01 },
         role: "heading",
         font: "system-serif",
         color: "#123456",
         backgroundColor: "#fefefe",
         outlineColor: "#654321",
         outlineWidth: 4,
+        verticalAlign: "top",
       }),
     );
     expect(migrated.pages[0]?.objects[1]).not.toHaveProperty("role");
@@ -78,7 +78,44 @@ describe("journal migrations", () => {
     expect(migrated.pages[0]?.objects[1]).not.toHaveProperty("backgroundColor");
     expect(migrated.pages[0]?.objects[1]).not.toHaveProperty("outlineColor");
     expect(migrated.pages[0]?.objects[1]).not.toHaveProperty("outlineWidth");
+    expect(migrated.pages[0]?.objects[1]).not.toHaveProperty("verticalAlign");
+    expect(migrated.pages[0]?.objects[1]).toEqual(expect.objectContaining({
+      position: { x: 0, y: 0.99 },
+      frame: { width: 1, height: 0.01 },
+    }));
+    expect(migrated.pages[0]?.objects[0]).not.toHaveProperty("dock");
+    expect(migrated.pages[0]?.objects[1]).not.toHaveProperty("dock");
     expect(migrateJournalSnapshot(migrated)).toEqual(migrated);
+  });
+
+  it("undocks legacy text at its visible edge position", () => {
+    const current = createInitialJournalSnapshot(
+      new Date("2026-08-03T09:00:00.000Z"),
+    );
+    const page = current.pages[0]!;
+    const migrated = migrateJournalSnapshot({
+      ...current,
+      pages: [{
+        ...page,
+        objects: [{
+          id: "docked-text",
+          type: "text",
+          pageId: page.id,
+          position: { x: 0.3, y: 0.25 },
+          frame: { width: 0.4, height: 0.2 },
+          dock: "right",
+          text: "Edge words",
+          textScale: 1,
+          createdAt: current.updatedAt,
+          revision: 0,
+        }],
+      }],
+    });
+    expect(migrated.pages[0]?.objects[0]).toEqual(expect.objectContaining({
+      position: { x: 0.58, y: 0.25 },
+      frame: { width: 0.4, height: 0.2 },
+    }));
+    expect(migrated.pages[0]?.objects[0]).not.toHaveProperty("dock");
   });
 
   it("preserves valid page backgrounds and removes invalid values", () => {
@@ -113,6 +150,84 @@ describe("journal migrations", () => {
     });
     expect(migrated.pages[0]!.objects[0]).toEqual(expect.objectContaining({ shapeKind: "freeform", points: freeform.points }));
     expect(migrated.stories[0]?.pages[0]?.shapes).toEqual([expect.objectContaining({ id: "story-freeform", shapeKind: "freeform", points: freeform.points })]);
+  });
+
+  it("keeps missing inFrontOfSketch under ink and preserves an explicit true", () => {
+    const current = createInitialJournalSnapshot(new Date("2026-08-03T09:00:00.000Z"));
+    const under = {
+      id: "under-text",
+      type: "text",
+      pageId: current.pages[0]!.id,
+      position: { x: 0.2, y: 0.2 },
+      frame: { width: 0.3, height: 0.2 },
+      text: "Under ink",
+      textScale: 1,
+      layer: "above-sketch",
+      revision: 0,
+      createdAt: current.updatedAt,
+    };
+    const over = {
+      ...under,
+      id: "over-text",
+      text: "Over ink",
+      inFrontOfSketch: true,
+    };
+    const invalid = {
+      ...under,
+      id: "invalid-text",
+      text: "Invalid band",
+      inFrontOfSketch: "yes",
+    };
+    const migrated = migrateJournalSnapshot({
+      ...current,
+      stories: undefined,
+      pages: [{ ...current.pages[0]!, objects: [under, over, invalid] }],
+      myStory: {
+        pages: [{
+          id: "story-page",
+          drawingDocumentId: "story-drawing",
+          shapes: [{
+            id: "story-over",
+            type: "shape",
+            shapeKind: "circle",
+            pageId: "story-page",
+            position: { x: 0.2, y: 0.2 },
+            frame: { width: 0.24, height: 0.24 },
+            outlineWidth: 3,
+            inFrontOfSketch: true,
+            revision: 0,
+            createdAt: current.updatedAt,
+          }],
+          recordings: [{
+            id: "story-voice",
+            asset: {
+              id: "voice-asset",
+              kind: "audio",
+              localUri: "file:///voice.m4a",
+              mimeType: "audio/mp4",
+              byteLength: 1,
+              checksum: "voice",
+            },
+            durationMs: 1200,
+            transcriptionStatus: "not-requested",
+            revision: 0,
+            createdAt: current.updatedAt,
+          }],
+        }],
+      },
+    });
+
+    expect(migrated.pages[0]?.objects[0]).not.toHaveProperty("inFrontOfSketch");
+    expect(migrated.pages[0]?.objects[1]).toEqual(
+      expect.objectContaining({ id: "over-text", inFrontOfSketch: true }),
+    );
+    expect(migrated.pages[0]?.objects[2]).not.toHaveProperty("inFrontOfSketch");
+    expect(migrated.stories[0]?.pages[0]?.shapes?.[0]).toEqual(
+      expect.objectContaining({ id: "story-over", inFrontOfSketch: true }),
+    );
+    expect(migrated.stories[0]?.pages[0]?.recordings[0]).not.toHaveProperty(
+      "inFrontOfSketch",
+    );
   });
 
   it("adds safe accessibility defaults to version zero data", () => {

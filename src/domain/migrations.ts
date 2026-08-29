@@ -17,8 +17,10 @@ import {
   type PageObject,
   type ShapeObject,
   type Size,
+  type TextObject,
 } from "./models";
 import { normalizedStoryRenderOrder } from "./storyRenderOrder";
+import { materializeLegacyTextStack } from "./textLayout";
 import { webHttpUrl } from "../utils/webHttpUrl";
 import { validPaperBackgroundColour } from "./paperBackground";
 
@@ -249,6 +251,21 @@ function migrateSettings(value: unknown): JournalSettings {
   };
 }
 
+function optionalInFrontOfSketch(
+  value: unknown,
+): { inFrontOfSketch?: true } {
+  return value === true ? { inFrontOfSketch: true } : {};
+}
+
+function withMigratedInkBand<T extends { inFrontOfSketch?: boolean }>(
+  object: T,
+): T {
+  const { inFrontOfSketch, ...rest } = object;
+  return inFrontOfSketch === true
+    ? { ...rest, inFrontOfSketch: true } as T
+    : rest as T;
+}
+
 function defaultFrame(object: PageObject): Size | undefined {
   switch (object.type) {
     case "voice":
@@ -308,7 +325,7 @@ function migratePageFrames(
     );
     const storedTextStack = page.textStack as unknown;
     const textStack = migratePageTextStack(storedTextStack, textObjectIds);
-    return {
+    return materializeLegacyTextStack({
       ...pageWithoutBackground,
       ...(backgroundColor ? { backgroundColor } : {}),
       ...(drawingGrid ? { drawingGrid } : {}),
@@ -334,6 +351,12 @@ function migratePageFrames(
             /^#[0-9a-f]{6}$/i.test(migrated.color)
               ? migrated.color
               : undefined;
+          const material = migrated.material === "scripture-gold"
+            ? "scripture-gold" as const
+            : undefined;
+          const goldFinish = migrated.goldFinish === "smooth" || migrated.goldFinish === "raised" || migrated.goldFinish === "sparkle"
+            ? migrated.goldFinish
+            : undefined;
           const backgroundColor =
             typeof migrated.backgroundColor === "string" &&
             /^#[0-9a-f]{6}$/i.test(migrated.backgroundColor)
@@ -351,42 +374,69 @@ function migratePageFrames(
             migrated.outlineWidth <= 12
               ? migrated.outlineWidth
               : undefined;
+          const verticalAlign = migrated.verticalAlign === "top"
+            ? "top" as const
+            : migrated.verticalAlign === "center"
+              ? "center" as const
+              : undefined;
+          const storedDock = (migrated as TextObject & { dock?: unknown }).dock;
           const {
+            dock: _dock,
             role: _role,
             font: _font,
             color: _color,
+            material: _material,
+            goldFinish: _goldFinish,
             backgroundColor: _backgroundColor,
             outlineColor: _outlineColor,
             outlineWidth: _outlineWidth,
+            verticalAlign: _verticalAlign,
             ...legacyText
-          } = migrated;
+          } = migrated as TextObject & { dock?: unknown };
+          void _dock;
           void _role;
           void _font;
           void _color;
+          void _material;
+          void _goldFinish;
           void _backgroundColor;
           void _outlineColor;
           void _outlineWidth;
-          return {
+          void _verticalAlign;
+          return withMigratedInkBand({
             ...legacyText,
+            position: {
+              ...legacyText.position,
+              x: storedDock === "left"
+                ? 0.02
+                : storedDock === "right"
+                  ? Math.max(0.02, 0.98 - (legacyText.frame?.width ?? 0.42))
+                  : legacyText.position.x,
+            },
             ...(role ? { role } : {}),
             ...(font ? { font } : {}),
             ...(color ? { color } : {}),
+            ...(material ? { material } : {}),
+            ...(goldFinish ? { goldFinish } : {}),
             ...(backgroundColor ? { backgroundColor } : {}),
             ...(outlineColor ? { outlineColor } : {}),
             ...(outlineWidth ? { outlineWidth } : {}),
-          };
+            ...(verticalAlign ? { verticalAlign } : {}),
+          });
         }
-        return migrated.type === "shape"
-          ? {
-              ...migrated,
-              rotationDegrees:
-                typeof migrated.rotationDegrees === "number" && Number.isFinite(migrated.rotationDegrees)
-                  ? ((migrated.rotationDegrees % 360) + 360) % 360
-                  : 0,
-            }
-          : migrated;
+        return withMigratedInkBand(
+          migrated.type === "shape"
+            ? {
+                ...migrated,
+                rotationDegrees:
+                  typeof migrated.rotationDegrees === "number" && Number.isFinite(migrated.rotationDegrees)
+                    ? ((migrated.rotationDegrees % 360) + 360) % 360
+                    : 0,
+              }
+            : migrated,
+        );
       }),
-    };
+    }, true);
   });
 }
 
@@ -412,6 +462,17 @@ function migratePageTextStack(
         (id): id is string => typeof id === "string" && textObjectIds.has(id),
       ))]
     : [];
+  const backgroundColor = value.backgroundColor === null
+    ? null
+    : typeof value.backgroundColor === "string" && /^#[0-9a-f]{6}$/i.test(value.backgroundColor)
+      ? value.backgroundColor.toLowerCase()
+      : "#fffaf0";
+  const outlineColor = typeof value.outlineColor === "string" && /^#[0-9a-f]{6}$/i.test(value.outlineColor)
+    ? value.outlineColor.toLowerCase()
+    : undefined;
+  const outlineWidth = typeof value.outlineWidth === "number" && Number.isInteger(value.outlineWidth) && value.outlineWidth >= 1 && value.outlineWidth <= 12
+    ? value.outlineWidth
+    : undefined;
   return {
     position: {
       x: Math.min(1, Math.max(0, value.position.x)),
@@ -423,6 +484,10 @@ function migratePageTextStack(
     },
     memberIds,
     layer: value.layer === "behind-sketch" ? "behind-sketch" : "above-sketch",
+    dock: value.dock === "left" || value.dock === "right" ? value.dock : "free",
+    backgroundColor,
+    ...(outlineColor ? { outlineColor } : {}),
+    ...(outlineWidth ? { outlineWidth } : {}),
   };
 }
 
@@ -597,6 +662,7 @@ function migrateMyStory(
                 recording.layer === "behind-sketch"
                   ? "behind-sketch"
                   : "above-sketch",
+              ...optionalInFrontOfSketch(recording.inFrontOfSketch),
               revision:
                 typeof recording.revision === "number"
                   ? recording.revision
@@ -653,7 +719,9 @@ function migrateMyStory(
             ...(typeof value.outlineColor === "string" && /^#[0-9a-f]{6}$/i.test(value.outlineColor) ? { outlineColor: value.outlineColor } : {}),
             outlineWidth: typeof value.outlineWidth === "number" ? Math.min(12, Math.max(1, value.outlineWidth)) : 3,
             rotationDegrees: typeof value.rotationDegrees === "number" && Number.isFinite(value.rotationDegrees) ? ((value.rotationDegrees % 360) + 360) % 360 : 0,
-            layer: value.layer === "behind-sketch" ? "behind-sketch" : "above-sketch", revision: typeof value.revision === "number" ? value.revision : 0,
+            layer: value.layer === "behind-sketch" ? "behind-sketch" : "above-sketch",
+            ...optionalInFrontOfSketch(value.inFrontOfSketch),
+            revision: typeof value.revision === "number" ? value.revision : 0,
             createdAt: typeof value.createdAt === "string" ? value.createdAt : timestamp }];
         })
       : [];

@@ -7,7 +7,7 @@ audio, transcription and file services.
 
 ## Current milestone
 
-The Windows development foundation includes:
+The current implementation includes:
 
 - the responsive Interface V2 shell;
 - an isolated, pressure-aware Canvas 2D `SketchSurface`;
@@ -23,16 +23,26 @@ The Windows development foundation includes:
 - durable multi-page diary days with visual, reorderable page thumbnails;
 - named, multi-page sketchbooks using the full shared page workspace;
 - typed or spoken sketchbook naming, renaming and directory reordering;
-- clearly labelled browser audio/transcription simulations; and
+- native iPad audio recording and Apple Speech transcription alongside clearly
+  labelled browser simulations; and
 - strict type checking, linting, unit tests and production builds.
 
 The browser repository is only for development. Production iOS stores the
 journal snapshot, checkpoint and pending operation log atomically in protected
 Application Support storage; recordings, photos and PencilKit drawings use
-native durable files. Voice controls in the browser intentionally do not
-access the microphone: browser recording and transcription are explicitly
-labelled demonstrations until the AVFoundation and Apple Speech bridges are
-installed and tested.
+native durable files. Voice controls in the browser intentionally do not access
+the microphone: browser recording and transcription remain explicitly labelled
+demonstrations, while production iPad builds use native AVFoundation and Apple
+Speech bridges.
+
+## For contributors and coding agents
+
+Start with [AGENTS.md](AGENTS.md) and the
+[current implementation state](docs/CURRENT_STATE.md). See the
+[architecture index](docs/architecture/INDEX.md),
+[architecture decisions](docs/adr/README.md),
+[test matrix](docs/TEST_MATRIX.md), and
+[planning guide](docs/plans/README.md) before making changes.
 
 ## Commands
 
@@ -45,8 +55,9 @@ npm test
 npm run build
 ```
 
-See the [next-stage implementation plan](Specs/next-stage-plan.md) for the
-native local-reliability sequence and acceptance gates.
+The former [next-stage implementation plan](Specs/next-stage-plan.md) is
+retained as historical context; current work is tracked in
+[active plans](docs/plans/README.md).
 
 The Capacitor iOS shell is checked in. After pulling native changes on the Mac:
 

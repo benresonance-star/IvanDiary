@@ -10,15 +10,21 @@ import type { JournalAudioPlugin } from "../native/contracts";
 export function AudioCard({
   disabled = false,
   audio,
+  gatePlaybackUntilSelected = false,
   recording,
+  selected = false,
 }: {
   disabled?: boolean;
   audio: JournalAudioPlugin;
+  gatePlaybackUntilSelected?: boolean;
   onConvertToText?: () => void;
   recording:
     | VoiceRecordingObject
     | MyStoryVoiceRecording;
+  selected?: boolean;
 }) {
+  const playbackDisabled =
+    disabled || (gatePlaybackUntilSelected && !selected);
   const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
@@ -44,7 +50,7 @@ export function AudioCard({
         aria-label={playing ? "Pause voice recording" : "Play voice recording"}
         className="audio-player"
         data-recording-id={recording.id}
-        disabled={disabled}
+        disabled={playbackDisabled}
         onClick={() => void (playing
           ? audio.pausePlayback().then(() => setPlaying(false))
           : audio.play({ assetUri: recording.asset.localUri }).then(() => setPlaying(true)))}

@@ -1,9 +1,48 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { PenSettingsHud } from "./PenSettingsHud";
+import { PenSettingsHud, SCRIPTURE_GOLD_COLOUR } from "./PenSettingsHud";
 
 describe("PenSettingsHud", () => {
+  it("offers Scripture Gold as a clearly named pen material", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <PenSettingsHud
+        onChange={onChange}
+        onDone={vi.fn()}
+        settings={{ color: "#171410", width: 4.2, opacity: 1 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Scripture Gold/ }));
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      color: SCRIPTURE_GOLD_COLOUR,
+      material: "scripture-gold",
+      goldFinish: "raised",
+      nib: "pen",
+    }));
+
+    rerender(
+      <PenSettingsHud
+        onChange={onChange}
+        onDone={vi.fn()}
+        settings={{ color: SCRIPTURE_GOLD_COLOUR, width: 4.2, opacity: 1, material: "scripture-gold", goldFinish: "raised" }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Smooth" }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      material: "scripture-gold",
+      goldFinish: "smooth",
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Sparkle" }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      material: "scripture-gold",
+      goldFinish: "sparkle",
+    }));
+  });
+
   it("orders the drawing sections as Pens, Shapes, Grids", () => {
     render(
       <PenSettingsHud
@@ -42,6 +81,7 @@ describe("PenSettingsHud", () => {
     expect(screen.getByRole("tabpanel", { name: "Shapes" })).toBeVisible();
     fireEvent.click(screen.getByRole("tab", { name: "Pens" }));
     expect(screen.getByRole("switch", { name: "Draw with finger" })).toBeVisible();
+    expect(screen.queryByText("Options")).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Grids" })).not.toBeInTheDocument();
   });
 
@@ -110,6 +150,11 @@ describe("PenSettingsHud", () => {
         settings={{ color: "#171410", width: 4.2, opacity: 1 }}
       />,
     );
+
+    expect(screen.getByText("Thickness").parentElement).toHaveTextContent("4.2");
+    expect(screen.getByText("Opacity").parentElement).toHaveTextContent("100%");
+    expect(screen.getByRole("switch", { name: "Draw with finger" })).toBeVisible();
+    expect(screen.queryByText("Options")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Blue" }));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
