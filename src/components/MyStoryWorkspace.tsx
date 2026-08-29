@@ -1630,19 +1630,25 @@ export function MyStoryWorkspace({
         {polygonDraft ? <PolygonDraftEditor color={penSettings.color} onCancel={() => { setPolygonDraft(null); setNotice(undefined); onToolChange("pen"); }} onChange={setPolygonDraft} onFinish={() => void finishPolygon()} pageRef={paperRef} points={polygonDraft} /> : null}
         {freeformDraft ? <FreeformDraftEditor color={penSettings.color} onCancel={() => { setFreeformDraft(false); setNotice(undefined); onToolChange("pen"); }} onFinish={(anchors) => void finishFreeform(anchors)} onInvalid={() => setNotice("Draw a larger closed outline to create a freeform shape.")} pageRef={paperRef} /> : null}
 
+        <div
+          aria-hidden="true"
+          className="story-text-background"
+          style={{
+            backgroundColor: displayedTextBackgroundColor,
+            gridColumn: page.textSide === "left" ? 1 : 3,
+            gridRow: 1,
+            zIndex: 1,
+          }}
+        />
         <section
           aria-label="Story text"
           className="my-story-text-pane"
           style={{
             gridColumn: page.textSide === "left" ? 1 : 3,
             gridRow: 1,
+            zIndex: 50,
           }}
         >
-          <div
-            aria-hidden="true"
-            className="story-text-background"
-            style={{ backgroundColor: displayedTextBackgroundColor }}
-          />
           {tool === "arrange" ? (
             <button
               className="story-pane-options"
@@ -1789,12 +1795,22 @@ export function MyStoryWorkspace({
           </div>
         ) : null}
 
+        <div
+          aria-hidden="true"
+          className="story-image-background"
+          style={{
+            gridColumn: page.textSide === "left" ? 3 : 1,
+            gridRow: 1,
+            zIndex: 1,
+          }}
+        />
         <section
           aria-label="Story images"
           className="my-story-image-pane"
           style={{
             gridColumn: page.textSide === "left" ? 3 : 1,
             gridRow: 1,
+            zIndex: 50,
           }}
         >
           {page.photos.map((photo, index) =>

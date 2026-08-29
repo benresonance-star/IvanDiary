@@ -851,9 +851,11 @@ textarea,
 .story-page-preview { background: #eee5d5; }
 .story-page-preview > .sketch-thumbnail,
 .story-page-preview > .native-sketch-thumbnail { z-index: 40; }
-.story-preview-pane { position: absolute; top: 0; bottom: 0; z-index: 50; display: flex; box-sizing: border-box; flex-direction: column; min-width: 0; overflow: hidden; }
+.story-preview-pane-background { position: absolute; top: 0; bottom: 0; z-index: 1; pointer-events: none; }
+.story-preview-image-background { background: rgba(238, 229, 213, .45); }
+.story-preview-pane { position: absolute; top: 0; bottom: 0; z-index: 50; display: flex; box-sizing: border-box; flex-direction: column; min-width: 0; overflow: hidden; background: transparent; }
 .story-preview-text-pane { padding: 4.5%; gap: 2%; }
-.story-preview-image-pane { align-items: center; justify-content: center; padding: 3%; gap: 3%; background: rgba(238, 229, 213, .45); }
+.story-preview-image-pane { align-items: center; justify-content: center; padding: 3%; gap: 3%; }
 .story-preview-text { position: relative; display: block; overflow: hidden; }
 .story-preview-text h1, .story-preview-text h2, .story-preview-text p { margin: 0; line-height: 1.15; }
 .story-preview-text h1 { font-size: clamp(6px, 1.6vw, 19px); }
@@ -1761,6 +1763,33 @@ textarea,
   pointer-events: none;
 }
 
+.story-text-background,
+.story-image-background {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.story-text-background {
+  grid-column: 1;
+  border-radius: 19px 0 0 19px;
+}
+
+.my-story-paper[data-text-side="right"] .story-text-background {
+  border-radius: 0 19px 19px 0;
+}
+
+.story-image-background {
+  grid-column: 3;
+  background: rgba(238, 229, 213, 0.76);
+}
+
+.my-story-paper[data-text-side="right"] .story-image-background {
+  border-radius: 19px 0 0 19px;
+}
+
 .my-story-text-pane,
 .my-story-image-pane {
   position: relative;
@@ -1768,6 +1797,7 @@ textarea,
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  background: transparent;
 }
 
 .my-story-text-pane {
@@ -1780,18 +1810,6 @@ textarea,
   border-radius: 0 19px 19px 0;
 }
 
-.story-text-background {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.my-story-text-pane > :not(.story-text-background) {
-  position: relative;
-  z-index: 1;
-}
-
 .my-story-image-pane {
   grid-column: 3;
   display: flex;
@@ -1801,7 +1819,6 @@ textarea,
   flex-wrap: wrap;
   padding: clamp(18px, 3vw, 44px);
   gap: 16px;
-  background: rgba(238, 229, 213, 0.76);
 }
 
 .my-story-paper[data-text-side="right"] .my-story-image-pane {

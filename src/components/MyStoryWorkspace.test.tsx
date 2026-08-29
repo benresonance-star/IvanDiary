@@ -261,12 +261,36 @@ describe("MyStoryWorkspace", () => {
     expect(screen.getByText("We lived near the river.").tagName).toBe("P");
     expect(screen.getByTestId("story-sketch-surface")).toBeInTheDocument();
     expect(screen.queryByText("Add your first image")).not.toBeInTheDocument();
-    expect(
-      screen.getByLabelText("Story text").querySelector(".story-text-background"),
-    ).toHaveStyle({ backgroundColor: "#fffaf0" });
+    expect(document.querySelector(".story-text-background")).toHaveStyle({
+      backgroundColor: "#fffaf0",
+      zIndex: 1,
+    });
     expect(
       screen.queryByRole("button", { name: "Resize text and image sides" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps pane washes under the sketch", () => {
+    renderStory();
+    const textPane = screen.getByLabelText("Story text");
+    const textWash = document.querySelector(".story-text-background");
+    expect(textWash).not.toBeNull();
+    expect(textPane.contains(textWash)).toBe(false);
+    expect(textWash).toHaveStyle({ zIndex: 1, backgroundColor: "#fffaf0" });
+    expect(textPane).toHaveStyle({ zIndex: 50 });
+    const imagePane = screen.getByLabelText("Story images");
+    const imageWash = document.querySelector(".story-image-background");
+    expect(imageWash).not.toBeNull();
+    expect(imagePane.contains(imageWash)).toBe(false);
+    expect(imageWash).toHaveStyle({ zIndex: 1 });
+    expect(imagePane).toHaveStyle({ zIndex: 50 });
+    expect(screen.getByTestId("story-sketch-surface")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "My early years",
+    );
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
+      "Growing up",
+    );
   });
 
   it("adds a durable web link from the Story toolbar", async () => {

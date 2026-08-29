@@ -65,13 +65,15 @@ export function StoryPagePreview({ className = "", page, sketchRepository }: {
 
   return <span aria-hidden="true" className={`diary-page-preview story-page-preview ${className}`}>
     {ordered.map((item) => canvasItemInFront(item) ? null : renderCanvasObject(item))}
+    <span aria-hidden="true" className="story-preview-pane-background story-preview-text-background" style={{ backgroundColor: page.textBackgroundColor, left: `${textLeft}%`, width: `${textWidth}%`, zIndex: 1 }} />
+    <span aria-hidden="true" className="story-preview-pane-background story-preview-image-background" style={{ left: `${imageLeft}%`, width: `${imageWidth}%`, zIndex: 1 }} />
     <SketchThumbnail documentId={page.drawingDocumentId} repository={sketchRepository} />
     {ordered.map((item) => canvasItemInFront(item) ? renderCanvasObject(item) : null)}
-    <span className="story-preview-pane story-preview-text-pane" style={{ backgroundColor: page.textBackgroundColor, left: `${textLeft}%`, width: `${textWidth}%` }}>
+    <span className="story-preview-pane story-preview-text-pane" style={{ left: `${textLeft}%`, width: `${textWidth}%`, zIndex: 50 }}>
       {page.textBlocks.map((block) => <span className={`story-preview-text story-preview-text-${block.role}`} key={block.id} style={{ zIndex: stack("text", block.id) }}>{storyText(block, page.textColor)}</span>)}
       {page.links.map((link) => <span className="story-preview-link" key={link.id} style={{ zIndex: stack("link", link.id) }}>{link.title}</span>)}
     </span>
-    <span className="story-preview-pane story-preview-image-pane" style={{ left: `${imageLeft}%`, width: `${imageWidth}%` }}>
+    <span className="story-preview-pane story-preview-image-pane" style={{ left: `${imageLeft}%`, width: `${imageWidth}%`, zIndex: 50 }}>
       {page.photos.map((photo) => <img alt="" className="story-preview-photo" key={photo.id} src={displayAssetUri(photo.asset.localUri)} style={{ width: `${photo.width * 100}%`, zIndex: stack("photo", photo.id) }} />)}
     </span>
   </span>;

@@ -26,8 +26,10 @@ describe("StoryPagePreview", () => {
     const { container } = render(<StoryPagePreview page={page()} sketchRepository={new BrowserSketchRepository()} />);
     expect(screen.getByText("A visible title")).toHaveStyle({ color: "#234567" });
     expect(screen.getByText("Example link")).toBeInTheDocument();
-    expect(container.querySelector(".story-preview-text-pane")).toHaveStyle({ left: "38%", width: "62%", backgroundColor: "#cbd5e1" });
-    expect(container.querySelector(".story-preview-image-pane")).toHaveStyle({ left: "0%", width: "38%" });
+    expect(container.querySelector(".story-preview-text-background")).toHaveStyle({ left: "38%", width: "62%", backgroundColor: "#cbd5e1", zIndex: 1 });
+    expect(container.querySelector(".story-preview-text-pane")).toHaveStyle({ left: "38%", width: "62%", zIndex: 50 });
+    expect(container.querySelector(".story-preview-image-background")).toHaveStyle({ left: "0%", width: "38%", zIndex: 1 });
+    expect(container.querySelector(".story-preview-image-pane")).toHaveStyle({ left: "0%", width: "38%", zIndex: 50 });
     expect(container.querySelector(".story-preview-photo")).toHaveStyle({ width: "75%" });
     expect(container.querySelector(".story-preview-shape")).toHaveStyle({ left: "10%", top: "20%", width: "30%", height: "25%", transform: "rotate(30deg)" });
     expect(container.querySelector(".story-preview-shape polygon")).toHaveAttribute("fill", "#abcdef");
