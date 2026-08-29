@@ -3,21 +3,27 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
   BrowserAppleTranscriptionMock,
   BrowserAppLifecycleMock,
+  BrowserCloudBackupMock,
   BrowserJournalAudioMock,
   BrowserJournalFilesMock,
+  BrowserNativeShareMock,
 } from "./browserMocks";
 import {
   CapacitorAppleTranscriptionAdapter,
   CapacitorAppLifecycleAdapter,
+  CapacitorCloudBackupAdapter,
   CapacitorJournalAudioAdapter,
   CapacitorJournalFilesAdapter,
+  CapacitorNativeShareAdapter,
   type CapacitorPluginContracts,
 } from "./capacitorAdapters";
 import type {
   AppleTranscriptionPlugin,
   AppLifecyclePlugin,
+  CloudBackupPlugin,
   JournalAudioPlugin,
   JournalFilesPlugin,
+  NativeSharePlugin,
 } from "./contracts";
 
 export type JournalServices = {
@@ -25,6 +31,8 @@ export type JournalServices = {
   transcription: AppleTranscriptionPlugin;
   files: JournalFilesPlugin;
   lifecycle: AppLifecyclePlugin;
+  backup: CloudBackupPlugin;
+  share: NativeSharePlugin;
   runtime: "native" | "browser-simulation";
 };
 
@@ -41,6 +49,8 @@ function registerNativePlugins(): CapacitorPluginContracts {
     ),
     files: registerPlugin<JournalFilesPlugin>("JournalFiles"),
     lifecycle: registerPlugin<AppLifecyclePlugin>("AppLifecycle"),
+    backup: registerPlugin<CloudBackupPlugin>("CloudBackup"),
+    share: registerPlugin<NativeSharePlugin>("NativeShare"),
   };
 }
 
@@ -58,6 +68,8 @@ export function createAppServices(
       transcription: new BrowserAppleTranscriptionMock(),
       files: new BrowserJournalFilesMock(),
       lifecycle: new BrowserAppLifecycleMock(),
+      backup: new BrowserCloudBackupMock(),
+      share: new BrowserNativeShareMock(),
       runtime: "browser-simulation",
     };
   }
@@ -70,6 +82,8 @@ export function createAppServices(
     ),
     files: new CapacitorJournalFilesAdapter(plugins.files),
     lifecycle: new CapacitorAppLifecycleAdapter(plugins.lifecycle),
+    backup: new CapacitorCloudBackupAdapter(plugins.backup),
+    share: new CapacitorNativeShareAdapter(plugins.share),
     runtime: "native",
   };
 }

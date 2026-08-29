@@ -3,6 +3,7 @@ import type { EntityId, SaveHealth, Size } from "../domain/models";
 export const SKETCH_SCHEMA_VERSION = 1 as const;
 
 export type SketchTool = "pen" | "eraser";
+export type PenNib = "pen" | "marker" | "pencil" | "brush";
 
 export type PencilSample = {
   x: number;
@@ -16,6 +17,7 @@ export type PencilSample = {
 export type SketchStroke = {
   id: EntityId;
   tool: "pen";
+  nib?: PenNib;
   points: PencilSample[];
   color: string;
   width: number;
@@ -54,6 +56,7 @@ export type SketchCapabilityProfile =
 export interface SketchRepository {
   load(documentId: EntityId): Promise<SketchDocument>;
   save(document: SketchDocument): Promise<SaveHealth>;
+  remove?(documentId: EntityId): Promise<void>;
   subscribe?(
     documentId: EntityId,
     listener: () => void,

@@ -6,6 +6,7 @@ import type {
 
 export type JournalLoadResult = {
   snapshot: JournalSnapshot;
+  isNewJournal: boolean;
   recoveredFromOperationLog: boolean;
   message?: string;
 };
@@ -16,6 +17,8 @@ export type JournalCommitResult = {
 };
 
 export interface JournalRepository {
+  acknowledgeNewJournal(): void;
   load(): Promise<JournalLoadResult>;
   commit(operation: DocumentOperation): Promise<JournalCommitResult>;
+  replace(snapshot: JournalSnapshot): Promise<JournalCommitResult>;
 }

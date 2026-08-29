@@ -1,35 +1,42 @@
-import { Pipette } from "lucide-react";
+import { Circle, Grid3X3, Highlighter, Paintbrush, PenLine, Pencil, Pentagon, RectangleHorizontal, Sparkles, Spline, Triangle } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 
 import {
   clampOpacity,
   colourWithOpacity,
-  hexToHsl,
-  hslToHex,
-  isHexColor,
 } from "../utils/colour";
+import type { DrawingGridSettings, ShapeKind } from "../domain/models";
+import type { PenNib } from "../sketch/types";
+import { DEFAULT_FAVOURITE_PEN_COLOURS, favouriteColourName } from "./penColours";
 
-const INK_COLOURS = [
-  { name: "Black", value: "#171410" },
-  { name: "Blue", value: "#245b8a" },
-  { name: "Green", value: "#426b3a" },
-  { name: "Red", value: "#9b352f" },
-  { name: "Purple", value: "#6b4f82" },
-  { name: "Brown", value: "#76512f" },
-  { name: "Orange", value: "#c86f24" },
-  { name: "Teal", value: "#2f6f6d" },
-  { name: "Rose", value: "#a64b6b" },
-  { name: "Grey", value: "#686868" },
-] as const;
 
 export const PEN_WIDTH_MIN = 1;
 export const PEN_WIDTH_MAX = 28;
+const GRID_SIZES = [36, 60, 96] as const;
+const GRID_SIZE_NAMES = ["Small", "Medium", "Large"] as const;
+const GRID_ROTATIONS = [0, 15, 30, 45, 60, 75] as const;
 
 export type PenSettings = {
   color: string;
   width: number;
   opacity: number;
+  fingerDrawing?: boolean;
+  fingerErasing?: boolean;
+  nib?: PenNib;
+  profiles?: Record<PenNib, { color: string; width: number; opacity: number }>;
+  favouriteColours?: readonly string[];
+  material?: "solid" | "scripture-gold";
+  goldFinish?: "smooth" | "raised" | "sparkle";
 };
+
+export const SCRIPTURE_GOLD_COLOUR = "#b8862f";
+
+const NIBS = [
+  { id: "pen", label: "Pen", Icon: PenLine },
+  { id: "marker", label: "Marker", Icon: Highlighter },
+  { id: "pencil", label: "Pencil", Icon: Pencil },
+  { id: "brush", label: "Brush", Icon: Paintbrush },
+] as const;
 
 function clampWidth(value: number): number {
   if (!Number.isFinite(value)) {
@@ -39,207 +46,358 @@ function clampWidth(value: number): number {
 }
 
 export function PenSettingsHud({
+  grid,
   onChange,
   onDone,
+  onGridChange,
+  onShapeSelect,
   settings,
-  simpleMode,
+  tool = "pen",
 }: {
+  grid?: DrawingGridSettings;
   onChange: (settings: PenSettings) => void;
   onDone: () => void;
+  onGridChange?: (grid: DrawingGridSettings) => void;
+  onShapeSelect?: (shape: ShapeKind) => void;
   settings: PenSettings;
-  simpleMode: boolean;
+  tool?: "pen" | "eraser";
 }) {
-  const swatchSelected = INK_COLOURS.some(
-    (colour) => colour.value === settings.color,
-  );
-  const [pickerOpen, setPickerOpen] = useState(!swatchSelected);
-  const hsl = hexToHsl(isHexColor(settings.color) ? settings.color : "#171410");
+  const inkColours = settings.favouriteColours ?? DEFAULT_FAVOURITE_PEN_COLOURS;
+  const swatchSelected = inkColours.includes(settings.color);
+  const activeNib = settings.nib ?? "pen";
+  const [activePanel, setActivePanel] = useState<"pen" | "grid" | "shapes">("pen");
   const opacityPercent = Math.round(clampOpacity(settings.opacity) * 100);
   const sampleStyle = {
     "--sample-colour": colourWithOpacity(settings.color, settings.opacity),
     "--sample-width": `${Math.max(2, Math.min(settings.width, 28))}px`,
   } as CSSProperties;
+  const scriptureGold = settings.material === "scripture-gold";
+  const fingerDrawingActive = settings.fingerDrawing !== false;
+  const fingerErasingActive = settings.fingerErasing === true;
+  const hasGridPanel = Boolean(grid && onGridChange);
+  const hasSectionTabs = Boolean(onShapeSelect || hasGridPanel);
 
-  const setHsl = (next: { h?: number; s?: number; l?: number }) => {
-    onChange({
-      ...settings,
-      color: hslToHex(next.h ?? hsl.h, next.s ?? hsl.s, next.l ?? hsl.l),
-    });
-  };
+  function changeSettings(next: PenSettings) {
+    const nib = next.nib ?? activeNib;
+    const profiles = Object.fromEntries(
+      (["pen", "marker", "pencil", "brush"] as PenNib[]).map((profileNib) => [
+        profileNib,
+        { color: next.color, width: next.width, opacity: next.opacity },
+      ]),
+    ) as NonNullable<PenSettings["profiles"]>;
+    const complete = { ...next, nib, profiles };
+    onChange(complete);
+  }
 
   return (
     <div
-      aria-label="Draw colour and thickness"
+      aria-label={tool === "eraser" ? "Erase settings" : "Draw settings"}
       aria-modal="true"
       className="pen-settings-hud"
       role="dialog"
     >
       <div className="pen-hud-heading">
-        <strong>Pen</strong>
+        <div className="pen-hud-title">
+          {tool === "eraser" ? null : <PenLine aria-hidden="true" />}
+          <strong>{tool === "eraser" ? "Erase" : "Draw"}</strong>
+        </div>
         <button onClick={onDone} type="button">
           Done
         </button>
       </div>
-
-      <div className="pen-colour-layout">
-        <button
-          aria-expanded={pickerOpen}
-          aria-label="Custom colour"
-          aria-pressed={!swatchSelected || pickerOpen}
-          className="pen-custom-colour"
-          onClick={() => setPickerOpen((current) => !current)}
-          style={{ backgroundColor: settings.color }}
-          type="button"
-        >
-          <Pipette aria-hidden="true" />
-          <span>Custom</span>
-        </button>
-
-        <div
-          aria-label="Pen colours"
-          className="pen-colour-palette"
-          role="group"
-        >
-          {INK_COLOURS.map((colour) => (
-            <button
-              aria-label={colour.name}
-              aria-pressed={settings.color === colour.value}
-              className="pen-colour-swatch"
-              key={colour.value}
-              onClick={() => {
-                setPickerOpen(false);
-                onChange({ ...settings, color: colour.value });
-              }}
-              style={{ backgroundColor: colour.value }}
-              type="button"
-            />
-          ))}
-        </div>
-      </div>
-
-      {pickerOpen ? (
-        <div
-          aria-label="Custom colour picker"
-          className="pen-colour-picker"
-          role="group"
-        >
-          <p className="pen-colour-picker-help">
-            Use the large sliders below. No fine dragging needed.
-          </p>
-          <div
-            aria-hidden="true"
-            className="pen-colour-picker-preview"
-            style={{ backgroundColor: settings.color }}
-          />
-          <label className="pen-width-control">
-            <span>Hue {Math.round(hsl.h)}°</span>
-            <input
-              aria-label="Hue"
-              max="360"
-              min="0"
-              onChange={(event) =>
-                setHsl({ h: Number(event.target.value) })
-              }
-              step="1"
-              type="range"
-              value={Math.round(hsl.h)}
-            />
-          </label>
-          <label className="pen-width-control">
-            <span>Colour strength {Math.round(hsl.s)}%</span>
-            <input
-              aria-label="Colour strength"
-              max="100"
-              min="0"
-              onChange={(event) =>
-                setHsl({ s: Number(event.target.value) })
-              }
-              step="1"
-              type="range"
-              value={Math.round(hsl.s)}
-            />
-          </label>
-          <label className="pen-width-control">
-            <span>Lightness {Math.round(hsl.l)}%</span>
-            <input
-              aria-label="Lightness"
-              max="100"
-              min="0"
-              onChange={(event) =>
-                setHsl({ l: Number(event.target.value) })
-              }
-              step="1"
-              type="range"
-              value={Math.round(hsl.l)}
-            />
-          </label>
+      {tool === "pen" && hasSectionTabs ? (
+        <div aria-label="Draw settings section" className="pen-panel-tabs" role="tablist">
+          <button
+            aria-controls="pen-settings-panel"
+            aria-selected={activePanel === "pen"}
+            data-help-topic="pen-tab"
+            id="pen-settings-tab"
+            onClick={() => setActivePanel("pen")}
+            role="tab"
+            type="button"
+          >
+            Pens
+          </button>
+          {onShapeSelect ? <button aria-controls="shape-settings-panel" aria-selected={activePanel === "shapes"} data-help-topic="shape-tab" id="shape-settings-tab" onClick={() => setActivePanel("shapes")} role="tab" type="button">Shapes</button> : null}
+          {hasGridPanel ? <button
+            aria-controls="grid-settings-panel"
+            aria-selected={activePanel === "grid"}
+            data-help-topic="grid-tab"
+            id="grid-settings-tab"
+            onClick={() => setActivePanel("grid")}
+            role="tab"
+            type="button"
+          >
+            Grids
+          </button> : null}
         </div>
       ) : null}
 
-      <label className="pen-width-control">
-        <span>Thickness</span>
-        <input
-          aria-label="Pen thickness"
-          max={PEN_WIDTH_MAX}
-          min={PEN_WIDTH_MIN}
-          onChange={(event) =>
-            onChange({
+      {tool === "eraser" ? (
+        <div className="pen-settings-panel">
+          <button
+            aria-checked={fingerErasingActive}
+            className={`finger-toggle${fingerErasingActive ? " selected" : ""}`}
+            data-help-topic="finger-erasing"
+            onClick={() => changeSettings({
               ...settings,
-              width: clampWidth(Number(event.target.value)),
-            })
-          }
-          step="0.5"
-          type="range"
-          value={settings.width}
-        />
-      </label>
-
-      <label className="pen-width-control">
-        <span>Opacity {opacityPercent}%</span>
-        <input
-          aria-label="Pen opacity"
-          max="100"
-          min="5"
-          onChange={(event) =>
-            onChange({
-              ...settings,
-              opacity: clampOpacity(Number(event.target.value) / 100),
-            })
-          }
-          step="1"
-          type="range"
-          value={opacityPercent}
-        />
-      </label>
-
-      {simpleMode ? (
+              fingerErasing: !fingerErasingActive,
+            })}
+            role="switch"
+            type="button"
+          >
+            <span aria-hidden="true" className="grid-switch-track"><span /></span>
+            <span>Erase with finger</span>
+          </button>
+        </div>
+      ) : activePanel === "pen" || ((!grid || !onGridChange) && !onShapeSelect) ? (
         <div
-          aria-label="Quick pen thickness"
-          className="pen-width-presets"
-          role="group"
+          aria-labelledby={hasSectionTabs ? "pen-settings-tab" : undefined}
+          className="pen-settings-panel"
+          id="pen-settings-panel"
+          role={hasSectionTabs ? "tabpanel" : undefined}
         >
-          {[
-            { label: "Thin", width: 2.5 },
-            { label: "Medium", width: 8 },
-            { label: "Thick", width: 18 },
-          ].map((preset) => (
+          <div aria-label="Pen nib" className="pen-nib-selector" role="group">
+            {NIBS.map(({ id, label, Icon }) => (
+              <button
+                aria-pressed={activeNib === id}
+                data-help-topic="pen-nib"
+                key={id}
+                onClick={() => {
+                  changeSettings({ ...settings, nib: id });
+                }}
+                type="button"
+              >
+                <Icon aria-hidden="true" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="pen-colour-layout">
             <button
-              aria-pressed={settings.width === preset.width}
-              key={preset.label}
-              onClick={() =>
-                onChange({ ...settings, width: preset.width })
-              }
+              aria-pressed={scriptureGold}
+              className="scripture-gold-control"
+              data-help-topic="scripture-gold"
+              onClick={() => changeSettings({ ...settings, color: SCRIPTURE_GOLD_COLOUR, material: "scripture-gold", goldFinish: settings.goldFinish ?? "raised", nib: "pen" })}
+              type="button"
+            ><span aria-hidden="true" className="scripture-gold-orb"><Sparkles /></span><span><strong>Scripture Gold</strong><small>Illuminated gold</small></span></button>
+            {scriptureGold ? <div aria-label="Gold ink finish" className="scripture-gold-finish" role="group">
+              <button aria-pressed={(settings.goldFinish ?? "raised") === "smooth"} onClick={() => changeSettings({ ...settings, goldFinish: "smooth" })} type="button">Smooth</button>
+              <button aria-pressed={(settings.goldFinish ?? "raised") === "raised"} onClick={() => changeSettings({ ...settings, goldFinish: "raised" })} type="button">Raised ink</button>
+              <button aria-pressed={settings.goldFinish === "sparkle"} onClick={() => changeSettings({ ...settings, goldFinish: "sparkle" })} type="button">Sparkle</button>
+            </div> : null}
+            <div
+              aria-label="Pen colours"
+              className="pen-colour-palette"
+              role="group"
+            >
+              {inkColours.map((colour, index) => (
+                <span className="pen-colour-favourite" key={index}>
+                  <button
+                    aria-label={favouriteColourName(index)}
+                    aria-pressed={settings.color === colour}
+                    className="pen-colour-swatch"
+                    data-help-topic="pen-colour"
+                    onClick={() => changeSettings({ ...settings, color: colour, material: "solid" })}
+                    style={{ backgroundColor: colour }}
+                    type="button"
+                  />
+                </span>
+              ))}
+            </div>
+            <label className="pen-custom-colour-control">
+              <input
+                aria-label="Custom colour"
+                className={`pen-custom-colour${swatchSelected ? "" : " selected"}`}
+                data-help-topic="pen-colour"
+                onChange={(event) =>
+                  changeSettings({ ...settings, color: event.target.value, material: "solid" })
+                }
+                type="color"
+                value={settings.color}
+              />
+              <span>More</span>
+            </label>
+          </div>
+
+          <div className="pen-stroke-controls">
+            <label className="pen-width-control">
+              <span>Thickness <strong>{settings.width.toFixed(1)}</strong></span>
+              <input
+                aria-label="Pen thickness"
+                data-help-topic="pen-thickness"
+                max={PEN_WIDTH_MAX}
+                min={PEN_WIDTH_MIN}
+                onChange={(event) =>
+                  changeSettings({
+                    ...settings,
+                    width: clampWidth(Number(event.target.value)),
+                  })
+                }
+                step="0.5"
+                type="range"
+                value={settings.width}
+              />
+            </label>
+
+            <label className="pen-width-control">
+              <span>Opacity <strong>{opacityPercent}%</strong></span>
+              <input
+                aria-label="Pen opacity"
+                data-help-topic="pen-opacity"
+                max="100"
+                min="5"
+                onChange={(event) =>
+                  changeSettings({
+                    ...settings,
+                    opacity: clampOpacity(Number(event.target.value) / 100),
+                  })
+                }
+                step="1"
+                type="range"
+                value={opacityPercent}
+              />
+            </label>
+            <div
+              aria-label={`${NIBS.find(({ id }) => id === activeNib)?.label ?? "Pen"} preview`}
+              className={`pen-sample nib-${activeNib}${scriptureGold ? ` scripture-gold-sample scripture-gold-sample-${settings.goldFinish ?? "raised"}` : ""}`}
+              data-help-topic="pen-preview"
+              style={sampleStyle}
+            >
+              <span />
+            </div>
+          </div>
+
+            <button
+              aria-checked={fingerDrawingActive}
+              className={`finger-toggle${fingerDrawingActive ? " selected" : ""}`}
+              data-help-topic="finger-drawing"
+              onClick={() => changeSettings({
+                ...settings,
+                fingerDrawing: settings.fingerDrawing === false,
+              })}
+              role="switch"
               type="button"
             >
-              {preset.label}
+              <span aria-hidden="true" className="grid-switch-track"><span /></span>
+              <span>Draw with finger</span>
             </button>
-          ))}
         </div>
+      ) : activePanel === "shapes" && onShapeSelect ? (
+        <section aria-labelledby="shape-settings-tab" className="shape-picker" id="shape-settings-panel" role="tabpanel">
+          <p>Select a shape to place on the canvas.</p>
+          <div aria-label="Shapes" className="shape-picker-grid" role="group">
+            {([
+              ["circle", "Circle", Circle], ["rectangle", "Rectangle", RectangleHorizontal],
+              ["triangle", "Triangle", Triangle],
+              ["polygon", "Custom polygon", Pentagon],
+              ["freeform", "Freeform", Spline],
+            ] as const).map(([kind, label, Icon]) => <button data-help-topic={kind === "freeform" ? "shape-freeform" : undefined} key={kind} onClick={() => onShapeSelect(kind)} type="button"><Icon aria-hidden="true" /><span>{label}</span></button>)}
+          </div>
+        </section>
+      ) : activePanel === "grid" && grid && onGridChange ? (
+        <section
+          aria-labelledby="grid-settings-tab"
+          className="grid-settings"
+          id="grid-settings-panel"
+          role="tabpanel"
+        >
+          <button
+            aria-checked={grid.enabled}
+            className={`grid-toggle${grid.enabled ? " selected" : ""}`}
+            data-help-topic="drawing-grid"
+            onClick={() => onGridChange({ ...grid, enabled: !grid.enabled })}
+            role="switch"
+            type="button"
+          >
+            <Grid3X3 aria-hidden="true" />
+            <span>Drawing grid</span>
+            <span aria-hidden="true" className="grid-switch-track">
+              <span />
+            </span>
+            <strong>{grid.enabled ? "On" : "Off"}</strong>
+          </button>
+          {grid.enabled ? (
+            <div className="grid-detail-controls">
+              <button
+                aria-checked={grid.snapToGrid}
+                className={`grid-toggle grid-snap-toggle${grid.snapToGrid ? " selected" : ""}`}
+                onClick={() =>
+                  onGridChange({ ...grid, snapToGrid: !grid.snapToGrid })
+                }
+                role="switch"
+                type="button"
+              >
+                <Grid3X3 aria-hidden="true" />
+                <span>Snap pen to grid</span>
+                <span aria-hidden="true" className="grid-switch-track">
+                  <span />
+                </span>
+                <strong>{grid.snapToGrid ? "On" : "Off"}</strong>
+              </button>
+              <div aria-label="Grid size" className="grid-segmented-control" role="group">
+                {GRID_SIZES.map((spacing, index) => (
+                  <button
+                    aria-pressed={grid.spacing === spacing}
+                    data-help-topic="grid-size"
+                    key={spacing}
+                    onClick={() => onGridChange({ ...grid, spacing })}
+                    type="button"
+                  >
+                    {GRID_SIZE_NAMES[index]}
+                  </button>
+                ))}
+              </div>
+              <div aria-label="Grid type" className="grid-segmented-control" role="group">
+                {(["lines", "dots"] as const).map((type) => (
+                  <button
+                    aria-pressed={grid.type === type}
+                    data-help-topic="grid-type"
+                    key={type}
+                    onClick={() => onGridChange({ ...grid, type })}
+                    type="button"
+                  >
+                    {type === "lines" ? "Lines" : "Dots"}
+                  </button>
+                ))}
+              </div>
+              <label className="grid-colour-control">
+                <input
+                  aria-label="Grid colour"
+                  data-help-topic="grid-colour"
+                  onChange={(event) =>
+                    onGridChange({ ...grid, color: event.target.value })
+                  }
+                  type="color"
+                  value={grid.color}
+                />
+                <span>Grid colour</span>
+              </label>
+              <div
+                aria-label="Grid rotation"
+                className="grid-segmented-control grid-rotation-control"
+                role="group"
+              >
+                {GRID_ROTATIONS.map((rotationDegrees) => (
+                  <button
+                    aria-pressed={grid.rotationDegrees === rotationDegrees}
+                    data-help-topic="grid-rotation"
+                    key={rotationDegrees}
+                    onClick={() =>
+                      onGridChange({ ...grid, rotationDegrees })
+                    }
+                    type="button"
+                  >
+                    {rotationDegrees}°
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
-      <div aria-label="Pen preview" className="pen-sample" style={sampleStyle}>
-        <span />
-      </div>
     </div>
   );
 }

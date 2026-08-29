@@ -6,6 +6,7 @@ import {
   type SketchRepository,
 } from "../sketch/types";
 import { developmentDatabase } from "./developmentDatabase";
+import { PROFILE_PORTRAIT_DOCUMENT_ID } from "../sketch/specialDocuments";
 
 export class BrowserSketchRepository implements SketchRepository {
   private readonly listeners = new Map<string, Set<() => void>>();
@@ -18,7 +19,9 @@ export class BrowserSketchRepository implements SketchRepository {
       return {
         schemaVersion: SKETCH_SCHEMA_VERSION,
         id: documentId,
-        size: { width: 1200, height: 820 },
+        size: documentId === PROFILE_PORTRAIT_DOCUMENT_ID
+          ? { width: 900, height: 900 }
+          : { width: 1200, height: 820 },
         strokes: [],
         revision: 0,
       };
@@ -56,6 +59,14 @@ export class BrowserSketchRepository implements SketchRepository {
             : "The drawing could not be saved on this device.",
       };
     }
+  }
+
+  async remove(documentId: string): Promise<void> {
+    const instance = await developmentDatabase();
+    await instance.delete("sketchDocuments", documentId);
+    this.listeners
+      .get(documentId)
+      ?.forEach((listener) => listener());
   }
 
   subscribe(documentId: string, listener: () => void): () => void {

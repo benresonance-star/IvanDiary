@@ -1,0 +1,723 @@
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { forwardRef, useState } from "react";
+import { describe, expect, it, vi } from "vitest";
+
+import type {
+  MyStoryPage,
+  SaveHealth,
+} from "../domain/models";
+import type { JournalFilesPlugin } from "../native/contracts";
+import {
+  BrowserAppleTranscriptionMock,
+  BrowserJournalAudioMock,
+  BrowserJournalFilesMock,
+  BrowserNativeShareMock,
+} from "../native/browserMocks";
+import { BrowserSketchRepository } from "../repository/browserSketchRepository";
+import type { PageTool } from "./JournalPage";
+import { MyStoryWorkspace } from "./MyStoryWorkspace";
+
+const suspendOverlay = vi.hoisted(() => vi.fn(async () => true));
+
+vi.mock("../hooks/useNativeDrawingOverlay", () => ({
+  useNativeDrawingOverlay: () => ({
+    nativeAvailable: false,
+    overlayActive: false,
+    overlayRequested: false,
+    overlayReady: false,
+    suspendOverlay,
+  }),
+}));
+
+vi.mock("../sketch/SketchSurface", () => ({
+  SketchSurface: forwardRef(function SketchSurfaceMock() {
+    return <div data-testid="story-sketch-surface" />;
+  }),
+}));
+
+vi.mock("../sketch/NativeSketchPreview", () => ({
+  NativeSketchPreview: () => null,
+}));
+
+vi.mock("../native/textEditor", () => ({
+  hasNativeTextEditor: () => false,
+  openNativeTextEditor: vi.fn(),
+}));
+
+const HEALTH: SaveHealth = {
+  localDurability: "saved",
+  remoteSync: "offline",
+  durableRevision: 1,
+  pendingOperationCount: 0,
+};
+
+function storyPage(): MyStoryPage {
+  return {
+    id: "story-page",
+    drawingDocumentId: "story-drawing",
+    splitRatio: 0.5,
+    textSide: "left",
+    textBackgroundColor: "#fffaf0",
+    textColor: "#245b8a",
+    textBlocks: [
+      {
+        id: "story-title",
+        text: "My early years",
+        role: "title",
+        color: "#171410",
+        revision: 0,
+        createdAt: "2026-08-15T00:00:00.000Z",
+      },
+      {
+        id: "story-heading",
+        text: "Growing up",
+        role: "heading",
+        color: "#245b8a",
+        revision: 0,
+        createdAt: "2026-08-15T00:00:00.000Z",
+      },
+      {
+        id: "story-body",
+        text: "We lived near the river.",
+        role: "body",
+        color: "#171410",
+        revision: 0,
+        createdAt: "2026-08-15T00:00:00.000Z",
+      },
+    ],
+    photos: [],
+    links: [],
+    recordings: [],
+    revision: 0,
+    createdAt: "2026-08-15T00:00:00.000Z",
+    updatedAt: "2026-08-15T00:00:00.000Z",
+  };
+}
+
+function renderStory(
+  commit = vi.fn(async () => true),
+  page = storyPage(),
+  files: JournalFilesPlugin = new BrowserJournalFilesMock(),
+) {
+  const audio = new BrowserJournalAudioMock();
+  const share = new BrowserNativeShareMock();
+  const transcription = new BrowserAppleTranscriptionMock();
+  function Harness() {
+    const [tool, setTool] = useState<PageTool>("view");
+    return (
+      <MyStoryWorkspace
+        audio={audio}
+        commit={commit}
+        defaultTextColor="#245b8a"
+        displayName="Ivan"
+        favouritePenColours={["#171410", "#245b8a"]}
+        files={files}
+        fingerDrawingEnabled
+        fingerErasingEnabled={false}
+        health={HEALTH}
+        myWords={[]}
+        navigationObscured={false}
+      onAddPage={vi.fn(async () => true)}
+      onBack={vi.fn()}
+        onDeletePage={vi.fn(async () => true)}
+        onDrawingHealthChange={vi.fn()}
+        onReorderPages={vi.fn(async () => true)}
+        onSelectPage={vi.fn()}
+        onToolChange={setTool}
+        page={page}
+        pages={[page]}
+        penColor="#171410"
+        penNib="pen"
+        penNibProfiles={undefined}
+        penOpacity={1}
+        penWidth={4}
+        recordingLimitMinutes={5}
+        share={share}
+        sketchRepository={new BrowserSketchRepository()}
+        textEditorPreference="standard"
+        tool={tool}
+      transcription={transcription}
+      storyName="My Story"
+      />
+    );
+  }
+  render(<Harness />);
+  return { audio, commit, files, share, transcription };
+}
+
+describe("MyStoryWorkspace", () => {
+  it("waits for Draw to close before starting the Voice microphone preview", async () => {
+    let finishSuspending: ((hidden: boolean) => void) | undefined;
+    suspendOverlay.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+      finishSuspending = resolve;
+    }));
+    renderStory();
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Voice" }));
+
+    expect(suspendOverlay).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog", { name: "Voice recording" }))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Voice" })).toBeDisabled();
+
+    finishSuspending?.(true);
+    expect(await screen.findByRole("dialog", { name: "Voice recording" }))
+      .toBeInTheDocument();
+  });
+
+  it("places a selected parametric shape from Draw settings", async () => {
+    const { commit } = renderStory();
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Shapes" }));
+    expect(screen.queryByRole("button", { name: "Christian Cross" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Triangle" }));
+    await waitFor(() => expect(commit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "my-story-shape-add",
+      shape: expect.objectContaining({ type: "shape", shapeKind: "triangle", fillColor: "#171410", layer: "above-sketch" }),
+    })));
+  });
+
+  it("closes Draw and activates Edit before a selected shape finishes saving", async () => {
+    let finishSave: ((saved: boolean) => void) | undefined;
+    const commit = vi.fn(() => new Promise<boolean>((resolve) => { finishSave = resolve; }));
+    renderStory(commit);
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Shapes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Triangle" }));
+
+    expect(screen.queryByRole("dialog", { name: "Draw settings" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit" })).toHaveAttribute("aria-pressed", "true");
+    expect(commit).toHaveBeenCalledOnce();
+    finishSave?.(true);
+    await waitFor(() => expect(commit).toHaveReturned());
+  });
+
+  it("builds a custom polygon from canvas points", async () => {
+    const { commit } = renderStory();
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Shapes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Custom polygon" }));
+    const paper = document.querySelector<HTMLElement>(".my-story-paper")!;
+    vi.spyOn(paper, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 600, width: 1000, height: 600, toJSON: () => ({}) });
+    fireEvent.click(paper, { clientX: 200, clientY: 150 });
+    fireEvent.click(paper, { clientX: 600, clientY: 160 });
+    fireEvent.click(paper, { clientX: 400, clientY: 450 });
+    fireEvent.click(screen.getByRole("button", { name: "Finish polygon" }));
+    await waitFor(() => expect(commit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "my-story-shape-add",
+      shape: expect.objectContaining({ shapeKind: "polygon", points: expect.arrayContaining([expect.any(Object)]) }),
+    })));
+  });
+  it("uses the existing tools and renders semantic structured text", () => {
+    renderStory();
+
+    expect(screen.getByRole("button", { name: "All stories" })).toHaveClass("back-action");
+    const toolbar = screen.getByLabelText("My Story tools");
+    for (const name of [
+      "View",
+      "Edit",
+      "Draw",
+      "Erase",
+      "Undo",
+      "Redo",
+      "Image",
+      "Link",
+      "Text",
+      "Voice",
+      "Share this page",
+    ]) {
+      expect(within(toolbar).getByRole("button", { name })).toBeInTheDocument();
+    }
+    expect(
+      Array.from(
+        toolbar.querySelectorAll(".tool"),
+        (button) => button.textContent?.trim(),
+      ).slice(-5),
+    ).toEqual([
+      expect.stringMatching(/^Draw/),
+      "Erase",
+      "Undo",
+      "Redo",
+      "Share",
+    ]);
+    expect(within(toolbar).queryByRole("button", { name: "Text colour" }))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "My early years",
+    );
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
+      "Growing up",
+    );
+    expect(screen.getByText("We lived near the river.").tagName).toBe("P");
+    expect(screen.getByTestId("story-sketch-surface")).toBeInTheDocument();
+    expect(screen.queryByText("Add your first image")).not.toBeInTheDocument();
+    expect(document.querySelector(".story-text-background")).toHaveStyle({
+      backgroundColor: "#fffaf0",
+      zIndex: 1,
+    });
+    expect(
+      screen.queryByRole("button", { name: "Resize text and image sides" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps pane washes under the sketch", () => {
+    renderStory();
+    const textPane = screen.getByLabelText("Story text");
+    const textWash = document.querySelector(".story-text-background");
+    expect(textWash).not.toBeNull();
+    expect(textPane.contains(textWash)).toBe(false);
+    expect(textWash).toHaveStyle({ zIndex: 1, backgroundColor: "#fffaf0" });
+    expect(textPane).toHaveStyle({ zIndex: 50 });
+    const imagePane = screen.getByLabelText("Story images");
+    const imageWash = document.querySelector(".story-image-background");
+    expect(imageWash).not.toBeNull();
+    expect(imagePane.contains(imageWash)).toBe(false);
+    expect(imageWash).toHaveStyle({ zIndex: 1 });
+    expect(imagePane).toHaveStyle({ zIndex: 50 });
+    expect(screen.getByTestId("story-sketch-surface")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "My early years",
+    );
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
+      "Growing up",
+    );
+  });
+
+  it("adds a durable web link from the Story toolbar", async () => {
+    const { commit } = renderStory();
+
+    fireEvent.click(screen.getByRole("button", { name: "Link" }));
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: "Paste Web Link Address Here:" }),
+      { target: { value: "https://example.com/memory" } },
+    );
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Link Name on the Canvas:" }),
+      { target: { value: "Family archive" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add link" }));
+
+    await waitFor(() =>
+      expect(commit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "my-story-link-add",
+          link: expect.objectContaining({
+            url: "https://example.com/memory",
+            title: "Family archive",
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("keeps the link composer open when the link cannot be saved", async () => {
+    renderStory(vi.fn(async () => false));
+
+    fireEvent.click(screen.getByRole("button", { name: "Link" }));
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: "Paste Web Link Address Here:" }),
+      { target: { value: "https://example.com/memory" } },
+    );
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Link Name on the Canvas:" }),
+      { target: { value: "Family archive" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add link" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Add a web link" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "The link could not be saved. Check the address and try again.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("uses the journal Edit page controls and flips the split layout", () => {
+    const { commit } = renderStory();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    const page = screen.getByRole("button", {
+      name: /Page 1\. Drag to reorder/i,
+    });
+    expect(page).toHaveClass("diary-page-button", "reorderable");
+    expect(page.querySelector(".thumbnail-drag-indicator")).toBeInTheDocument();
+    const resizeDivider = screen.getByRole("button", {
+      name: "Resize text and image sides",
+    });
+    expect(resizeDivider.querySelector(".story-divider-resize-icon svg"))
+      .toBeInTheDocument();
+    fireEvent.keyDown(resizeDivider, { key: "ArrowRight" });
+    expect(commit).toHaveBeenCalledWith(expect.objectContaining({
+      type: "my-story-layout-update",
+      pageId: "story-page",
+      splitRatio: 0.52,
+    }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move Story text to the right" }),
+    );
+    expect(commit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "my-story-layout-update",
+        pageId: "story-page",
+        textSide: "right",
+      }),
+    );
+    expect(
+      screen.getByRole("button", {
+        name: /Page 1 cannot be deleted/i,
+      }),
+    ).toHaveClass("page-thumbnail-delete");
+  });
+
+  it("activates the story divider as soon as the resize handle is pressed", () => {
+    renderStory();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const paper = document.querySelector<HTMLElement>(".my-story-paper")!;
+    vi.spyOn(paper, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 600,
+      width: 1000, height: 600, toJSON: () => ({}),
+    });
+    const resizeDivider = screen.getByRole("button", {
+      name: "Resize text and image sides",
+    });
+    resizeDivider.setPointerCapture = vi.fn();
+    resizeDivider.hasPointerCapture = vi.fn(() => true);
+    resizeDivider.releasePointerCapture = vi.fn();
+
+    fireEvent.pointerDown(resizeDivider, {
+      button: 0,
+      clientX: 600,
+      pointerId: 12,
+    });
+
+    expect(resizeDivider).toHaveClass("dragging");
+    expect(paper.style.gridTemplateColumns).toContain("60%");
+  });
+
+  it("renders a restored right-side Story text layout", () => {
+    const page = storyPage();
+    page.textSide = "right";
+    renderStory(vi.fn(async () => true), page);
+
+    expect(screen.getByLabelText("Story text")).toHaveStyle({
+      gridColumn: "3",
+      gridRow: "1",
+    });
+    expect(screen.getByLabelText("Story images")).toHaveStyle({
+      gridColumn: "1",
+      gridRow: "1",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(
+      screen.getByRole("button", { name: "Move Story text to the left" }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens contextual text and pane controls without changing the toolbar", async () => {
+    const { commit } = renderStory();
+
+    fireEvent.click(screen.getByText("Growing up"));
+    expect(screen.queryByLabelText("My Story options")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Growing up" }));
+    expect(screen.getByLabelText("My Story options")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Look" }));
+    fireEvent.click(screen.getByRole("button", { name: "Title" }));
+    expect(commit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "my-story-text-update",
+        block: expect.objectContaining({ role: "title" }),
+      }),
+    );
+    fireEvent.input(screen.getByLabelText("Text colour"), {
+      target: { value: "#fffaf0" },
+    });
+    await waitFor(() =>
+      expect(commit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "my-story-layout-update",
+          textColor: "#000000",
+        }),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Background colour" }));
+    fireEvent.input(screen.getByLabelText("Text side background colour"), {
+      target: { value: "#245b8a" },
+    });
+    await waitFor(() =>
+      expect(commit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "my-story-layout-update",
+          textBackgroundColor: "#245b8a",
+          textColor: "#ffffff",
+        }),
+      ),
+    );
+    expect(
+      screen.getByLabelText("Text side background colour"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    fireEvent.click(screen.getByText("Growing up"));
+    expect(screen.queryByLabelText("My Story options")).not.toBeInTheDocument();
+  });
+
+  it("confirms before deleting Story text in Edit mode", () => {
+    const { commit } = renderStory();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Growing up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(
+      screen.getByRole("alertdialog", { name: "Delete text block?" }),
+    ).toHaveTextContent("Do you want to delete “Growing up”?");
+    expect(commit).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Keep it" }));
+    expect(
+      screen.queryByRole("alertdialog", { name: "Delete text block?" }),
+    ).not.toBeInTheDocument();
+    expect(commit).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(
+      within(
+        screen.getByRole("alertdialog", { name: "Delete text block?" }),
+      ).getByRole("button", { name: "Delete" }),
+    );
+
+    expect(commit).toHaveBeenCalledWith({
+      type: "my-story-text-delete",
+      pageId: "story-page",
+      blockId: "story-heading",
+    });
+  });
+
+  it("uses the last selected text colour for new story text", async () => {
+    const { commit } = renderStory();
+
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: "Story text" }),
+      {
+      target: { value: "Another memory" },
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save to My Story" }));
+
+    await waitFor(() =>
+      expect(commit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "my-story-text-add",
+          block: expect.objectContaining({
+            text: "Another memory",
+            color: "#245b8a",
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("leaves Draw and Erase so the text editor can open", async () => {
+    renderStory();
+
+    const draw = screen.getByRole("button", { name: "Draw" });
+    fireEvent.click(draw);
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+    expect(await screen.findByRole("dialog", { name: "Add story text" }))
+      .toBeInTheDocument();
+    expect(draw).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    const erase = screen.getByRole("button", { name: "Erase" });
+    fireEvent.click(erase);
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+    expect(await screen.findByRole("dialog", { name: "Add story text" }))
+      .toBeInTheDocument();
+    expect(erase).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("keeps existing Story text read-only in Draw and Erase modes", () => {
+    renderStory();
+
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    const heading = screen.getByText("Growing up");
+    expect(
+      screen.queryByRole("button", { name: "Growing up" }),
+    ).not.toBeInTheDocument();
+    fireEvent.doubleClick(heading);
+    expect(
+      screen.queryByRole("dialog", { name: "Edit story text" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("My Story options")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Erase" }));
+    fireEvent.doubleClick(screen.getByText("Growing up"));
+    expect(
+      screen.queryByRole("dialog", { name: "Edit story text" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Erase" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("edits Story text by double click or long hold in Edit mode", async () => {
+    renderStory();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const heading = screen.getByRole("button", { name: "Growing up" });
+
+    fireEvent.doubleClick(heading);
+    expect(await screen.findByRole("dialog", { name: "Edit story text" }))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(heading);
+    fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
+    expect(await screen.findByRole("dialog", { name: "Edit story text" }))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.pointerDown(heading, {
+        pointerId: 1,
+        clientX: 100,
+        clientY: 100,
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(650);
+      });
+      expect(screen.getByRole("dialog", { name: "Edit story text" }))
+        .toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("opens draw settings when Draw is selected again", () => {
+    const { commit } = renderStory();
+    const draw = screen.getByRole("button", { name: "Draw" });
+
+    fireEvent.click(draw);
+    expect(screen.queryByLabelText("Draw settings")).not.toBeInTheDocument();
+    fireEvent.click(draw);
+    expect(screen.getByLabelText("Draw settings")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Marker" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(commit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "settings-update",
+        settings: expect.objectContaining({ penNib: "marker" }),
+      }),
+    );
+  });
+
+  it("records and saves durable voice in My Story", async () => {
+    const { audio, commit } = renderStory();
+    const start = vi.spyOn(audio, "start");
+    const voice = screen.getByRole("button", { name: "Voice" });
+
+    fireEvent.click(voice);
+    fireEvent.click(await screen.findByRole("button", { name: "Start recording" }));
+    await waitFor(() => expect(start).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole("button", { name: "End recording" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Place recording" }));
+
+    await waitFor(() =>
+      expect(commit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "my-story-recording-add",
+          pageId: "story-page",
+          recording: expect.objectContaining({
+            transcriptionStatus: "not-requested",
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("plays Story voice outside Edit and uses shared Edit controls", async () => {
+    const page = storyPage();
+    page.recordings = [{
+      id: "story-voice",
+      asset: {
+        id: "story-voice-asset",
+        localUri: "demo://recording/story-voice",
+        mimeType: "audio/mp4",
+        byteLength: 0,
+        checksum: "demo",
+      },
+      durationMs: 1_000,
+      transcriptionStatus: "not-requested",
+      position: { x: 0.1, y: 0.7 },
+      frame: { width: 0.26, height: 0.1 },
+      layer: "above-sketch",
+      revision: 0,
+      createdAt: "2026-08-15T00:00:00.000Z",
+    }];
+    renderStory(vi.fn(async () => true), page);
+
+    fireEvent.click(screen.getByRole("button", { name: "Play voice recording" }));
+    expect(
+      await screen.findByRole("button", { name: "Pause voice recording" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const voiceObject = screen.getByRole("group", {
+        name: /voice recording\. Arrow keys move/i,
+      });
+    fireEvent.click(voiceObject);
+    expect(voiceObject).toHaveStyle({ width: "18%", height: "12%" });
+    expect(
+      screen.getByRole("button", { name: "Drag to move voice recording" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Drag to resize voice recording" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Delete voice recording" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/convert to text/i)).not.toBeInTheDocument();
+  });
+
+  it("shares the complete Story paper using WebView capture", async () => {
+    const { share } = renderStory();
+    const exportPage = vi.spyOn(share, "exportPage");
+    const openShareSheet = vi.spyOn(share, "share");
+
+    fireEvent.click(screen.getByRole("button", { name: "Share this page" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Send this page as a picture in Messages or Mail",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(exportPage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          captureMode: "webview",
+          format: "jpg",
+          title: "Ivan My Story page 1",
+        }),
+      ),
+    );
+    expect(openShareSheet).toHaveBeenCalled();
+  });
+});

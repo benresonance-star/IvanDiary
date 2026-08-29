@@ -1,4 +1,5 @@
-import { GripHorizontal, Plus } from "lucide-react";
+import { GripHorizontal, Plus, Trash2 } from "lucide-react";
+import { createPortal } from "react-dom";
 import {
   useEffect,
   useRef,
@@ -9,18 +10,35 @@ import {
   type PointerEvent,
 } from "react";
 
-import type { Page, PageObject } from "../domain/models";
+import { isInFrontOfSketch } from "../domain/inkStack";
+import {
+  MAX_PAGES_PER_COLLECTION,
+  type MyStoryPage,
+  type Page,
+  type PageObject,
+  type PaperStyle,
+} from "../domain/models";
+import { effectivePaperBackgroundColour } from "../domain/paperBackground";
+import { displayedTextLayout } from "../domain/textLayout";
 import type { SketchRepository } from "../sketch/types";
+import { displayAssetUri } from "../utils/displayAssetUri";
 import { defaultObjectFrame } from "./arrangeGeometry";
+import { canvasObjectZIndex } from "./canvasObjectStack";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { ShapeCard } from "./ShapeCard";
 import { SketchThumbnail } from "./SketchThumbnail";
 
-function previewStyle(object: PageObject): CSSProperties {
-  const frame = defaultObjectFrame(object);
+function previewStyle(object: PageObject, stackIndex: number): CSSProperties {
+  const layout = object.type === "text"
+    ? displayedTextLayout(object)
+    : { position: object.position, frame: defaultObjectFrame(object) };
   return {
-    left: `${object.position.x * 100}%`,
-    top: `${object.position.y * 100}%`,
-    width: `${frame.width * 100}%`,
-    height: `${frame.height * 100}%`,
+    left: `${layout.position.x * 100}%`,
+    top: `${layout.position.y * 100}%`,
+    width: `${layout.frame.width * 100}%`,
+    height: `${layout.frame.height * 100}%`,
+    transform: object.type === "shape" ? `rotate(${object.rotationDegrees ?? 0}deg)` : undefined,
+    zIndex: canvasObjectZIndex(stackIndex, isInFrontOfSketch(object)),
   };
 }
 
@@ -33,67 +51,68 @@ export function PagePreview({
   page: Page;
   sketchRepository?: SketchRepository;
 }) {
+  const renderObject = (object: PageObject, stackIndex: number) => {
+    switch (object.type) {
+      case "photo": {
+        const photoClassName = `page-preview-object preview-photo${
+          object.lockAspectRatio !== false ? " keep-proportions" : ""
+        }`;
+        return object.asset.localUri.startsWith("demo://") ? (
+          <span className={`${photoClassName} demo-photo`} key={object.id} style={previewStyle(object, stackIndex)} />
+        ) : (
+          <img alt="" className={photoClassName} key={object.id} src={displayAssetUri(object.asset.localUri)} style={previewStyle(object, stackIndex)} />
+        );
+      }
+      case "voice":
+        return <span className="page-preview-object preview-voice" key={object.id} style={previewStyle(object, stackIndex)} />;
+      case "text":
+        return (
+          <span
+            className={`page-preview-object preview-text canvas-text-${object.role ?? "body"} canvas-font-${object.font ?? "system-sans"}`}
+            key={object.id}
+            style={{
+              ...previewStyle(object, stackIndex),
+              backgroundColor: object.backgroundColor ?? "transparent",
+              border: object.outlineColor
+                ? `${object.outlineWidth ?? 2}px solid ${object.outlineColor}`
+                : "none",
+              color: object.material === "scripture-gold" ? undefined : (object.color ?? "#201c17"),
+            }}
+          >
+            <span className={object.material === "scripture-gold" ? `scripture-gold-text scripture-gold-text-${object.goldFinish ?? "raised"}` : undefined}>{object.text}</span>
+          </span>
+        );
+      case "link":
+        return <span className="page-preview-object preview-link" key={object.id} style={previewStyle(object, stackIndex)}>{object.title}</span>;
+      case "shape":
+        return <span className="page-preview-object preview-shape" key={object.id} style={previewStyle(object, stackIndex)}><ShapeCard preview shape={object} /></span>;
+      case "transcript":
+        return null;
+      default: {
+        const exhaustiveObject: never = object;
+        throw new Error(`Unsupported page preview: ${exhaustiveObject}`);
+      }
+    }
+  };
   return (
     <span
       aria-hidden="true"
       className={`diary-page-preview paper-${page.paperStyle} ${className}`}
+      style={{ backgroundColor: effectivePaperBackgroundColour(page) }}
     >
+      {page.objects.map((object, index) =>
+        isInFrontOfSketch(object) ? null : renderObject(object, index),
+      )}
       {sketchRepository ? (
         <SketchThumbnail
           documentId={page.drawingDocumentId}
+          paperAspectRatio={16 / 9}
           repository={sketchRepository}
         />
       ) : null}
-      {page.objects.map((object) => {
-        switch (object.type) {
-          case "photo":
-            return object.asset.localUri.startsWith("demo://") ? (
-              <span
-                className="page-preview-object preview-photo demo-photo"
-                key={object.id}
-                style={previewStyle(object)}
-              />
-            ) : (
-              <img
-                alt=""
-                className="page-preview-object preview-photo"
-                key={object.id}
-                src={object.asset.localUri}
-                style={previewStyle(object)}
-              />
-            );
-          case "voice":
-            return (
-              <span
-                className="page-preview-object preview-voice"
-                key={object.id}
-                style={previewStyle(object)}
-              />
-            );
-          case "text":
-            return (
-              <span
-                className="page-preview-object preview-text"
-                key={object.id}
-                style={previewStyle(object)}
-              />
-            );
-          case "link":
-            return (
-              <span
-                className="page-preview-object preview-link"
-                key={object.id}
-                style={previewStyle(object)}
-              />
-            );
-          case "transcript":
-            return null;
-          default: {
-            const exhaustiveObject: never = object;
-            throw new Error(`Unsupported page preview: ${exhaustiveObject}`);
-          }
-        }
-      })}
+      {page.objects.map((object, index) =>
+        isInFrontOfSketch(object) ? renderObject(object, index) : null,
+      )}
     </span>
   );
 }
@@ -131,12 +150,21 @@ type NativePageDrag = {
   targetPageId?: string;
 };
 
+type PageStripPage = Page | MyStoryPage;
+
+function pagePaperStyle(page: PageStripPage): PaperStyle {
+  return "paperStyle" in page ? page.paperStyle : "warm-journal";
+}
+
 export function DiaryPageStrip({
   activePageId,
   addPageLabel = "Add another diary page",
   arrange,
   collectionLabel = "Pages in today’s diary",
+  collectionType = "journal",
+  displayName,
   onAddPage,
+  onDeletePage,
   onReorderPages,
   onSelectPage,
   pages,
@@ -145,10 +173,13 @@ export function DiaryPageStrip({
   addPageLabel?: string;
   arrange: boolean;
   collectionLabel?: string;
-  onAddPage: () => void;
+  collectionType?: "journal" | "sketchbook" | "story";
+  displayName: string;
+  onAddPage: () => Promise<boolean>;
+  onDeletePage: (pageId: string) => Promise<boolean>;
   onReorderPages: (pageIds: string[]) => Promise<boolean>;
   onSelectPage: (pageId: string) => void;
-  pages: Page[];
+  pages: PageStripPage[];
 }) {
   const initialOrder = pages.map((page) => page.id);
   const activeDragRef = useRef<ActivePageDrag | undefined>(undefined);
@@ -156,6 +187,16 @@ export function DiaryPageStrip({
   const orderRef = useRef(initialOrder);
   const suppressClickRef = useRef(false);
   const [draggedPageId, setDraggedPageId] = useState<string>();
+  const [pageLimitWarningOpen, setPageLimitWarningOpen] = useState(false);
+  const pageLimitButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (pageLimitWarningOpen) {
+      pageLimitButtonRef.current?.focus({ preventScroll: true });
+    }
+  }, [pageLimitWarningOpen]);
+  const [pagePendingDelete, setPagePendingDelete] =
+    useState<PageStripPage>();
   const [orderedPageIds, setOrderedPageIds] = useState(initialOrder);
 
   useEffect(() => {
@@ -175,6 +216,7 @@ export function DiaryPageStrip({
     const page = pages.find((candidate) => candidate.id === pageId);
     return page ? [page] : [];
   });
+  const pageLimitReached = pages.length >= MAX_PAGES_PER_COLLECTION;
 
   const beginDrag = (
     event: PointerEvent<HTMLButtonElement>,
@@ -388,8 +430,12 @@ export function DiaryPageStrip({
   };
 
   return (
-    <nav aria-label={collectionLabel} className="diary-page-strip">
-      <div className="diary-page-list" role="list">
+    <nav
+      aria-label={collectionLabel}
+      className={`page-strip ${arrange ? "diary-page-strip" : "story-page-strip"}`}
+    >
+      {arrange ? (
+        <div className="diary-page-list" role="list">
         {orderedPages.map((page, index) => {
           const pageNumber = index + 1;
           const current = page.id === activePageId;
@@ -403,6 +449,7 @@ export function DiaryPageStrip({
                     : `Open page ${pageNumber}`
                 }
                 className={`diary-page-button${current ? " current" : ""}${draggedPageId === page.id ? " dragging" : ""}${arrange ? " reorderable" : ""}`}
+                data-help-topic="page-strip"
                 data-page-id={page.id}
                 draggable={arrange}
                 onDragEnd={finishNativeDrag}
@@ -424,8 +471,17 @@ export function DiaryPageStrip({
                 onPointerUp={finishDrag}
                 type="button"
               >
-                <PagePreview page={page} />
-                <span>Page {pageNumber}</span>
+                <span
+                  aria-hidden="true"
+                  className={`diary-page-preview paper-${pagePaperStyle(page)}`}
+                  style={
+                    "paperStyle" in page
+                      ? { backgroundColor: effectivePaperBackgroundColour(page) }
+                      : undefined
+                  }
+                >
+                  <span className="page-preview-label">Page {pageNumber}</span>
+                </span>
                 {arrange ? (
                   <GripHorizontal
                     aria-hidden="true"
@@ -433,23 +489,128 @@ export function DiaryPageStrip({
                   />
                 ) : null}
               </button>
+              {arrange ? (
+                <button
+                  aria-label={
+                    pages.length <= 1
+                      ? `Page ${pageNumber} cannot be deleted because at least one page is required`
+                      : `Delete page ${pageNumber}`
+                  }
+                  className="page-thumbnail-delete"
+                  data-help-topic="arrange-delete"
+                  disabled={pages.length <= 1}
+                  onClick={() => setPagePendingDelete(page)}
+                  type="button"
+                >
+                  <Trash2 aria-hidden="true" />
+                </button>
+              ) : null}
             </div>
           );
         })}
         <div className="diary-page-list-item" role="listitem">
           <button
-            aria-label={addPageLabel}
+            aria-label={pageLimitReached ? "Maximum of 10 pages reached" : addPageLabel}
             className="diary-page-button add-diary-page"
-            onClick={onAddPage}
+            data-help-topic="add-page"
+            disabled={pageLimitReached}
+            onClick={() => {
+              void onAddPage().then((added) => {
+                if (added && pages.length === MAX_PAGES_PER_COLLECTION - 1) {
+                  setPageLimitWarningOpen(true);
+                }
+              });
+            }}
             type="button"
           >
             <span aria-hidden="true" className="add-page-preview">
               <Plus />
             </span>
-            <span>Add page</span>
           </button>
         </div>
-      </div>
+        </div>
+      ) : (
+        <>
+          {orderedPages.map((page, index) => (
+            <div className="story-page-item" key={page.id}>
+              <button
+                aria-current={page.id === activePageId ? "page" : undefined}
+                className={page.id === activePageId ? "current" : ""}
+                onClick={() => onSelectPage(page.id)}
+                type="button"
+              >
+                Page {index + 1}
+              </button>
+            </div>
+          ))}
+          <button
+            aria-label={
+              pageLimitReached ? "Maximum of 10 pages reached" : addPageLabel
+            }
+            className="story-add-page"
+            disabled={pageLimitReached}
+            onClick={() => {
+              void onAddPage().then((added) => {
+                if (
+                  added &&
+                  pages.length === MAX_PAGES_PER_COLLECTION - 1
+                ) {
+                  setPageLimitWarningOpen(true);
+                }
+              });
+            }}
+            type="button"
+          >
+            <Plus aria-hidden="true" />
+            Page
+          </button>
+        </>
+      )}
+      {pagePendingDelete ? (
+        <ConfirmDialog
+          cancelLabel="Keep it"
+          confirmClassName="confirm-delete"
+          confirmLabel="Delete page"
+          icon={<Trash2 aria-hidden="true" />}
+          onCancel={() => setPagePendingDelete(undefined)}
+          onConfirm={() => {
+            const pageId = pagePendingDelete.id;
+            setPagePendingDelete(undefined);
+            void onDeletePage(pageId);
+          }}
+          title="Delete this page?"
+        >
+          <p>
+            This removes its drawing, text, photos and recordings{" "}
+            {collectionType === "story"
+              ? "from My Story."
+              : `from this ${collectionType}.`}
+          </p>
+        </ConfirmDialog>
+      ) : null}
+      {pageLimitWarningOpen
+        ? createPortal(
+            <div className="delete-dialog-backdrop" role="presentation">
+              <div
+                aria-labelledby="page-limit-warning-title"
+                aria-modal="true"
+                className="delete-dialog"
+                role="alertdialog"
+              >
+                <h2 id="page-limit-warning-title">Last page</h2>
+                <p>
+                  Hey {displayName.trim() || "there"} this is the last page we can fit on this {collectionType}
+                </p>
+                <div className="delete-dialog-actions">
+                  <button ref={pageLimitButtonRef} onClick={() => setPageLimitWarningOpen(false)} type="button">
+                    OK
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </nav>
   );
 }

@@ -1,4 +1,4 @@
-import type { AssetRef } from "../domain/models";
+import type { AssetRef, Size } from "../domain/models";
 import { createId } from "./id";
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -26,4 +26,24 @@ export async function browserFileToAsset(file: File): Promise<AssetRef> {
     byteLength: file.size,
     checksum: bytesToHex(new Uint8Array(hash)),
   };
+}
+
+export function readImageSize(file: File): Promise<Size> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      if (image.naturalWidth < 1 || image.naturalHeight < 1) {
+        reject(new Error("The photograph could not be read."));
+        return;
+      }
+      resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("The photograph could not be read."));
+    };
+    image.src = url;
+  });
 }

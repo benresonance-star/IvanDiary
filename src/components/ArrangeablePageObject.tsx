@@ -1,8 +1,10 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
@@ -15,17 +17,28 @@ import {
   ArrowUp,
   GripHorizontal,
   Maximize2,
+  Ratio,
+  StepBack,
+  StepForward,
   Trash2,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
+export const ARRANGEABLE_LAYOUT_EVENT = "ivan-diary:arrangeable-layout";
+
 import type { Position, Size } from "../domain/models";
+import { canvasObjectZIndex } from "./canvasObjectStack";
 import {
+  inwardResizeAnchor,
+  layoutEdges,
   moveLayout,
   resizeLayout,
+  resizeLayoutFromAnchor,
   type AlignmentGuides,
   type PageLayout,
+  type ResizeAnchor,
 } from "./arrangeGeometry";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 export type LayoutChange = {
   kind: "move" | "resize";
@@ -39,6 +52,13 @@ type ActiveInteraction = {
   clientX: number;
   clientY: number;
   start: PageLayout;
+  resizeAnchor?: ResizeAnchor;
+};
+
+type PendingPointer = {
+  pointerId: number;
+  clientX: number;
+  clientY: number;
 };
 
 const EMPTY_GUIDES: AlignmentGuides = {
@@ -56,42 +76,80 @@ function layoutsEqual(first: PageLayout, second: PageLayout): boolean {
 }
 
 export function ArrangeablePageObject({
+  adaptiveEdgeControls = false,
   arrange,
+  canResize = true,
+  aspectLock = false,
+  aspectRatio,
   children,
   className,
-  deleteDescription,
+  deleteDescription = "",
   frame,
+  inFrontOfSketch = false,
+  layer,
+  maximumFrame,
+  minimumFrame,
   objectLabel,
   objectId,
   onCommit,
   onDelete,
+  onMoveBackward,
+  onMoveForward,
+  onNativeDragStart,
   onSelect,
+  onToggleAspectLock,
   pageRef,
   position,
   selected,
-  showShortcuts,
+  showControls = true,
+  showShortcuts = false,
+  snapPeerFrames,
+  stackIndex,
 }: {
+  adaptiveEdgeControls?: boolean;
   arrange: boolean;
+  canResize?: boolean;
+  aspectLock?: boolean;
+  aspectRatio?: number;
   children: ReactNode;
   className: string;
-  deleteDescription: string;
+  deleteDescription?: string;
   frame: Size;
+  inFrontOfSketch?: boolean;
+  layer: "above-sketch" | "behind-sketch";
+  maximumFrame?: Size;
+  minimumFrame?: Size;
   objectLabel: string;
   objectId: string;
   onCommit: (change: LayoutChange) => void;
-  onDelete: () => void;
+  onDelete?: () => void;
+  onMoveBackward?: () => void;
+  onMoveForward?: () => void;
+  onNativeDragStart?: (event: DragEvent<HTMLDivElement>) => void;
   onSelect: () => void;
+  onToggleAspectLock?: () => void;
   pageRef: RefObject<HTMLDivElement | null>;
   position: Position;
   selected: boolean;
-  showShortcuts: boolean;
+  showControls?: boolean;
+  showShortcuts?: boolean;
+  snapPeerFrames?: Size[];
+  stackIndex?: number;
 }) {
   const activeRef = useRef<ActiveInteraction | undefined>(undefined);
+  const animationFrameRef = useRef<number | undefined>(undefined);
+  const pendingCommitRef = useRef<{
+    before: PageLayout;
+    after: PageLayout;
+  } | undefined>(undefined);
+  const pendingPointerRef = useRef<PendingPointer | undefined>(undefined);
+  const suppressMoveClickRef = useRef(false);
   const [layout, setLayout] = useState<PageLayout>({ position, frame });
   const layoutRef = useRef<PageLayout>(layout);
   const [guides, setGuides] = useState<AlignmentGuides>(EMPTY_GUIDES);
   const [portalTarget, setPortalTarget] = useState<HTMLDivElement | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const updateLayout = (next: PageLayout) => {
     layoutRef.current = next;
@@ -100,15 +158,29 @@ export function ArrangeablePageObject({
 
   useEffect(() => {
     if (!activeRef.current) {
-      const next = { position, frame };
+      const next = {
+        position: { x: position.x, y: position.y },
+        frame: { width: frame.width, height: frame.height },
+      };
+      const pending = pendingCommitRef.current;
+      if (pending && !layoutsEqual(next, pending.after)) return;
+      if (pending) {
+        pendingCommitRef.current = undefined;
+      }
       layoutRef.current = next;
       setLayout(next);
     }
-  }, [frame, position]);
+  }, [frame.height, frame.width, position.x, position.y]);
 
   useEffect(() => {
     setPortalTarget(pageRef.current);
   }, [pageRef]);
+
+  useLayoutEffect(() => {
+    document.querySelector<HTMLElement>(
+      `[data-object-id="${objectId}"]`,
+    )?.dispatchEvent(new Event(ARRANGEABLE_LAYOUT_EVENT));
+  }, [layout, objectId]);
 
   const beginInteraction = (
     event: PointerEvent<HTMLButtonElement>,
@@ -116,6 +188,7 @@ export function ArrangeablePageObject({
   ) => {
     event.preventDefault();
     event.stopPropagation();
+    suppressMoveClickRef.current = false;
     onSelect();
     activeRef.current = {
       pointerId: event.pointerId,
@@ -123,6 +196,9 @@ export function ArrangeablePageObject({
       clientX: event.clientX,
       clientY: event.clientY,
       start: layout,
+      ...(kind === "resize" && adaptiveEdgeControls
+        ? { resizeAnchor: inwardResizeAnchor(layout) }
+        : {}),
     };
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -131,16 +207,18 @@ export function ArrangeablePageObject({
     }
   };
 
-  const updateInteraction = (event: PointerEvent<HTMLButtonElement>) => {
+  const applyPendingInteraction = () => {
     const active = activeRef.current;
     const page = pageRef.current;
-    if (!active || !page || event.pointerId !== active.pointerId) {
+    const pending = pendingPointerRef.current;
+    pendingPointerRef.current = undefined;
+    animationFrameRef.current = undefined;
+    if (!active || !page || !pending || pending.pointerId !== active.pointerId) {
       return;
     }
-    event.preventDefault();
     const bounds = page.getBoundingClientRect();
-    const deltaX = (event.clientX - active.clientX) / bounds.width;
-    const deltaY = (event.clientY - active.clientY) / bounds.height;
+    const deltaX = (pending.clientX - active.clientX) / bounds.width;
+    const deltaY = (pending.clientY - active.clientY) / bounds.height;
 
     if (active.kind === "move") {
       const moved = moveLayout(active.start, { x: deltaX, y: deltaY });
@@ -149,12 +227,40 @@ export function ArrangeablePageObject({
       return;
     }
 
-    updateLayout(
-      resizeLayout(active.start, {
-        width: deltaX,
-        height: deltaY,
-      }),
-    );
+    const resizeOptions = {
+      aspectRatio: aspectLock ? aspectRatio : undefined,
+      maximum: maximumFrame,
+      minimum: minimumFrame,
+      snapPeerFrames,
+    };
+    updateLayout(active.resizeAnchor
+      ? resizeLayoutFromAnchor(
+          active.start,
+          { width: deltaX, height: deltaY },
+          active.resizeAnchor,
+          resizeOptions,
+        )
+      : resizeLayout(
+          active.start,
+          { width: deltaX, height: deltaY },
+          resizeOptions,
+        ));
+  };
+
+  const updateInteraction = (event: PointerEvent<HTMLButtonElement>) => {
+    const active = activeRef.current;
+    if (!active || event.pointerId !== active.pointerId) return;
+    event.preventDefault();
+    pendingPointerRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    };
+    if (animationFrameRef.current === undefined) {
+      animationFrameRef.current = globalThis.requestAnimationFrame(
+        applyPendingInteraction,
+      );
+    }
   };
 
   const finishInteraction = (event: PointerEvent<HTMLButtonElement>) => {
@@ -162,10 +268,21 @@ export function ArrangeablePageObject({
     if (!active || event.pointerId !== active.pointerId) {
       return;
     }
+    if (pendingPointerRef.current) {
+      if (animationFrameRef.current !== undefined) {
+        globalThis.cancelAnimationFrame(animationFrameRef.current);
+      }
+      applyPendingInteraction();
+    }
     activeRef.current = undefined;
     setGuides(EMPTY_GUIDES);
     const current = layoutRef.current;
-    if (!layoutsEqual(active.start, current)) {
+    const changed = !layoutsEqual(active.start, current);
+    if (active.kind === "move") {
+      suppressMoveClickRef.current = changed;
+    }
+    if (changed) {
+      pendingCommitRef.current = { before: active.start, after: current };
       onCommit({ kind: active.kind, before: active.start, after: current });
     }
   };
@@ -176,9 +293,20 @@ export function ArrangeablePageObject({
       return;
     }
     activeRef.current = undefined;
+    pendingPointerRef.current = undefined;
+    if (animationFrameRef.current !== undefined) {
+      globalThis.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = undefined;
+    }
     updateLayout(active.start);
     setGuides(EMPTY_GUIDES);
   };
+
+  useEffect(() => () => {
+    if (animationFrameRef.current !== undefined) {
+      globalThis.cancelAnimationFrame(animationFrameRef.current);
+    }
+  }, []);
 
   const applyMove = (delta: Position) => {
     const moved = moveLayout(layout, delta);
@@ -188,7 +316,21 @@ export function ArrangeablePageObject({
   };
 
   const applyResize = (delta: Size) => {
-    const next = resizeLayout(layout, delta);
+    const options = {
+      aspectRatio: aspectLock ? aspectRatio : undefined,
+      maximum: maximumFrame,
+      minimum: minimumFrame,
+      snapPeerFrames,
+    };
+    const anchor = adaptiveEdgeControls
+      ? inwardResizeAnchor(layout)
+      : undefined;
+    const next = anchor
+      ? resizeLayoutFromAnchor(layout, {
+          width: anchor.horizontal === "left" ? -delta.width : delta.width,
+          height: anchor.vertical === "top" ? -delta.height : delta.height,
+        }, anchor, options)
+      : resizeLayout(layout, delta, options);
     updateLayout(next);
     onCommit({ kind: "resize", before: layout, after: next });
   };
@@ -196,7 +338,7 @@ export function ArrangeablePageObject({
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const amount = 0.015;
     let handled = true;
-    if (event.shiftKey) {
+    if (event.shiftKey && canResize) {
       switch (event.key) {
         case "ArrowLeft":
           applyResize({ width: -amount, height: 0 });
@@ -243,29 +385,98 @@ export function ArrangeablePageObject({
     top: `${layout.position.y * 100}%`,
     width: `${layout.frame.width * 100}%`,
     height: `${layout.frame.height * 100}%`,
+    ...(stackIndex === undefined
+      ? {}
+      : { zIndex: canvasObjectZIndex(stackIndex, inFrontOfSketch) }),
   };
+  const adaptiveEdges = adaptiveEdgeControls
+    ? layoutEdges(layout)
+    : undefined;
+  const nudgeEdges = layoutEdges(layout);
+  const adaptiveAnchor = adaptiveEdgeControls
+    ? inwardResizeAnchor(layout)
+    : undefined;
+  const controllerClassName = [
+    "arrange-controller-overlay",
+    adaptiveEdgeControls ? "adaptive-edge-controls" : "",
+    adaptiveEdges?.top ? "controls-near-top" : "",
+    adaptiveEdges?.right ? "controls-near-right" : "",
+    adaptiveEdges?.bottom ? "controls-near-bottom" : "",
+    adaptiveEdges?.left ? "controls-near-left" : "",
+    nudgeEdges.top ? "nudge-near-top" : "",
+    nudgeEdges.right ? "nudge-near-right" : "",
+  ].filter(Boolean).join(" ");
 
   return (
+    // Keyboard movement and resizing are implemented above; `group` is used
+    // because the arranged object can contain its own interactive controls.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       aria-label={
         arrange
-          ? `${objectLabel}. Arrow keys move. Shift and arrow keys resize.`
+          ? `${objectLabel}. Arrow keys move.${canResize ? " Shift and arrow keys resize." : ""}`
           : undefined
       }
-      className={`${className}${arrange ? " arrangeable" : ""}${selected ? " selected-object" : ""}`}
+      className={`${className}${layer === "behind-sketch" ? " behind-sketch" : ""}${arrange ? " arrangeable" : ""}${selected ? " selected-object" : ""}`}
+      data-help-body={
+        arrange
+          ? `This ${objectLabel.toLowerCase()} can be moved${canResize ? ", resized" : ""}, layered, or removed.`
+          : undefined
+      }
+      data-help-title={arrange ? objectLabel : undefined}
+      data-help-topic={arrange ? "arrange-object" : undefined}
       data-object-id={objectId}
+      draggable={arrange && Boolean(onNativeDragStart)}
       onClick={arrange ? onSelect : undefined}
+      onDragStart={onNativeDragStart}
       onKeyDown={arrange ? handleKeyDown : undefined}
       role={arrange ? "group" : undefined}
       style={style}
       tabIndex={arrange ? 0 : undefined}
     >
       {children}
-      {arrange && selected ? (
-        <>
+      {arrange && selected && showControls && portalTarget ? createPortal(
+        <div
+          className={controllerClassName}
+          data-resize-horizontal={adaptiveAnchor?.horizontal}
+          data-resize-vertical={adaptiveAnchor?.vertical}
+          style={style}
+        >
+          {onToggleAspectLock ? (
+            <button
+              aria-label={
+                aspectLock
+                  ? "Keep photo proportions. On"
+                  : "Keep photo proportions. Off"
+              }
+              aria-pressed={aspectLock}
+              className={`arrange-aspect-lock${aspectLock ? " selected" : ""}`}
+              data-help-title={`Keep ${objectLabel.toLowerCase()} shape`}
+              data-help-topic="arrange-proportion"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleAspectLock();
+              }}
+              type="button"
+            >
+              <Ratio aria-hidden="true" />
+            </button>
+          ) : null}
           <button
+            aria-controls={`arrange-nudge-${objectId}`}
+            aria-expanded={showShortcuts || shortcutsOpen}
             aria-label={`Drag to move ${objectLabel}`}
             className="arrange-handle move-handle"
+            data-help-title={`Move ${objectLabel.toLowerCase()}`}
+            data-help-topic="arrange-move"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (suppressMoveClickRef.current) {
+                suppressMoveClickRef.current = false;
+                return;
+              }
+              setShortcutsOpen((open) => !open);
+            }}
             onLostPointerCapture={finishInteraction}
             onPointerCancel={cancelInteraction}
             onPointerDown={(event) => beginInteraction(event, "move")}
@@ -275,9 +486,11 @@ export function ArrangeablePageObject({
           >
             <GripHorizontal aria-hidden="true" />
           </button>
-          <button
+          {canResize ? <button
             aria-label={`Drag to resize ${objectLabel}`}
             className="arrange-handle resize-handle"
+            data-help-title={`Resize ${objectLabel.toLowerCase()}`}
+            data-help-topic="arrange-resize"
             onLostPointerCapture={finishInteraction}
             onPointerCancel={cancelInteraction}
             onPointerDown={(event) => beginInteraction(event, "resize")}
@@ -286,10 +499,12 @@ export function ArrangeablePageObject({
             type="button"
           >
             <Maximize2 aria-hidden="true" />
-          </button>
-          <button
+          </button> : null}
+          {onDelete ? <button
             aria-label={`Delete ${objectLabel}`}
             className="arrange-delete"
+            data-help-title={`Delete ${objectLabel.toLowerCase()}`}
+            data-help-topic="arrange-delete"
             onClick={(event) => {
               event.stopPropagation();
               setDeleteDialogOpen(true);
@@ -297,34 +512,37 @@ export function ArrangeablePageObject({
             type="button"
           >
             <Trash2 aria-hidden="true" />
-          </button>
-          {showShortcuts ? (
+          </button> : null}
+          {onMoveForward ? <button aria-label={`Bring ${objectLabel} forward`} className="arrange-order arrange-order-forward" data-help-topic="arrange-layer" onClick={(event) => { event.stopPropagation(); onMoveForward(); }} type="button"><StepForward aria-hidden="true" /></button> : null}
+          {onMoveBackward ? <button aria-label={`Send ${objectLabel} backward`} className="arrange-order arrange-order-backward" data-help-topic="arrange-layer" onClick={(event) => { event.stopPropagation(); onMoveBackward(); }} type="button"><StepBack aria-hidden="true" /></button> : null}
+          {showShortcuts || shortcutsOpen ? (
             <div
+              id={`arrange-nudge-${objectId}`}
               className="arrange-nudge-controls"
               aria-label={`Adjust ${objectLabel}`}
             >
-            <button aria-label="Move left" onClick={() => applyMove({ x: -0.02, y: 0 })} type="button">
+            <button aria-label="Move left" data-help-topic="arrange-move" onClick={() => applyMove({ x: -0.02, y: 0 })} type="button">
               <ArrowLeft aria-hidden="true" />
             </button>
-            <button aria-label="Move up" onClick={() => applyMove({ x: 0, y: -0.02 })} type="button">
+            <button aria-label="Move up" data-help-topic="arrange-move" onClick={() => applyMove({ x: 0, y: -0.02 })} type="button">
               <ArrowUp aria-hidden="true" />
             </button>
-            <button aria-label="Move down" onClick={() => applyMove({ x: 0, y: 0.02 })} type="button">
+            <button aria-label="Move down" data-help-topic="arrange-move" onClick={() => applyMove({ x: 0, y: 0.02 })} type="button">
               <ArrowDown aria-hidden="true" />
             </button>
-            <button aria-label="Move right" onClick={() => applyMove({ x: 0.02, y: 0 })} type="button">
+            <button aria-label="Move right" data-help-topic="arrange-move" onClick={() => applyMove({ x: 0.02, y: 0 })} type="button">
               <ArrowRight aria-hidden="true" />
             </button>
-            <button aria-label="Make narrower" onClick={() => applyResize({ width: -0.03, height: 0 })} type="button">
+            <button aria-label="Make narrower" data-help-topic="arrange-resize" onClick={() => applyResize({ width: -0.03, height: 0 })} type="button">
               W−
             </button>
-            <button aria-label="Make wider" onClick={() => applyResize({ width: 0.03, height: 0 })} type="button">
+            <button aria-label="Make wider" data-help-topic="arrange-resize" onClick={() => applyResize({ width: 0.03, height: 0 })} type="button">
               W+
             </button>
-            <button aria-label="Make shorter" onClick={() => applyResize({ width: 0, height: -0.03 })} type="button">
+            <button aria-label="Make shorter" data-help-topic="arrange-resize" onClick={() => applyResize({ width: 0, height: -0.03 })} type="button">
               H−
             </button>
-            <button aria-label="Make taller" onClick={() => applyResize({ width: 0, height: 0.03 })} type="button">
+            <button aria-label="Make taller" data-help-topic="arrange-resize" onClick={() => applyResize({ width: 0, height: 0.03 })} type="button">
               H+
             </button>
             </div>
@@ -341,50 +559,24 @@ export function ArrangeablePageObject({
                 portalTarget,
               )
             : null}
-          {deleteDialogOpen
-            ? createPortal(
-                <div
-                  className="delete-dialog-backdrop"
-                  onClick={() => setDeleteDialogOpen(false)}
-                  role="presentation"
-                >
-                  <div
-                    aria-labelledby={`delete-title-${objectId}`}
-                    aria-modal="true"
-                    className="delete-dialog"
-                    onClick={(event) => event.stopPropagation()}
-                    role="alertdialog"
-                  >
-                    <Trash2 aria-hidden="true" />
-                    <h2 id={`delete-title-${objectId}`}>
-                      Delete {objectLabel}?
-                    </h2>
-                    <p>Do you want to delete “{deleteDescription}”?</p>
-                    <div className="delete-dialog-actions">
-                      <button
-                        autoFocus
-                        onClick={() => setDeleteDialogOpen(false)}
-                        type="button"
-                      >
-                        Keep it
-                      </button>
-                      <button
-                        className="confirm-delete"
-                        onClick={() => {
-                          setDeleteDialogOpen(false);
-                          onDelete();
-                        }}
-                        type="button"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>,
-                document.body,
-              )
-            : null}
-        </>
+          {deleteDialogOpen && onDelete ? (
+            <ConfirmDialog
+              cancelLabel="Keep it"
+              confirmClassName="confirm-delete"
+              confirmLabel="Delete"
+              icon={<Trash2 aria-hidden="true" />}
+              onCancel={() => setDeleteDialogOpen(false)}
+              onConfirm={() => {
+                setDeleteDialogOpen(false);
+                onDelete();
+              }}
+              title={`Delete ${objectLabel}?`}
+            >
+              <p>Do you want to delete “{deleteDescription}”?</p>
+            </ConfirmDialog>
+          ) : null}
+        </div>,
+        portalTarget,
       ) : null}
     </div>
   );

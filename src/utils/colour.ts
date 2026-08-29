@@ -116,3 +116,39 @@ export function colourWithOpacity(hex: string, opacity: number): string {
   const { r, g, b } = hexToRgb(isHexColor(hex) ? hex : "#171410");
   return `rgba(${r}, ${g}, ${b}, ${clampOpacity(opacity)})`;
 }
+
+function relativeLuminance(hex: string): number {
+  const { r, g, b } = hexToRgb(hex);
+  const linear = [r, g, b].map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045
+      ? value / 12.92
+      : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return (
+    0.2126 * linear[0]! +
+    0.7152 * linear[1]! +
+    0.0722 * linear[2]!
+  );
+}
+
+export function colourContrastRatio(foreground: string, background: string): number {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+export function readableTextColour(
+  requested: string,
+  background: string,
+): string {
+  if (colourContrastRatio(requested, background) >= 4.5) {
+    return requested;
+  }
+  return colourContrastRatio("#000000", background) >=
+    colourContrastRatio("#ffffff", background)
+    ? "#000000"
+    : "#ffffff";
+}

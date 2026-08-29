@@ -15,6 +15,7 @@ export type DrawingOverlayLayout = {
 export function measureDrawingOverlayLayout(
   paper: HTMLElement,
   toolPalette?: HTMLElement | null,
+  protectedHeader?: HTMLElement | null,
 ): DrawingOverlayLayout {
   const paperBounds = paper.getBoundingClientRect();
   const paperRect = {
@@ -29,6 +30,12 @@ export function measureDrawingOverlayLayout(
     const tools = toolPalette.getBoundingClientRect();
     if (tools.bottom > paperBounds.top && tools.top < paperBounds.bottom) {
       overlayTop = Math.max(overlayTop, tools.bottom + 8);
+    }
+  }
+  if (protectedHeader) {
+    const header = protectedHeader.getBoundingClientRect();
+    if (header.bottom > paperBounds.top && header.top < paperBounds.bottom) {
+      overlayTop = Math.max(overlayTop, header.bottom + 8);
     }
   }
 

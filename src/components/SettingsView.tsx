@@ -1,60 +1,105 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
-  BookHeart,
-  Check,
-  Contrast,
-  Eye,
-  Play,
-  Text,
-  WandSparkles,
+  ChevronDown,
+  Mic,
+  Palette,
 } from "lucide-react";
 
 import type {
+  BackupStatus,
+  BackupHistoryEntry,
+  BackupHistoryStatus,
   DocumentOperationInput,
   JournalSettings,
+  SettingsTabId,
 } from "../domain/models";
+import type {
+  AppleTranscriptionPlugin,
+  JournalAudioPlugin,
+  JournalFilesPlugin,
+  NativeSharePlugin,
+  RecordingSnapshot,
+} from "../native/contracts";
+import { recordingStorageAvailable } from "../native/durableAudio";
+import { collectCloudBackupAssets } from "../hooks/useBackupSync";
+import { readableDiaryText } from "../utils/diaryExport";
+import {
+  EphemeralTranscriptionError,
+  transcribeEphemeralRecording,
+} from "../native/ephemeralTranscription";
+import type { SketchRepository } from "../sketch/types";
 import type { WelcomeCopy } from "./WelcomeScreen";
+import { AboutSettingsPanel } from "./AboutSettingsPanel";
+import { AppearanceSettingsPanel } from "./AppearanceSettingsPanel";
+import { BackupSettingsPanel } from "./BackupSettingsPanel";
+import { BackupHistorySettingsPanel } from "./BackupHistorySettingsPanel";
+import { CanvasSettingsPanel } from "./CanvasSettingsPanel";
+import { MyWordsSettingsPanel } from "./MyWordsSettingsPanel";
+import { PrivacySettingsPanel } from "./PrivacySettingsPanel";
+import { SettingToggle } from "./SettingToggle";
+import {
+  DEFAULT_GREETING,
+  DEFAULT_TAGLINE,
+  WelcomeSettingsPanel,
+} from "./WelcomeSettingsPanel";
 
-const DEFAULT_GREETING = "Welcome back Ivan!";
-const DEFAULT_TAGLINE = "It's a Wonderful World!";
+const SETTINGS_TABS = [
+  { id: "about", label: "About Me" },
+  { id: "welcome", label: "Welcome" },
+  { id: "canvas", label: "Canvas" },
+  { id: "voice", label: "Voice" },
+  { id: "appearance", label: "Appearance" },
+  { id: "backup", label: "Backup" },
+] as const;
 
-function SettingToggle({
-  checked,
-  description,
-  label,
-  onChange,
-}: {
-  checked: boolean;
-  description: string;
-  label: string;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <button
-      aria-pressed={checked}
-      className="setting-row"
-      onClick={() => onChange(!checked)}
-      type="button"
-    >
-      <span>
-        <strong>{label}</strong>
-        <small>{description}</small>
-      </span>
-      <span className={checked ? "setting-check checked" : "setting-check"}>
-        {checked ? <Check aria-hidden="true" /> : null}
-      </span>
-    </button>
-  );
-}
+type BackupSectionId = "sync" | "history" | "privacy";
 
 export function SettingsView({
   settings,
+  snapshot,
+  share,
   commit,
+  audio,
+  files,
+  onEditPortrait,
+  onBackupNow,
+  onCheckBackup,
+  onKeepThisIPad,
+  onSaveLocalCopy,
+  onUseICloud,
+  historyStatus,
+  onCreateHistory,
+  onDeleteHistory,
+  onDeleteCloudData,
+  onRefreshHistory,
+  onRestoreHistory,
   onPreviewWelcome,
+  sketchRepository,
+  backupStatus,
+  transcription,
 }: {
   settings: JournalSettings;
+  snapshot: import("../domain/models").JournalSnapshot;
+  share: NativeSharePlugin;
   commit: (operation: DocumentOperationInput) => void;
+  audio: JournalAudioPlugin;
+  files: JournalFilesPlugin;
+  onEditPortrait: () => void;
+  onBackupNow: () => void;
+  onCheckBackup: () => void;
+  onKeepThisIPad: () => void;
+  onSaveLocalCopy: () => void;
+  onUseICloud: () => void;
+  historyStatus: BackupHistoryStatus;
+  onCreateHistory: () => void;
+  onDeleteHistory: (entry: BackupHistoryEntry) => void;
+  onDeleteCloudData: () => void;
+  onRefreshHistory: () => void;
+  onRestoreHistory: (entry: BackupHistoryEntry) => void;
   onPreviewWelcome: (copy: WelcomeCopy) => void;
+  sketchRepository: SketchRepository;
+  backupStatus: BackupStatus;
+  transcription: AppleTranscriptionPlugin;
 }) {
   const [welcomeGreeting, setWelcomeGreeting] = useState(
     settings.welcomeGreeting,
@@ -65,6 +110,137 @@ export function SettingsView({
   const [welcomeMessage, setWelcomeMessage] = useState(
     settings.welcomeMessage,
   );
+  const [displayName, setDisplayName] = useState(settings.displayName);
+  const displayNameInputRef = useRef<HTMLInputElement>(null);
+  const [nameRecording, setNameRecording] = useState<RecordingSnapshot>();
+  const [nameStatus, setNameStatus] = useState<string>();
+  const [activeTab, setActiveTab] = useState<SettingsTabId>(settings.lastSettingsTab);
+  const [openBackupSection, setOpenBackupSection] = useState<BackupSectionId | null>("sync");
+  const [exportState, setExportState] = useState<"idle" | "exporting" | "complete" | "warning" | "error">("idle");
+  const [exportMessage, setExportMessage] = useState<string>();
+
+  const exportCompleteDiary = async () => {
+    setExportState("exporting");
+    setExportMessage(undefined);
+    try {
+      const exported = await share.exportDiary({
+        snapshotJson: JSON.stringify(snapshot),
+        readableText: readableDiaryText(snapshot),
+        assets: await collectCloudBackupAssets(snapshot),
+      });
+      const result = await share.share({
+        title: "Export complete diary",
+        fileUris: [exported.pdfFileUri, exported.archiveFileUri],
+        sourceRect: { x: window.innerWidth / 2 - 28, y: window.innerHeight / 2 - 28, width: 56, height: 56 },
+      });
+      if (!result.completed) {
+        setExportState("idle");
+      } else if (exported.missingAssetIDs?.length) {
+        setExportState("warning");
+        setExportMessage(
+          `The diary was exported, but ${exported.missingAssetIDs.length} original ${exported.missingAssetIDs.length === 1 ? "file was" : "files were"} missing from this iPad. The archive includes a MISSING-FILES list.`,
+        );
+      } else {
+        setExportState("complete");
+      }
+    } catch (error) {
+      setExportState("error");
+      setExportMessage(
+        error instanceof Error && error.message
+          ? `The complete diary could not be exported: ${error.message}`
+          : "The complete diary could not be exported. Nothing was changed. Try again, and restart the iPad App if the problem continues.",
+      );
+    }
+  };
+
+  const saveDisplayName = (name: string) => {
+    const cleaned = name.trim() || "Ivan";
+    setDisplayName(cleaned);
+    if (cleaned !== settings.displayName) {
+      commit({
+        type: "settings-update",
+        settings: { displayName: cleaned },
+      });
+    }
+  };
+
+  const toggleSpokenName = async () => {
+    if (
+      nameRecording?.state === "recording" ||
+      nameRecording?.state === "interrupted" ||
+      nameRecording?.state === "finalising"
+    ) {
+      try {
+        setNameRecording({ ...nameRecording, state: "finalising" });
+        setNameStatus("Turning your voice into your name…");
+        const result = await transcribeEphemeralRecording({
+          audio,
+          contextualStrings: settings.myWords
+            .filter((word) => word.enabled)
+            .map((word) => word.text)
+            .slice(0, 100),
+          files,
+          transcription,
+        });
+        const spokenName = result.rawText.trim();
+        if (!spokenName) {
+          setNameStatus("No name was recognised. Your typed name is unchanged.");
+          return;
+        }
+        saveDisplayName(spokenName);
+        setNameStatus(`Name saved as ${spokenName}.`);
+      } catch (error) {
+        if (
+          error instanceof EphemeralTranscriptionError &&
+          error.failure === "finalization"
+        ) {
+          setNameStatus("Your spoken name could not be saved. Your typed name is unchanged.");
+        } else if (
+          error instanceof EphemeralTranscriptionError &&
+          error.failure === "missing-asset"
+        ) {
+          setNameStatus("No spoken name was recorded. Your typed name is unchanged.");
+        } else if (
+          error instanceof EphemeralTranscriptionError &&
+          error.failure === "permission"
+        ) {
+          setNameStatus("Speech permission is off. Your typed name is unchanged.");
+        } else {
+          setNameStatus("Your spoken name was not understood. Your typed name is unchanged.");
+        }
+      } finally {
+        setNameRecording(undefined);
+      }
+      return;
+    }
+
+    try {
+      if (!await recordingStorageAvailable(files)) {
+        setNameStatus(
+          "Storage is too low to record safely. Type your name instead.",
+        );
+        return;
+      }
+      const started = await audio.start({ maximumDurationMs: 30_000 });
+      setNameRecording(started);
+      setNameStatus("Listening. Say your name, then tap Stop.");
+    } catch {
+      setNameStatus("The microphone could not start. Type your name instead.");
+    }
+  };
+
+  const selectTab = (lastSettingsTab: SettingsTabId) => {
+    setActiveTab(lastSettingsTab);
+    commit({ type: "settings-update", settings: { lastSettingsTab } });
+  };
+
+  const selectAdjacentTab = (current: SettingsTabId, direction: -1 | 1) => {
+    const currentIndex = SETTINGS_TABS.findIndex((tab) => tab.id === current);
+    const nextIndex = (currentIndex + direction + SETTINGS_TABS.length) % SETTINGS_TABS.length;
+    const next = SETTINGS_TABS[nextIndex] ?? SETTINGS_TABS[0];
+    selectTab(next.id);
+    document.getElementById(`settings-tab-${next.id}`)?.focus();
+  };
 
   const saveWelcomeText = (
     field: "welcomeGreeting" | "welcomeTagline" | "welcomeMessage",
@@ -91,151 +267,225 @@ export function SettingsView({
     <section className="library-view" aria-labelledby="settings-heading">
       <header className="library-heading">
         <div>
-          <p className="eyebrow">Make the diary comfortable</p>
+          <p className="eyebrow">Change the Settings to Suit you</p>
           <h1 id="settings-heading">Settings</h1>
         </div>
-        <Eye aria-hidden="true" />
       </header>
 
-      <div className="settings-panel">
-        <div className="setting-group welcome-setting-group">
-          <BookHeart aria-hidden="true" />
+      <div className="settings-tabs" aria-label="Settings sections" role="tablist">
+        {SETTINGS_TABS.map((tab) => (
+          <button
+            aria-controls={`settings-panel-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            data-help-topic={`settings-${tab.id}`}
+            id={`settings-tab-${tab.id}`}
+            key={tab.id}
+            onClick={() => selectTab(tab.id)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight") {
+                event.preventDefault();
+                selectAdjacentTab(tab.id, 1);
+              } else if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                selectAdjacentTab(tab.id, -1);
+              }
+            }}
+            role="tab"
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            type="button"
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        className="settings-panel"
+        data-help-topic={`settings-${activeTab}`}
+      >
+        {activeTab === "about" ? (
+          <AboutSettingsPanel
+            displayName={displayName}
+            displayNameInputRef={displayNameInputRef}
+            nameRecording={nameRecording}
+            nameStatus={nameStatus}
+            onDisplayNameChange={setDisplayName}
+            onEditPortrait={onEditPortrait}
+            onSaveDisplayName={saveDisplayName}
+            onToggleSpokenName={() => void toggleSpokenName()}
+            sketchRepository={sketchRepository}
+          />
+        ) : null}
+
+        {activeTab === "welcome" ? (
+          <WelcomeSettingsPanel
+            greeting={welcomeGreeting}
+            message={welcomeMessage}
+            onGreetingChange={setWelcomeGreeting}
+            onMessageChange={setWelcomeMessage}
+            onPreviewWelcome={onPreviewWelcome}
+            onSaveText={saveWelcomeText}
+            onTaglineChange={setWelcomeTagline}
+            tagline={welcomeTagline}
+          />
+        ) : null}
+
+        {activeTab === "canvas" ? (
+        <div className="setting-group canvas-setting-group" id="settings-panel-canvas" role="tabpanel" aria-labelledby="settings-tab-canvas">
+          <Palette aria-hidden="true" />
+          <CanvasSettingsPanel commit={commit} settings={settings} sketchRepository={sketchRepository} />
+        </div>
+        ) : null}
+
+        {activeTab === "voice" ? (
+        <div className="setting-group" id="settings-panel-voice" role="tabpanel" aria-labelledby="settings-tab-voice">
+          <Mic aria-hidden="true" />
           <div>
-            <h2>Welcome screen</h2>
-            <p className="setting-description">
-              Choose what Ivan sees when the diary opens.
-            </p>
-            <div className="welcome-setting-fields">
-              <label>
-                Greeting
-                <input
-                  maxLength={100}
-                  onBlur={() =>
-                    saveWelcomeText("welcomeGreeting", welcomeGreeting)
-                  }
-                  onChange={(event) =>
-                    setWelcomeGreeting(event.target.value)
-                  }
-                  value={welcomeGreeting}
-                />
-              </label>
-              <label>
-                Second line
-                <input
-                  maxLength={140}
-                  onBlur={() =>
-                    saveWelcomeText("welcomeTagline", welcomeTagline)
-                  }
-                  onChange={(event) =>
-                    setWelcomeTagline(event.target.value)
-                  }
-                  value={welcomeTagline}
-                />
-              </label>
-              <label>
-                Personal message or Bible verse
-                <textarea
-                  maxLength={500}
-                  onBlur={() =>
-                    saveWelcomeText("welcomeMessage", welcomeMessage)
-                  }
-                  onChange={(event) =>
-                    setWelcomeMessage(event.target.value)
-                  }
-                  placeholder="Optional"
-                  rows={3}
-                  value={welcomeMessage}
-                />
-              </label>
-              <button
-                className="preview-welcome-action"
-                onClick={() =>
-                  onPreviewWelcome({
-                    greeting: welcomeGreeting.trim() || DEFAULT_GREETING,
-                    tagline: welcomeTagline.trim() || DEFAULT_TAGLINE,
-                    message: welcomeMessage.trim(),
+            <h2>Voice</h2>
+            <p className="setting-description">Choose a safety limit and words Apple should expect to hear.</p>
+            <section
+              aria-labelledby="voice-text-editor-heading"
+              className="voice-setting-section"
+            >
+              <h3 id="voice-text-editor-heading">Text entry</h3>
+              <SettingToggle
+                checked={settings.textEditorPreference === "native"}
+                description="Turn this off to use the standard editor. Both editors use Apple speech recognition."
+                label="Use native Apple text editor"
+                onChange={(enabled) =>
+                  commit({
+                    type: "settings-update",
+                    settings: {
+                      textEditorPreference: enabled ? "native" : "standard",
+                    },
                   })
                 }
+              />
+            </section>
+            <section className="voice-setting-section" aria-labelledby="voice-recording-heading">
+              <h3 id="voice-recording-heading">Recording time</h3>
+              <p className="setting-description">Choose how long one recording can continue before it stops safely.</p>
+              <label className="recording-limit-setting">
+                <span>Recording time limit</span>
+                <span className="recording-limit-control">
+                <select
+                  aria-label="Recording time limit"
+                  onChange={(event) => commit({
+                    type: "settings-update",
+                    settings: { recordingLimitMinutes: event.target.value === "none" ? null : Number(event.target.value) as 2 | 5 | 10 | 30 },
+                  })}
+                  value={settings.recordingLimitMinutes ?? "none"}
+                >
+                  <option value="2">2 minutes</option>
+                  <option value="5">5 minutes</option>
+                  <option value="10">10 minutes</option>
+                  <option value="30">30 minutes</option>
+                  <option value="none">No limit</option>
+                </select>
+                  <ChevronDown aria-hidden="true" />
+                </span>
+              </label>
+            </section>
+            <MyWordsSettingsPanel
+              audio={audio}
+              commit={commit}
+              files={files}
+              settings={settings}
+            />
+          </div>
+        </div>
+        ) : null}
+
+        {activeTab === "appearance" ? (
+          <AppearanceSettingsPanel commit={commit} settings={settings} />
+        ) : null}
+
+        {activeTab === "backup" ? (
+          <div
+            aria-labelledby="settings-tab-backup"
+            className="backup-sections"
+            id="settings-panel-backup"
+            role="tabpanel"
+          >
+            <section className="backup-collapsible-section">
+              <button
+                aria-controls="backup-section-sync-content"
+                aria-expanded={openBackupSection === "sync"}
+                className="backup-section-heading"
+                id="backup-section-sync-heading"
+                onClick={() => setOpenBackupSection((current) => current === "sync" ? null : "sync")}
                 type="button"
               >
-                <Play aria-hidden="true" />
-                Preview welcome screen
+                <span><strong>iCloud Sync</strong><small>Keep the latest complete diary available through your Apple ID.</small></span>
+                <ChevronDown aria-hidden="true" />
               </button>
-            </div>
-          </div>
-        </div>
+              {openBackupSection === "sync" ? (
+                <BackupSettingsPanel
+                  backupStatus={backupStatus}
+                  commit={commit}
+                  embedded
+                  onBackupNow={onBackupNow}
+                  onCheckBackup={onCheckBackup}
+                  onKeepThisIPad={onKeepThisIPad}
+                  onSaveLocalCopy={onSaveLocalCopy}
+                  onUseICloud={onUseICloud}
+                  settings={settings}
+                />
+              ) : null}
+            </section>
 
-        <div className="setting-group">
-          <WandSparkles aria-hidden="true" />
-          <div>
-            <h2>Simple controls</h2>
-            <SettingToggle
-              checked={settings.simpleMode}
-              description="Keep advanced choices out of the main diary."
-              label="Simple mode"
-              onChange={(simpleMode) =>
-                commit({ type: "settings-update", settings: { simpleMode } })
-              }
-            />
-          </div>
-        </div>
+            <section className="backup-collapsible-section">
+              <button
+                aria-controls="backup-section-history-content"
+                aria-expanded={openBackupSection === "history"}
+                className="backup-section-heading"
+                id="backup-section-history-heading"
+                onClick={() => setOpenBackupSection((current) => current === "history" ? null : "history")}
+                type="button"
+              >
+                <span><strong>History</strong><small>Create or restore dated recovery points.</small></span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+              {openBackupSection === "history" ? (
+                <BackupHistorySettingsPanel
+                  embedded
+                  historyStatus={historyStatus}
+                  onCreate={onCreateHistory}
+                  onDelete={onDeleteHistory}
+                  onRefresh={onRefreshHistory}
+                  onRestore={onRestoreHistory}
+                />
+              ) : null}
+            </section>
 
-        <div className="setting-group">
-          <Text aria-hidden="true" />
-          <div>
-            <h2>Text size</h2>
-            <div className="segmented-setting" aria-label="Text size">
-              {(["standard", "large", "extra-large"] as const).map((scale) => (
-                <button
-                  aria-pressed={settings.textScale === scale}
-                  key={scale}
-                  onClick={() =>
-                    commit({
-                      type: "settings-update",
-                      settings: { textScale: scale },
-                    })
+            <section className="backup-collapsible-section">
+              <button
+                aria-controls="backup-section-privacy-content"
+                aria-expanded={openBackupSection === "privacy"}
+                className="backup-section-heading"
+                id="backup-section-privacy-heading"
+                onClick={() => setOpenBackupSection((current) => current === "privacy" ? null : "privacy")}
+                type="button"
+              >
+                <span><strong>Privacy &amp; Export</strong><small>Export the diary or manage its private iCloud data.</small></span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+              {openBackupSection === "privacy" ? (
+                <PrivacySettingsPanel
+                  deletingCloudData={
+                    backupStatus.state === "syncing" &&
+                    backupStatus.message.startsWith("Deleting")
                   }
-                  type="button"
-                >
-                  {scale === "standard"
-                    ? "Standard"
-                    : scale === "large"
-                      ? "Large"
-                      : "Extra large"}
-                </button>
-              ))}
-            </div>
+                  embedded
+                  onDeleteCloudData={onDeleteCloudData}
+                  exportState={exportState}
+                  exportMessage={exportMessage}
+                  onExportDiary={() => void exportCompleteDiary()}
+                />
+              ) : null}
+            </section>
           </div>
-        </div>
-
-        <div className="setting-group">
-          <Contrast aria-hidden="true" />
-          <div>
-            <h2>Appearance</h2>
-            <SettingToggle
-              checked={settings.contrast === "high"}
-              description="Use stronger borders and darker text."
-              label="High contrast"
-              onChange={(highContrast) =>
-                commit({
-                  type: "settings-update",
-                  settings: { contrast: highContrast ? "high" : "warm" },
-                })
-              }
-            />
-            <SettingToggle
-              checked={settings.reducedMotion}
-              description="Stop decorative movement and animation."
-              label="Reduce motion"
-              onChange={(reducedMotion) =>
-                commit({
-                  type: "settings-update",
-                  settings: { reducedMotion },
-                })
-              }
-            />
-          </div>
-        </div>
+        ) : null}
       </div>
     </section>
   );

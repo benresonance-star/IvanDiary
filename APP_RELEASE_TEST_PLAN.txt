@@ -1,0 +1,374 @@
+IVAN DIARY — iPAD, iCLOUD, BACKUP & RELEASE TEST PLAN
+Version: 1.0
+Date prepared: 18 August 2026
+
+PURPOSE
+
+Use this plan to verify the app on physical iPads before TestFlight or App Store submission. Complete the tests using the Development CloudKit environment first. Do not deploy the CloudKit schema to Production until the Development tests pass.
+
+
+TEST RECORD
+
+App version/build: ______________________________________________
+iPad 1 model / iPadOS: __________________________________________
+iPad 2 model / iPadOS: __________________________________________
+Apple ID / test account: ________________________________________
+CloudKit environment: Development / Production
+Tester: _________________________________________________________
+Test date: ______________________________________________________
+
+Result notation: PASS / FAIL / BLOCKED / NOT RUN
+
+
+PREPARATION
+
+[ ] P-01 Install the latest build from Xcode on iPad 1.
+Expected: The app installs and opens without an error or crash.
+Result/notes: ___________________________________________________
+
+[ ] P-02 Confirm iCloud Drive is enabled and the iPad is signed in to the intended Apple ID.
+Expected: iCloud is available to the app.
+Result/notes: ___________________________________________________
+
+[ ] P-03 Open Settings > iCloud Sync and confirm the current sync state.
+Expected: The screen clearly reports its state and does not remain indefinitely busy.
+Result/notes: ___________________________________________________
+
+[ ] P-04 Open Settings > History.
+Expected: History loads without an error. A clean account may show no recovery points.
+Result/notes: ___________________________________________________
+
+
+1. CLEAN INSTALL AND DEFAULT CONTENT
+
+[ ] T-01 Delete the test build from an iPad that has no required local-only test data, reinstall it, and open it without restoring data.
+Expected: The current Journal date opens with a blank canvas. No dummy content appears.
+Result/notes: ___________________________________________________
+
+[ ] T-02 Review Journal, Sketchbook, Story, Welcome, and portrait areas.
+Expected: Each area is usable and contains only intentional default content.
+Result/notes: ___________________________________________________
+
+
+2. CREATE REPRESENTATIVE CONTENT
+
+[ ] T-03 In Journal, create content containing typed text, a drawing, at least two photos, audio, and a web link.
+Expected: Every item appears correctly and remains usable after navigating away and back.
+Result/notes: ___________________________________________________
+
+[ ] T-04 Create or modify content on more than one Journal date/page.
+Expected: Content remains associated with the correct date and page.
+Result/notes: ___________________________________________________
+
+[ ] T-05 In Sketchbook, create more than one sketchbook/page and add drawings, text, and an image where supported.
+Expected: All pages and objects save correctly.
+Result/notes: ___________________________________________________
+
+[ ] T-06 In Story, create content on more than one canvas/page, including drawings and media where supported.
+Expected: All pages and objects save correctly.
+Result/notes: ___________________________________________________
+
+[ ] T-07 Modify Welcome page content and its sketches.
+Expected: The modifications remain after navigating away and returning.
+Result/notes: ___________________________________________________
+
+[ ] T-08 Modify the portrait sketch.
+Expected: The portrait remains correctly proportioned after closing and reopening it.
+Result/notes: ___________________________________________________
+
+[ ] T-09 Favourite a Journal item and a Sketchbook.
+Expected: Both cards use the intended green favourite thumb and background. The thumb is above the canvas preview and no unwanted green circle surrounds the Sketchbook preview.
+Result/notes: ___________________________________________________
+
+[ ] T-10 Inspect Favourite and Sketchbook card previews.
+Expected: Each preview shows the complete canvas at the correct aspect ratio; it is not incorrectly zoomed, cropped, blank, or distorted.
+Result/notes: ___________________________________________________
+
+
+3. APP RESTART AND LOCAL PERSISTENCE
+
+[ ] T-11 Fully close and reopen the app.
+Expected: All created content is present, including text, drawings, photos, audio, links, Welcome content, and portrait changes.
+Result/notes: ___________________________________________________
+
+[ ] T-12 Inspect drawings before selecting the draw tool.
+Expected: Drawings render immediately; changing tools is not required to make them appear.
+Result/notes: ___________________________________________________
+
+[ ] T-13 Inspect the portrait before opening or editing it.
+Expected: It is correctly proportioned immediately and does not repair itself only after being opened.
+Result/notes: ___________________________________________________
+
+
+4. LATEST iCLOUD BACKUP
+
+[ ] T-14 In Settings > iCloud Sync, start a manual backup while watching general app responsiveness.
+Expected: A clear progress/busy state appears. The app does not freeze, lose edits, or become unusably slow.
+Result/notes: ___________________________________________________
+
+[ ] T-15 Wait for backup completion.
+Expected: The app reports successful completion. No photo, sketch, audio, link, or other asset remains indefinitely waiting.
+Result/notes: ___________________________________________________
+
+[ ] T-16 During or immediately after a backup, make a further edit and back up again.
+Expected: The latest edit is either included safely or identified as pending; the earlier complete backup is not silently replaced by an incomplete backup.
+Result/notes: ___________________________________________________
+
+[ ] T-17 If network access is interrupted during backup, observe the result, then reconnect and retry.
+Expected: The app reports failure or pending work accurately. It does not claim success for an incomplete backup, and retry completes without duplicate visible content.
+Result/notes: ___________________________________________________
+
+
+5. RECOVERY-POINT HISTORY
+
+[ ] T-18 In Settings > History, create a recovery point.
+Expected: A clear success message appears and the new recovery point is listed.
+Result/notes: ___________________________________________________
+
+[ ] T-19 Create several recovery points on the same calendar day.
+Expected: The normal History list exposes only the latest recovery point for that day.
+Result/notes: ___________________________________________________
+
+[ ] T-20 Change representative content, then create a recovery point on a later test day (or with an approved test-date method).
+Expected: One recovery point is visible for each retained recent day.
+Result/notes: ___________________________________________________
+
+[ ] T-21 Verify retention with suitable dated test data.
+Expected: The latest five distinct entry days are retained; older history is reduced to one weekly recovery point for the configured number of weeks (currently 12).
+Result/notes: ___________________________________________________
+
+[ ] T-22 Select an older recovery point and restore it.
+Expected: The app creates/protects a pre-restore safety point, restores the selected point, and shows an unambiguous completion message.
+Result/notes: ___________________________________________________
+
+[ ] T-23 After restore, inspect every content category.
+Expected: Journal dates/pages, Sketchbooks/pages, Story canvases/pages, Welcome content/sketches, modified portrait, text, drawings, photos, audio, links, favourites, and previews all match the selected recovery point.
+Result/notes: ___________________________________________________
+
+[ ] T-24 Restore a same-day recovery point where another same-day point exists.
+Expected: The selected target is not removed or overwritten by creation of the pre-restore safety point.
+Result/notes: ___________________________________________________
+
+[ ] T-25 Restore the pre-restore safety point if it is offered.
+Expected: The app returns to the state that existed immediately before T-22/T-24.
+Result/notes: ___________________________________________________
+
+
+6. NEW-iPAD FULL RECOVERY
+
+[ ] T-26 Install the latest build on iPad 2, signed in to the same Apple ID, without copying local app data from iPad 1.
+Expected: The app detects recoverable iCloud data and offers a clear recovery choice.
+Result/notes: ___________________________________________________
+
+[ ] T-27 Restore the latest iCloud state on iPad 2.
+Expected: A clear success message appears. The app does not report query/index errors.
+Result/notes: ___________________________________________________
+
+[ ] T-28 Before opening editors or changing tools, inspect all restored content.
+Expected: Journal, Sketchbook, Story, Welcome, portrait, drawings, photos, audio, links, canvases/pages, favourites, and previews render immediately and correctly.
+Result/notes: ___________________________________________________
+
+[ ] T-29 Play restored audio and open restored links and images.
+Expected: Audio plays, links open correctly, and images contain their real data rather than placeholders only.
+Result/notes: ___________________________________________________
+
+[ ] T-30 Open Settings > History on iPad 2.
+Expected: The retained recovery-point history from iPad 1 is present, with one normal visible point per day.
+Result/notes: ___________________________________________________
+
+[ ] T-31 Restore an older recovery point on iPad 2.
+Expected: The complete historical state restores and a clear completion message appears.
+Result/notes: ___________________________________________________
+
+
+7. TWO-iPAD SYNC AND CONFLICT TESTS
+
+IMPORTANT: The current release should be treated as a whole-app latest-state sync, not a field-by-field merge. Until conflict behaviour is explicitly approved, avoid editing concurrently on two iPads in normal use.
+
+[ ] T-32 With iPad 2 idle, edit on iPad 1, complete a backup, and recover/sync on iPad 2.
+Expected: iPad 2 receives the complete state from iPad 1 without losing assets.
+Result/notes: ___________________________________________________
+
+[ ] T-33 With iPad 1 idle, edit on iPad 2, complete a backup, and recover/sync on iPad 1.
+Expected: iPad 1 receives the complete state from iPad 2 without losing assets.
+Result/notes: ___________________________________________________
+
+[ ] T-34 Make different edits on both iPads before either receives the other device's latest state, then attempt backup/sync.
+Expected: Record the exact behaviour. The app must not silently lose content while presenting the operation as safely merged. A conflict, overwrite warning, or defined latest-state policy is required before concurrent editing can be supported.
+Result/notes: ___________________________________________________
+
+[ ] T-35 Repeat T-34 with one iPad offline, then reconnect it.
+Expected: Record the exact behaviour and confirm no incomplete backup is presented as a valid complete state.
+Result/notes: ___________________________________________________
+
+
+8. DELETE iCLOUD DATA
+
+WARNING: Perform these tests only with disposable Development data. Confirm that the local diary is backed up separately if it matters.
+
+[ ] T-36 In the Privacy settings section, select the action to delete the app's iCloud data and cancel at the confirmation prompt.
+Expected: Nothing is deleted.
+Result/notes: ___________________________________________________
+
+[ ] T-37 Select deletion again and confirm it.
+Expected: A clear busy state and completion message appear. Local diary content remains on the current iPad.
+Result/notes: ___________________________________________________
+
+[ ] T-38 Inspect the Development CloudKit database after deletion.
+Expected: Current Snapshot, Asset, History, HistoryBlob, and HistoryIndex records belonging to the test app/account are removed.
+Result/notes: ___________________________________________________
+
+[ ] T-39 Reinstall on iPad 2 or check recovery from a clean installation.
+Expected: Deleted iCloud state and recovery points are no longer offered.
+Result/notes: ___________________________________________________
+
+[ ] T-40 Inspect for legacy development asset records created by older builds.
+Expected: No unexplained stale records remain. If legacy records exist, clear/reset the disposable Development environment before final production-schema deployment.
+Result/notes: ___________________________________________________
+
+
+9. CLOUDKIT DEVELOPMENT SCHEMA CHECK
+
+[ ] T-41 After running a complete backup and creating a recovery point with the updated app, open CloudKit Console for the Development environment.
+Expected: These record types exist: IvanDiarySnapshot, IvanDiaryAsset, IvanDiaryHistory, IvanDiaryHistoryBlob, and IvanDiaryHistoryIndex.
+Result/notes: ___________________________________________________
+
+[ ] T-42 Inspect IvanDiarySnapshot.
+Expected: Fields include expectedAssetIDs and knownAssetRecordNames.
+Result/notes: ___________________________________________________
+
+[ ] T-43 Inspect IvanDiaryHistory.
+Expected: Field blobRecordNames exists.
+Result/notes: ___________________________________________________
+
+[ ] T-44 Inspect IvanDiaryHistoryIndex.
+Expected: Field blobRecordNames exists.
+Result/notes: ___________________________________________________
+
+[ ] T-45 Inspect indexes.
+Expected: IvanDiaryHistory.recordName is marked queryable and all queries used by the app operate without a CloudKit index error.
+Result/notes: ___________________________________________________
+
+[ ] T-46 Only after all Development tests pass, deploy the complete CloudKit schema to Production.
+Expected: Production contains every required record type, field, and index. No user data is manually copied from Development.
+Result/notes: ___________________________________________________
+
+
+10. PRIVACY, PERMISSIONS, AND ACCESSIBILITY
+
+[ ] T-47 Open the in-app Privacy section.
+Expected: It explains local/private iCloud storage, microphone and speech use, sharing, retention, and iCloud-data deletion in plain language.
+Result/notes: ___________________________________________________
+
+[ ] T-48 Trigger microphone/speech access for the first time.
+Expected: iPadOS permission prompts appear at the time the feature is used, and the feature handles both approval and refusal gracefully.
+Result/notes: ___________________________________________________
+
+[ ] T-49 Review the public Privacy Policy and Support pages from their HTTPS URLs.
+Expected: Both pages load publicly without authentication. The policy matches actual app collection, iCloud use, permissions, retention, and deletion behaviour.
+Privacy Policy URL: _____________________________________________
+Support URL: ____________________________________________________
+Result/notes: ___________________________________________________
+
+[ ] T-50 Test primary flows using VoiceOver.
+Expected: Settings tabs, dialogs, cards, favourite controls, backup controls, History entries, confirmation buttons, and editor toolbar controls have understandable names and focus order.
+Result/notes: ___________________________________________________
+
+[ ] T-51 Test larger text, portrait/landscape rotation where supported, Reduce Motion, and sufficient colour contrast.
+Expected: Important content and controls remain visible, readable, and operable.
+Result/notes: ___________________________________________________
+
+[ ] T-52 Test all modal dialogs with an external keyboard.
+Expected: Focus enters the dialog, controls can be reached and activated, Escape/Cancel works where appropriate, and focus returns sensibly afterward.
+Result/notes: ___________________________________________________
+
+
+11. RELIABILITY AND PERFORMANCE
+
+[ ] T-53 Create a realistically large diary with many pages and media assets, then make a backup and recovery point.
+Expected: Operations complete without crash, data loss, excessive heat, or unacceptable UI blocking. Progress remains understandable.
+Result/notes: ___________________________________________________
+
+[ ] T-54 Test backup and restore with low storage space.
+Expected: The app reports insufficient space safely and does not replace a valid backup with a corrupt or partial one.
+Result/notes: ___________________________________________________
+
+[ ] T-55 Test slow, interrupted, and unavailable networks.
+Expected: Failures are clear and recoverable; retries do not create corrupt or misleading recovery points.
+Result/notes: ___________________________________________________
+
+[ ] T-56 Repeatedly background/foreground the app during ordinary editing, backup, and restore.
+Expected: No crash or silent data loss occurs. Interrupted work resumes or fails clearly.
+Result/notes: ___________________________________________________
+
+
+12. TESTFLIGHT AND APP STORE PREPARATION
+
+[ ] T-57 Create an Archive using the final Release configuration and upload it to App Store Connect/TestFlight.
+Expected: Upload and processing complete without blocking validation errors.
+Result/notes: ___________________________________________________
+
+[ ] T-58 Confirm the submitted build is iPad-only.
+Expected: Supported device family is iPad, and the App Store listing does not claim iPhone support.
+Result/notes: ___________________________________________________
+
+[ ] T-59 Complete App Store Connect metadata.
+Expected: App name, subtitle, description, keywords, category, age rating, copyright, version notes, support URL, and privacy-policy URL are accurate.
+Result/notes: ___________________________________________________
+
+[ ] T-60 Complete App Privacy answers.
+Expected: Answers match the app's privacy manifest and actual handling of name, photos/videos, audio, and other user content. iCloud/private-database behaviour is described accurately.
+Result/notes: ___________________________________________________
+
+[ ] T-61 Supply current iPad screenshots for every required display size and complete export-compliance/content-rights questions.
+Expected: App Store Connect shows no missing required metadata.
+Result/notes: ___________________________________________________
+
+[ ] T-62 Install the TestFlight build on a clean physical iPad and repeat the critical path: create content, backup, recovery point, reinstall/new-device restore, historical restore, and cloud deletion.
+Expected: Results match the Xcode Development build and no release-only fault appears.
+Result/notes: ___________________________________________________
+
+
+RELEASE-BLOCKING ACCEPTANCE CRITERIA
+
+Do not submit for App Review until all of the following are true:
+
+[ ] No known content type is missing after latest-state or historical restore.
+[ ] Photos contain their binaries; drawings render without changing tools; audio plays; links work.
+[ ] Welcome content, Welcome sketches, and modified portrait restore correctly.
+[ ] Portraits and card previews render with the correct aspect ratio immediately.
+[ ] Normal History shows one recovery point per retained day.
+[ ] Same-day restore cannot delete or overwrite the selected recovery target.
+[ ] Incomplete backups cannot replace or masquerade as a valid complete backup.
+[ ] New-iPad recovery restores both the latest state and retained History.
+[ ] iCloud-data deletion is confirmed, accurately reported, and leaves local data intact.
+[ ] Two-iPad behaviour has been tested and an acceptable conflict policy is documented.
+[ ] The complete CloudKit schema and indexes have been deployed to Production.
+[ ] Public Privacy Policy and Support URLs are live and entered in the app/listing where required.
+[ ] App Store privacy answers match actual behaviour and the privacy manifest.
+[ ] VoiceOver and keyboard testing reveal no blocking accessibility issue.
+[ ] A clean-iPad TestFlight end-to-end test passes.
+[ ] No reproducible crash, data-loss issue, or indefinite sync state remains.
+
+
+ISSUE LOG
+
+Issue ID: ____________________  Test ID: __________________________
+Severity: Critical / High / Medium / Low
+Description: ____________________________________________________
+_________________________________________________________________
+Reproduction steps: _____________________________________________
+_________________________________________________________________
+Expected: _______________________________________________________
+Actual: _________________________________________________________
+Screenshot/video attached: Yes / No
+Status/owner: ___________________________________________________
+
+
+FINAL SIGN-OFF
+
+Development CloudKit tests passed by/date: _______________________
+Production schema deployed by/date: ______________________________
+TestFlight clean-iPad test passed by/date: ________________________
+Privacy and App Store metadata reviewed by/date: _________________
+Release approved by/date: ________________________________________

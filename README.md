@@ -1,13 +1,13 @@
 # Ivan's Diary
 
-An accessible, voice-first journal for iPad and iPhone. The application uses a
+An accessible, voice-first journal for iPad. The application uses a
 React and TypeScript interface inside a Capacitor iOS shell. Drawing, page
 composition and local-first data contracts are kept independent from native
 audio, transcription and file services.
 
 ## Current milestone
 
-The Windows development foundation includes:
+The current implementation includes:
 
 - the responsive Interface V2 shell;
 - an isolated, pressure-aware Canvas 2D `SketchSurface`;
@@ -19,18 +19,30 @@ The Windows development foundation includes:
 - operation replay, idempotency, schema migration and recovery tests;
 - working Diary, Sketchbooks, Favourites and accessibility Settings views;
 - constrained text, photo, link, transcript and voice-card composition;
-- an accessible Arrange mode for moving and stretching page objects;
+- an accessible Edit mode for moving and stretching page objects;
 - durable multi-page diary days with visual, reorderable page thumbnails;
 - named, multi-page sketchbooks using the full shared page workspace;
 - typed or spoken sketchbook naming, renaming and directory reordering;
-- clearly labelled browser audio/transcription simulations; and
+- native iPad audio recording and Apple Speech transcription alongside clearly
+  labelled browser simulations; and
 - strict type checking, linting, unit tests and production builds.
 
-The browser repository is only for development. The production iOS repository
-will use SQLite and native durable files. Voice controls intentionally do not
-access the microphone: browser recording and transcription are explicitly
-labelled demonstrations until the AVFoundation and Apple Speech bridges are
-installed and tested.
+The browser repository is only for development. Production iOS stores the
+journal snapshot, checkpoint and pending operation log atomically in protected
+Application Support storage; recordings, photos and PencilKit drawings use
+native durable files. Voice controls in the browser intentionally do not access
+the microphone: browser recording and transcription remain explicitly labelled
+demonstrations, while production iPad builds use native AVFoundation and Apple
+Speech bridges.
+
+## For contributors and coding agents
+
+Start with [AGENTS.md](AGENTS.md) and the
+[current implementation state](docs/CURRENT_STATE.md). See the
+[architecture index](docs/architecture/INDEX.md),
+[architecture decisions](docs/adr/README.md),
+[test matrix](docs/TEST_MATRIX.md), and
+[planning guide](docs/plans/README.md) before making changes.
 
 ## Commands
 
@@ -43,8 +55,9 @@ npm test
 npm run build
 ```
 
-See the [next-stage implementation plan](Specs/next-stage-plan.md) for the
-native local-reliability sequence and acceptance gates.
+The former [next-stage implementation plan](Specs/next-stage-plan.md) is
+retained as historical context; current work is tracked in
+[active plans](docs/plans/README.md).
 
 The Capacitor iOS shell is checked in. After pulling native changes on the Mac:
 
@@ -58,8 +71,8 @@ in-place PencilKit overlay aligned to the paper. Leaving Draw/Erase saves a
 PNG preview onto the page. The browser keeps the web canvas for Windows
 development.
 
-PencilKit uses the local package at `packages/ApplePlatformServices`. In
-Xcode, choose **File → Add Package Dependencies… → Add Local…**, select that
-folder, and add the `AppleDrawingKit` product to the **App** target. This
-one-time Xcode action records the package reference in the project. Do not
-edit `project.pbxproj` manually.
+The Apple services use the local package at `packages/ApplePlatformServices`.
+The checked-in Xcode project already links its `AppleDrawingKit` and
+`AppleAudioServices` products to the **App** target. If the package reference
+ever needs restoring, use **File → Add Package Dependencies… → Add Local…** in
+Xcode and select that folder. Do not edit `project.pbxproj` manually.

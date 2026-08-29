@@ -17,6 +17,7 @@ describe("NativeSketchPreview", () => {
         saved: true,
         available: true,
         previewSrc: "capacitor://localhost/preview-one.png",
+        goldMaskSrc: "capacitor://localhost/gold-one.png",
       })
       .mockResolvedValueOnce({
         saved: true,
@@ -33,6 +34,9 @@ describe("NativeSketchPreview", () => {
         "capacitor://localhost/preview-one.png",
       ),
     );
+    expect(container.querySelector(".native-sketch-gold-view")).toHaveStyle({
+      maskImage: 'url("capacitor://localhost/gold-one.png")',
+    });
 
     act(() => {
       globalThis.dispatchEvent(
@@ -80,5 +84,53 @@ describe("NativeSketchPreview", () => {
       top: "64px",
       height: "calc(100% - 64px)",
     });
+  });
+
+  it("renders thumbnails from source canvas coordinates", async () => {
+    vi.spyOn(pencilKit, "hasNativePencilKit").mockReturnValue(true);
+    const getPreview = vi
+      .spyOn(pencilKit, "getNativeDrawingPreview")
+      .mockResolvedValue({ saved: true, available: false });
+
+    render(
+      <NativeSketchPreview
+        documentId="drawing-one"
+        renderSize={{ width: 1200, height: 820 }}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(getPreview).toHaveBeenCalledWith("drawing-one", {
+        width: 1200,
+        height: 820,
+      }),
+    );
+  });
+
+  it("recovers the saved drawable inset from the preview aspect ratio", async () => {
+    vi.spyOn(pencilKit, "hasNativePencilKit").mockReturnValue(true);
+    vi.spyOn(pencilKit, "getNativeDrawingPreview").mockResolvedValue({
+      saved: true,
+      available: true,
+      previewSrc: "capacitor://localhost/preview.png",
+    });
+
+    const { container } = render(
+      <NativeSketchPreview
+        documentId="drawing-one"
+        paperAspectRatio={16 / 9}
+      />,
+    );
+    const preview = await waitFor(() => container.querySelector("img")!);
+    Object.defineProperties(preview, {
+      naturalWidth: { configurable: true, value: 1600 },
+      naturalHeight: { configurable: true, value: 720 },
+    });
+    preview.dispatchEvent(new Event("load", { bubbles: true }));
+
+    await waitFor(() => expect(preview).toHaveStyle({
+      top: "20%",
+      height: "80%",
+    }));
   });
 });

@@ -1,4 +1,4 @@
-import type { SaveHealth } from "../domain/models";
+import type { DrawingGridSettings } from "../domain/models";
 import {
   hideNativeDrawingOverlay,
   showNativeDrawingOverlay,
@@ -6,16 +6,37 @@ import {
 } from "../native/pencilKit";
 import { toLegacyInkDocument } from "../sketch/legacyInk";
 import type { SketchRepository } from "../sketch/types";
+import type { PenNib } from "../sketch/types";
+import type {
+  NativeOverlayShape,
+  PencilKitPassthroughRect,
+} from "../native/contracts";
 import type { OverlayRect } from "../sketch/drawingOverlayLayout";
 
 export type NativeDrawingOverlayRequest = {
   owner: symbol;
   documentId: string;
   color: string;
+  material?: "solid" | "scripture-gold";
+  goldFinish?: "smooth" | "raised" | "sparkle";
+  nib?: PenNib;
   width: number;
   opacity: number;
+  fingerDrawing?: boolean;
+  twoFingerUndo?: boolean;
   tool: "pen" | "eraser";
   rect: OverlayRect;
+  clipShape?: "circle";
+  grid?: DrawingGridSettings;
+  gridOriginX?: number;
+  gridOriginY?: number;
+  gridPageWidth?: number;
+  gridPageHeight?: number;
+  gridDocumentWidth?: number;
+  gridDocumentHeight?: number;
+  overlayShapes?: NativeOverlayShape[];
+  passthroughRects?: PencilKitPassthroughRect[];
+  visualHoleRects?: PencilKitPassthroughRect[];
   sketchRepository: SketchRepository;
   onError?: (message: string) => void;
 };
@@ -23,6 +44,7 @@ export type NativeDrawingOverlayRequest = {
 export type NativeDrawingOverlayState = {
   active: boolean;
   documentId?: string;
+  failed?: boolean;
   owner?: symbol;
 };
 
@@ -41,19 +63,51 @@ const defaultOperations: NativeDrawingOverlayOperations = {
     showNativeDrawingOverlay({
       documentId: request.documentId,
       color: request.color,
+      material: request.material,
+      goldFinish: request.goldFinish,
+      nib: request.nib ?? "pen",
       width: request.width,
       opacity: request.opacity,
+      fingerDrawing: request.fingerDrawing ?? true,
+      twoFingerUndo: request.twoFingerUndo ?? true,
       tool: request.tool,
       rect: request.rect,
+      clipShape: request.clipShape,
       legacyInk,
+      grid: request.grid,
+      gridOriginX: request.gridOriginX,
+      gridOriginY: request.gridOriginY,
+      gridPageWidth: request.gridPageWidth,
+      gridPageHeight: request.gridPageHeight,
+      gridDocumentWidth: request.gridDocumentWidth,
+      gridDocumentHeight: request.gridDocumentHeight,
+      overlayShapes: request.overlayShapes,
+      passthroughRects: request.passthroughRects,
+      visualHoleRects: request.visualHoleRects,
     }),
   update: (request) =>
     updateNativeDrawingOverlay({
       color: request.color,
+      material: request.material,
+      goldFinish: request.goldFinish,
+      nib: request.nib ?? "pen",
       width: request.width,
       opacity: request.opacity,
+      fingerDrawing: request.fingerDrawing ?? true,
+      twoFingerUndo: request.twoFingerUndo ?? true,
       tool: request.tool,
       rect: request.rect,
+      clipShape: request.clipShape,
+      grid: request.grid,
+      gridOriginX: request.gridOriginX,
+      gridOriginY: request.gridOriginY,
+      gridPageWidth: request.gridPageWidth,
+      gridPageHeight: request.gridPageHeight,
+      gridDocumentWidth: request.gridDocumentWidth,
+      gridDocumentHeight: request.gridDocumentHeight,
+      overlayShapes: request.overlayShapes,
+      passthroughRects: request.passthroughRects,
+      visualHoleRects: request.visualHoleRects,
     }),
 };
 
@@ -84,6 +138,9 @@ export class NativeDrawingOverlayCoordinator {
   request(request: NativeDrawingOverlayRequest): void {
     this.#desired = request;
     this.#lastErrorHandler = request.onError;
+    if (this.#state.failed && this.#state.owner === request.owner) {
+      this.#publish({ active: false, owner: request.owner });
+    }
     this.#version += 1;
     this.#startReconciliation();
   }
@@ -95,6 +152,24 @@ export class NativeDrawingOverlayCoordinator {
     this.#desired = undefined;
     this.#version += 1;
     this.#startReconciliation();
+  }
+
+  async releaseAndWait(owner: symbol): Promise<boolean> {
+    this.release(owner);
+    while (this.#reconciliation) {
+      await this.#reconciliation;
+    }
+    return !this.#state.active && this.#presentedDocumentId === undefined;
+  }
+
+  async suspendAndWait(): Promise<boolean> {
+    this.#desired = undefined;
+    this.#version += 1;
+    this.#startReconciliation();
+    while (this.#reconciliation) {
+      await this.#reconciliation;
+    }
+    return !this.#state.active && this.#presentedDocumentId === undefined;
   }
 
   subscribe(listener: (state: NativeDrawingOverlayState) => void): () => void {
@@ -191,6 +266,20 @@ export class NativeDrawingOverlayCoordinator {
             this.#presentedDocumentId = desired.documentId;
             this.#presentedOwner = desired.owner;
 
+            if (legacyInk && result.importedLegacyStrokes) {
+              const health = await desired.sketchRepository.save({
+                ...sketch,
+                strokes: [],
+                revision: sketch.revision + 1,
+              });
+              if (health.localDurability === "error") {
+                desired.onError?.(
+                  health.message ??
+                    "The previous drawing could not be marked as imported.",
+                );
+              }
+            }
+
             if (
               processedVersion === this.#version &&
               this.#desired?.owner === desired.owner
@@ -201,27 +290,15 @@ export class NativeDrawingOverlayCoordinator {
                 owner: desired.owner,
               });
             }
-
-            if (legacyInk && result.importedLegacyStrokes) {
-              void desired.sketchRepository
-                .save({
-                  ...sketch,
-                  strokes: [],
-                  revision: sketch.revision + 1,
-                })
-                .then((health: SaveHealth) => {
-                  if (health.localDurability === "error") {
-                    desired.onError?.(
-                      health.message ??
-                        "The previous drawing could not be marked as imported.",
-                    );
-                  }
-                });
-            }
           } catch (error) {
             this.#presentedDocumentId = undefined;
             this.#presentedOwner = undefined;
-            this.#publish({ active: false });
+            this.#publish({
+              active: false,
+              documentId: desired.documentId,
+              failed: true,
+              owner: desired.owner,
+            });
             this.#report(error, "The drawing overlay could not be opened.");
             return;
           }

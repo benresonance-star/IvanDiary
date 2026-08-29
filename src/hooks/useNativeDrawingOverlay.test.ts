@@ -8,6 +8,10 @@ import {
   type NativeDrawingOverlayOperations,
   type NativeDrawingOverlayRequest,
 } from "./nativeDrawingOverlayCoordinator";
+import {
+  measureNativePassthroughRects,
+  shouldReserveNativeDrawingInput,
+} from "./useNativeDrawingOverlay";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -65,6 +69,29 @@ describe("useNativeDrawingOverlay helpers", () => {
     expect(hasNativePencilKit()).toBe(false);
   });
 
+  it("reserves input during native presentation but falls back after failure", () => {
+    expect(shouldReserveNativeDrawingInput(true, true, false)).toBe(true);
+    expect(shouldReserveNativeDrawingInput(true, true, true)).toBe(false);
+    expect(shouldReserveNativeDrawingInput(true, false, false)).toBe(false);
+    expect(shouldReserveNativeDrawingInput(false, true, false)).toBe(false);
+  });
+
+  it("measures voice passthrough regions relative to and clipped by the overlay", () => {
+    expect(
+      measureNativePassthroughRects(
+        { x: 100, y: 80, width: 400, height: 300 },
+        [
+          { left: 80, top: 100, right: 180, bottom: 160 },
+          { left: 450, top: 330, right: 540, bottom: 420 },
+          { left: 10, top: 10, right: 20, bottom: 20 },
+        ],
+      ),
+    ).toEqual([
+      { x: 0, y: 20, width: 80, height: 60 },
+      { x: 350, y: 250, width: 50, height: 50 },
+    ]);
+  });
+
   it("updates pen and eraser in place without hiding the overlay", async () => {
     const native = operations();
     const coordinator = new NativeDrawingOverlayCoordinator(native);
@@ -82,6 +109,44 @@ describe("useNativeDrawingOverlay helpers", () => {
     expect(native.show).toHaveBeenCalledTimes(1);
     expect(native.hide).not.toHaveBeenCalled();
     expect(coordinator.state.active).toBe(true);
+  });
+
+  it("updates visual hole rects without adding them to voice passthrough", async () => {
+    const native = operations();
+    const coordinator = new NativeDrawingOverlayCoordinator(native);
+    const { request } = fixture();
+    const passthroughRects = [{ x: 40, y: 60, width: 180, height: 72 }];
+    const visualHoleRects = [{ x: 10, y: 20, width: 80, height: 40 }];
+
+    coordinator.request(request);
+    await waitFor(() => expect(coordinator.state.active).toBe(true));
+    coordinator.request({ ...request, passthroughRects, visualHoleRects });
+
+    await waitFor(() =>
+      expect(native.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({ passthroughRects, visualHoleRects }),
+      ),
+    );
+    expect(native.hide).not.toHaveBeenCalled();
+  });
+
+  it("updates voice passthrough regions without hiding the overlay", async () => {
+    const native = operations();
+    const coordinator = new NativeDrawingOverlayCoordinator(native);
+    const { request } = fixture();
+    const passthroughRects = [{ x: 40, y: 60, width: 180, height: 72 }];
+
+    coordinator.request(request);
+    await waitFor(() => expect(coordinator.state.active).toBe(true));
+    coordinator.request({ ...request, passthroughRects });
+
+    await waitFor(() =>
+      expect(native.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({ passthroughRects }),
+      ),
+    );
+    expect(native.show).toHaveBeenCalledTimes(1);
+    expect(native.hide).not.toHaveBeenCalled();
   });
 
   it("applies the latest tool before acknowledging a pending presentation", async () => {
@@ -111,6 +176,25 @@ describe("useNativeDrawingOverlay helpers", () => {
     expect(native.hide).not.toHaveBeenCalled();
   });
 
+  it("reports a failed presentation to release the web drawing fallback", async () => {
+    const native = operations(
+      vi.fn().mockRejectedValue(new Error("presentation failed")),
+    );
+    const coordinator = new NativeDrawingOverlayCoordinator(native);
+    const { owner, request } = fixture();
+
+    coordinator.request(request);
+
+    await waitFor(() =>
+      expect(coordinator.state).toEqual({
+        active: false,
+        documentId: "drawing-one",
+        failed: true,
+        owner,
+      }),
+    );
+  });
+
   it("hides a presentation that completes after its owner releases it", async () => {
     const pendingShow = deferred<{ importedLegacyStrokes: boolean }>();
     const native = operations(vi.fn(() => pendingShow.promise));
@@ -124,6 +208,19 @@ describe("useNativeDrawingOverlay helpers", () => {
 
     await waitFor(() => expect(native.hide).toHaveBeenCalledWith("drawing-one"));
     await waitFor(() => expect(coordinator.state).toEqual({ active: false }));
+  });
+
+  it("waits for the active overlay to hide before app UI opens above it", async () => {
+    const native = operations();
+    const coordinator = new NativeDrawingOverlayCoordinator(native);
+    const { request } = fixture();
+
+    coordinator.request(request);
+    await waitFor(() => expect(coordinator.state.active).toBe(true));
+
+    await expect(coordinator.suspendAndWait()).resolves.toBe(true);
+    expect(native.hide).toHaveBeenCalledWith("drawing-one");
+    expect(coordinator.state).toEqual({ active: false });
   });
 
   it("hides the previous document before presenting a replacement", async () => {

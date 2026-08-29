@@ -3,14 +3,18 @@ import { describe, expect, it, vi } from "vitest";
 import {
   BrowserAppleTranscriptionMock,
   BrowserAppLifecycleMock,
+  BrowserCloudBackupMock,
   BrowserJournalAudioMock,
   BrowserJournalFilesMock,
+  BrowserNativeShareMock,
 } from "./browserMocks";
 import {
   CapacitorAppleTranscriptionAdapter,
   CapacitorAppLifecycleAdapter,
+  CapacitorCloudBackupAdapter,
   CapacitorJournalAudioAdapter,
   CapacitorJournalFilesAdapter,
+  CapacitorNativeShareAdapter,
   type CapacitorPluginContracts,
 } from "./capacitorAdapters";
 import { createAppServices } from "./composition";
@@ -19,6 +23,7 @@ import type {
   AppleTranscriptionPlugin,
   JournalAudioPlugin,
   JournalFilesPlugin,
+  NativeSharePlugin,
   RecordingSnapshot,
 } from "./contracts";
 import { JournalServiceError } from "./errors";
@@ -42,7 +47,11 @@ function pluginDoubles(): CapacitorPluginContracts {
       start: vi.fn(async () => RECORDING),
       status: vi.fn(async () => RECORDING),
       stop: vi.fn(async () => RECORDING),
+      acknowledgeSaved: vi.fn(async () => RECORDING),
       recoverInterrupted: vi.fn(async () => ({ recordings: [RECORDING] })),
+      play: vi.fn(async () => ({ playing: true })),
+      pausePlayback: vi.fn(async () => ({ playing: false })),
+      addListener: vi.fn(async () => ({ remove: async () => undefined })),
     },
     transcription: {
       requestPermission: vi.fn(async () => ({ granted: true })),
@@ -62,6 +71,15 @@ function pluginDoubles(): CapacitorPluginContracts {
         checksum: "checksum-1",
       })),
       removeToTrash: vi.fn(async () => undefined),
+      resolveStoredAssets: vi.fn(async ({ assets }) => ({
+        resolvedAssetUris: Object.fromEntries(
+          assets.map((asset: { id: string; localUri: string }) => [
+            asset.id,
+            asset.localUri,
+          ]),
+        ),
+        unresolvedAssetIds: [],
+      })),
       storageHealth: vi.fn(async () => ({
         availableBytes: 4096,
         lowStorage: false,
@@ -71,6 +89,60 @@ function pluginDoubles(): CapacitorPluginContracts {
       flushRequested: vi.fn(async () => ({
         requestedAt: "2026-08-08T00:00:00.000Z",
       })),
+      openUrl: vi.fn(async () => ({ opened: true })),
+    },
+    backup: {
+      status: vi.fn(async () => ({
+        state: "available" as const,
+        message: "iCloud is connected.",
+      })),
+      backupSnapshot: vi.fn(async () => ({
+        state: "synced" as const,
+        message: "Diary information was backed up.",
+        lastSuccessfulBackupAt: "2026-08-10T00:00:00Z",
+      })),
+      backupAssets: vi.fn(async ({ assets }) => ({
+        state: "synced" as const,
+        message: "Assets backed up.",
+        uploadedItemCount: assets.length,
+        failedItemCount: 0,
+      })),
+      restore: vi.fn(async () => ({
+        snapshotJson: "{}",
+        restoredAssetUris: {},
+      })),
+      listHistory: vi.fn(async () => ({ entries: [] })),
+      createHistory: vi.fn(async ({ revision, entryDay, reason }) => ({
+        entry: {
+          id: "history-test",
+          capturedAt: "2026-08-10T00:00:00Z",
+          entryDay,
+          reason,
+          deviceName: "Test iPad",
+          revision,
+          assetCount: 0,
+          byteLength: 0,
+          protected: reason !== "automatic",
+        },
+      })),
+      restoreHistory: vi.fn(async () => ({
+        snapshotJson: "{}",
+        backedUpAt: "2026-08-10T00:00:00Z",
+        restoredAssetUris: {},
+      })),
+      deleteHistory: vi.fn(async () => undefined),
+      deleteCloudData: vi.fn(async () => undefined),
+    },
+    share: {
+      exportDiary: vi.fn(async () => ({
+        pdfFileUri: "file:///diary.pdf",
+        archiveFileUri: "file:///diary.tar",
+      })),
+      exportPage: vi.fn(async ({ fileStem, format }) => ({
+        fileUri: `file:///${fileStem}.${format}`,
+        fileName: `${fileStem}.${format}`,
+      })),
+      share: vi.fn(async () => ({ completed: true, activityType: "mail" })),
     },
   };
 }
@@ -90,6 +162,8 @@ describe("service composition", () => {
     );
     expect(services.files).toBeInstanceOf(BrowserJournalFilesMock);
     expect(services.lifecycle).toBeInstanceOf(BrowserAppLifecycleMock);
+    expect(services.backup).toBeInstanceOf(BrowserCloudBackupMock);
+    expect(services.share).toBeInstanceOf(BrowserNativeShareMock);
     expect(nativePlugins).not.toHaveBeenCalled();
   });
 
@@ -106,6 +180,8 @@ describe("service composition", () => {
     );
     expect(services.files).toBeInstanceOf(CapacitorJournalFilesAdapter);
     expect(services.lifecycle).toBeInstanceOf(CapacitorAppLifecycleAdapter);
+    expect(services.backup).toBeInstanceOf(CapacitorCloudBackupAdapter);
+    expect(services.share).toBeInstanceOf(CapacitorNativeShareAdapter);
   });
 });
 
@@ -119,6 +195,9 @@ describe("Capacitor service adapters", () => {
     );
     await adapter.status();
     await adapter.stop();
+    await adapter.acknowledgeSaved();
+    await adapter.play({ assetUri: "file:///recording.m4a" });
+    await adapter.pausePlayback();
     await expect(adapter.recoverInterrupted()).resolves.toEqual({
       recordings: [RECORDING],
     });
@@ -126,6 +205,8 @@ describe("Capacitor service adapters", () => {
     expect(plugin.start).toHaveBeenCalledWith({ preferredFormat: "m4a" });
     expect(plugin.status).toHaveBeenCalledWith();
     expect(plugin.stop).toHaveBeenCalledWith();
+    expect(plugin.acknowledgeSaved).toHaveBeenCalledWith();
+    expect(plugin.play).toHaveBeenCalledWith({ assetUri: "file:///recording.m4a" });
     expect(plugin.recoverInterrupted).toHaveBeenCalledWith();
   });
 
@@ -167,6 +248,9 @@ describe("Capacitor service adapters", () => {
     await expect(lifecycle.flushRequested()).resolves.toEqual({
       requestedAt: "2026-08-08T00:00:00.000Z",
     });
+    await expect(
+      lifecycle.openUrl({ url: "https://example.com/garden" }),
+    ).resolves.toEqual({ opened: true });
 
     expect(plugins.transcription.transcribe).toHaveBeenCalledWith(
       transcriptionOptions,
@@ -178,6 +262,9 @@ describe("Capacitor service adapters", () => {
       assetId: "asset-1",
     });
     expect(plugins.lifecycle.flushRequested).toHaveBeenCalledWith();
+    expect(plugins.lifecycle.openUrl).toHaveBeenCalledWith({
+      url: "https://example.com/garden",
+    });
   });
 
   it.each([
@@ -222,7 +309,54 @@ describe("Capacitor service adapters", () => {
     const lifecycle: AppLifecyclePlugin = new CapacitorAppLifecycleAdapter(
       plugins.lifecycle,
     );
+    const share: NativeSharePlugin = new CapacitorNativeShareAdapter(
+      plugins.share,
+    );
 
-    expect({ audio, transcription, files, lifecycle }).toBeDefined();
+    expect({ audio, transcription, files, lifecycle, share }).toBeDefined();
+  });
+
+  it("forwards page export and share-sheet results", async () => {
+    const plugin = pluginDoubles().share;
+    const adapter = new CapacitorNativeShareAdapter(plugin);
+    const paperRect = { x: 10, y: 20, width: 300, height: 200 };
+    const sourceRect = { x: 8, y: 8, width: 56, height: 56 };
+
+    await expect(
+      adapter.exportPage({
+        format: "jpg",
+        title: "Ivan 14 August 2026",
+        fileStem: "Ivan 14 August 2026",
+        paperRect,
+        captureMode: "webview",
+        transcripts: ["Hello"],
+      }),
+    ).resolves.toEqual({
+      fileUri: "file:///Ivan 14 August 2026.jpg",
+      fileName: "Ivan 14 August 2026.jpg",
+    });
+    await expect(
+      adapter.share({
+        title: "Ivan 14 August 2026",
+        text: "Ivan 14 August 2026",
+        fileUris: ["file:///page.jpg", "file:///recording.m4a"],
+        sourceRect,
+      }),
+    ).resolves.toEqual({ completed: true, activityType: "mail" });
+
+    expect(plugin.exportPage).toHaveBeenCalledWith({
+      format: "jpg",
+      title: "Ivan 14 August 2026",
+      fileStem: "Ivan 14 August 2026",
+      paperRect,
+      captureMode: "webview",
+      transcripts: ["Hello"],
+    });
+    expect(plugin.share).toHaveBeenCalledWith({
+      title: "Ivan 14 August 2026",
+      text: "Ivan 14 August 2026",
+      fileUris: ["file:///page.jpg", "file:///recording.m4a"],
+      sourceRect,
+    });
   });
 });

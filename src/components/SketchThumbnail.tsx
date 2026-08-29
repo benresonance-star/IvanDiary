@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { renderDocument } from "../sketch/renderer";
 import { NativeSketchPreview } from "../sketch/NativeSketchPreview";
@@ -9,17 +9,29 @@ const THUMBNAIL_HEIGHT = 180;
 
 export function SketchThumbnail({
   documentId,
+  nativePreviewSize,
+  paperAspectRatio,
   repository,
 }: {
   documentId: string;
+  nativePreviewSize?: { width: number; height: number };
+  paperAspectRatio?: number;
   repository: SketchRepository;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [documentSize, setDocumentSize] = useState<{
+    width: number;
+    height: number;
+  }>();
+  const [nativePreviewVisible, setNativePreviewVisible] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const renderLatest = async () => {
       const document = await repository.load(documentId);
+      if (!cancelled) {
+        setDocumentSize(document.size);
+      }
       const canvas = canvasRef.current;
       if (cancelled || !canvas) {
         return;
@@ -51,19 +63,24 @@ export function SketchThumbnail({
       cancelled = true;
       unsubscribe?.();
     };
-  }, [documentId, repository]);
+  }, [documentId, nativePreviewVisible, repository]);
 
   return (
     <>
-      <canvas
+      {nativePreviewVisible ? null : <canvas
         aria-hidden="true"
         className="sketch-thumbnail"
         ref={canvasRef}
-      />
-      <NativeSketchPreview
-        className="native-sketch-thumbnail"
-        documentId={documentId}
-      />
+      />}
+      {nativePreviewSize ?? documentSize ? (
+        <NativeSketchPreview
+          className="native-sketch-thumbnail"
+          documentId={documentId}
+          onVisibilityChange={setNativePreviewVisible}
+          paperAspectRatio={paperAspectRatio}
+          renderSize={nativePreviewSize ?? documentSize}
+        />
+      ) : null}
     </>
   );
 }

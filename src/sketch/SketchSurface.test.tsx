@@ -92,4 +92,62 @@ describe("SketchSurface", () => {
     );
     expect(view.queryByText(/Opening page/)).not.toBeInTheDocument();
   });
+
+  it("refreshes when another drawing layer replaces the stored document", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const initial: SketchDocument = {
+      schemaVersion: 1,
+      id: "drawing-one",
+      size: { width: 1200, height: 820 },
+      strokes: [{
+        id: "legacy-stroke",
+        tool: "pen",
+        color: "#244A60",
+        width: 4,
+        createdAt: "2026-08-15T00:00:00.000Z",
+        points: [{ x: 20, y: 30, pressure: 0.5, timestamp: 1 }],
+      }],
+      revision: 1,
+    };
+    const migrated = { ...initial, strokes: [], revision: 2 };
+    let notify: (() => void) | undefined;
+    const repository: SketchRepository = {
+      load: vi.fn()
+        .mockResolvedValueOnce(initial)
+        .mockResolvedValueOnce(migrated),
+      save: vi.fn(),
+      subscribe: vi.fn((_documentId, listener) => {
+        notify = listener;
+        return vi.fn();
+      }),
+    };
+    const onSaveHealthChange = vi.fn();
+    render(
+      <SketchSurface
+        capabilities={capabilities}
+        documentId="drawing-one"
+        onSaveHealthChange={onSaveHealthChange}
+        penColor="#244A60"
+        penWidth={4}
+        repository={repository}
+        tool="pen"
+      />,
+    );
+    await waitFor(() => expect(repository.load).toHaveBeenCalledTimes(1));
+
+    notify?.();
+
+    await waitFor(() =>
+      expect(onSaveHealthChange).toHaveBeenCalledWith(
+        expect.objectContaining({ durableRevision: 2 }),
+      ),
+    );
+    expect(repository.load).toHaveBeenCalledTimes(2);
+  });
 });

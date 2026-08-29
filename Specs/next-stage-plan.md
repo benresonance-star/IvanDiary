@@ -1,4 +1,13 @@
-# Native reliability: next-stage plan
+# Native reliability: next-stage plan (Historical)
+
+> **Historical document.** This plan captured the proposed native-reliability
+> sequence before those stages were implemented. It was assessed at the
+> approved Phase 0 checkpoint, commit
+> `fe5c9e171cd34e384f304000e99351b098e73ed7` (2026-08-24). Its Supabase and
+> SQLite statements record prior proposals and are not current architecture.
+> For current authority, see [Current state](../docs/CURRENT_STATE.md),
+> [Feature status](../docs/FEATURE_STATUS.md), and
+> [active plans](../docs/plans/README.md).
 
 ## Verified baseline and remaining risk
 

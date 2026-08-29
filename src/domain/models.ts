@@ -1,4 +1,5 @@
 export const DOCUMENT_SCHEMA_VERSION = 1 as const;
+export const MAX_PAGES_PER_COLLECTION = 10;
 
 export type EntityId = string;
 export type IsoDate = string;
@@ -38,11 +39,26 @@ export type PaperStyle =
   | "warm-grey"
   | "dark-paper";
 
+export type DrawingGridSettings = {
+  enabled: boolean;
+  snapToGrid: boolean;
+  spacing: 36 | 60 | 96;
+  rotationDegrees: number;
+  type: "lines" | "dots";
+  color: string;
+};
+
+export const GRID_ROTATION_STEP = 15;
+export const GRID_ROTATION_MAX = 75;
+export const DEFAULT_GRID_COLOR = "#435b70";
+
 type PageObjectBase = {
   id: EntityId;
   pageId: EntityId;
   position: Position;
   frame?: Size;
+  layer?: "above-sketch" | "behind-sketch";
+  inFrontOfSketch?: boolean;
   createdAt: IsoDateTime;
   revision: number;
 };
@@ -51,13 +67,15 @@ export type VoiceRecordingObject = PageObjectBase & {
   type: "voice";
   asset: AssetRef;
   durationMs: number;
-  transcriptionStatus:
-    | "not-requested"
-    | "pending"
-    | "transcribing"
-    | "complete"
-    | "failed";
+  transcriptionStatus: TranscriptionStatus;
 };
+
+export type TranscriptionStatus =
+  | "not-requested"
+  | "pending"
+  | "transcribing"
+  | "complete"
+  | "failed";
 
 export type TranscriptObject = PageObjectBase & {
   type: "transcript";
@@ -66,6 +84,15 @@ export type TranscriptObject = PageObjectBase & {
   editedText?: string;
   locale: string;
   engine: "apple-speech";
+  segments?: TranscriptionSegment[];
+};
+
+export type TranscriptionSegment = {
+  text: string;
+  startMs: number;
+  durationMs: number;
+  confidence?: number;
+  alternatives?: string[];
 };
 
 export type PhotoObject = PageObjectBase & {
@@ -73,12 +100,40 @@ export type PhotoObject = PageObjectBase & {
   asset: AssetRef;
   size: Size;
   altText?: string;
+  /** When unset, Edit mode keeps the photograph’s original proportions. */
+  lockAspectRatio?: boolean;
 };
 
 export type TextObject = PageObjectBase & {
   type: "text";
   text: string;
+  /** Retained for compatibility; canvas text size follows JournalSettings.textScale. */
   textScale: number;
+  textAlign?: "left" | "center";
+  verticalAlign?: "top" | "center";
+  role?: CanvasTextRole;
+  font?: CanvasTextFont;
+  color?: string;
+  material?: "solid" | "scripture-gold";
+  goldFinish?: "smooth" | "raised" | "sparkle";
+  backgroundColor?: string;
+  outlineColor?: string;
+  outlineWidth?: number;
+};
+
+export type CanvasTextRole = "title" | "heading" | "body";
+export type CanvasTextFont = "system-rounded" | "system-serif" | "system-sans";
+
+export type PageTextStack = {
+  position: Position;
+  frame: Size;
+  memberIds: EntityId[];
+  layer?: "above-sketch" | "behind-sketch";
+  dock?: "free" | "left" | "right";
+  /** `null` is the explicit No Background choice; absent is legacy warm paper. */
+  backgroundColor?: string | null;
+  outlineColor?: string;
+  outlineWidth?: number;
 };
 
 export type LinkObject = PageObjectBase & {
@@ -89,12 +144,26 @@ export type LinkObject = PageObjectBase & {
   previewAsset?: AssetRef;
 };
 
+export type ShapeKind = "circle" | "rectangle" | "triangle" | "cross" | "polygon" | "freeform";
+
+export type ShapeObject = PageObjectBase & {
+  type: "shape";
+  shapeKind: ShapeKind;
+  /** Polygon vertices or freeform curve anchors normalized to the shape frame. */
+  points?: Position[];
+  fillColor?: string;
+  outlineColor?: string;
+  outlineWidth: number;
+  rotationDegrees?: number;
+};
+
 export type PageObject =
   | VoiceRecordingObject
   | TranscriptObject
   | PhotoObject
   | TextObject
-  | LinkObject;
+  | LinkObject
+  | ShapeObject;
 
 export type Page = {
   schemaVersion: typeof DOCUMENT_SCHEMA_VERSION;
@@ -102,7 +171,10 @@ export type Page = {
   journalDayId?: EntityId;
   sketchbookId?: EntityId;
   paperStyle: PaperStyle;
+  backgroundColor?: string;
   drawingDocumentId: EntityId;
+  drawingGrid?: DrawingGridSettings;
+  textStack?: PageTextStack;
   objects: PageObject[];
   revision: number;
   createdAt: IsoDateTime;
@@ -128,24 +200,174 @@ export type Sketchbook = {
   updatedAt: IsoDateTime;
 };
 
+export type MyStoryTextRole = "title" | "heading" | "body";
+
+export type MyStoryTextBlock = {
+  id: EntityId;
+  text: string;
+  role: MyStoryTextRole;
+  color: string;
+  revision: number;
+  createdAt: IsoDateTime;
+};
+
+export type MyStoryPhoto = {
+  id: EntityId;
+  asset: AssetRef;
+  size: Size;
+  altText?: string;
+  width: 0.5 | 0.75 | 1;
+  revision: number;
+  createdAt: IsoDateTime;
+};
+
+export type MyStoryVoiceRecording = {
+  id: EntityId;
+  asset: AssetRef;
+  durationMs: number;
+  transcriptionStatus: TranscriptionStatus;
+  position?: Position;
+  frame?: Size;
+  layer?: "above-sketch" | "behind-sketch";
+  inFrontOfSketch?: boolean;
+  revision: number;
+  createdAt: IsoDateTime;
+};
+
+export type MyStoryLink = {
+  id: EntityId;
+  url: string;
+  title: string;
+  revision: number;
+  createdAt: IsoDateTime;
+};
+
+export type MyStoryRenderItemKind = "text" | "link" | "photo" | "recording" | "shape";
+
+export type MyStoryRenderItemRef = {
+  kind: MyStoryRenderItemKind;
+  id: EntityId;
+};
+
+export type MyStoryPage = {
+  id: EntityId;
+  drawingDocumentId: EntityId;
+  splitRatio: number;
+  textSide: "left" | "right";
+  textBackgroundColor: string;
+  textColor: string;
+  textBlocks: MyStoryTextBlock[];
+  photos: MyStoryPhoto[];
+  links: MyStoryLink[];
+  recordings: MyStoryVoiceRecording[];
+  shapes?: ShapeObject[];
+  renderOrder?: MyStoryRenderItemRef[];
+  revision: number;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+};
+
+export type MyStory = {
+  id: EntityId;
+  name: string;
+  favourite: boolean;
+  defaultTextColor: string;
+  pages: MyStoryPage[];
+  revision: number;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+};
+
 export type Favourite = {
   id: EntityId;
-  targetType: "journal-day" | "page" | "sketchbook";
+  targetType: "journal-day" | "page" | "sketchbook" | "story";
   targetId: EntityId;
   createdAt: IsoDateTime;
 };
 
 export type JournalSettings = {
-  simpleMode: boolean;
+  displayName: string;
+  lastSettingsTab: SettingsTabId;
   textScale: "standard" | "large" | "extra-large";
   contrast: "warm" | "high";
   reducedMotion: boolean;
   penColor: string;
   penWidth: number;
   penOpacity: number;
+  fingerDrawingEnabled: boolean;
+  fingerErasingEnabled: boolean;
+  twoFingerUndoEnabled: boolean;
+  favouritePenColours: string[];
+  standardAppAppearance: boolean;
+  penNib: "pen" | "marker" | "pencil" | "brush";
+  penNibProfiles: Record<
+    "pen" | "marker" | "pencil" | "brush",
+    { color: string; width: number; opacity: number }
+  >;
   welcomeGreeting: string;
   welcomeTagline: string;
   welcomeMessage: string;
+  textEditorPreference: "native" | "standard";
+  recordingLimitMinutes: 2 | 5 | 10 | 30 | null;
+  automaticBackup: boolean;
+  backupOnWifiOnly: boolean;
+  myWords: MyWord[];
+};
+
+export type SettingsTabId = "about" | "welcome" | "canvas" | "voice" | "appearance" | "backup";
+
+export type BackupHistoryReason = "automatic" | "manual" | "before-restore";
+
+export type BackupHistoryEntry = {
+  id: EntityId;
+  capturedAt: IsoDateTime;
+  entryDay: IsoDate;
+  reason: BackupHistoryReason;
+  deviceName: string;
+  revision: number;
+  assetCount: number;
+  byteLength: number;
+  protected: boolean;
+};
+
+export type BackupHistoryStatus = {
+  state: "idle" | "loading" | "creating" | "restoring" | "error";
+  entries: BackupHistoryEntry[];
+  message?: string;
+};
+
+export type BackupStatus = {
+  state: "not-configured" | "available" | "waiting" | "syncing" | "synced" | "error";
+  pendingItemCount: number;
+  lastSuccessfulBackupAt?: IsoDateTime;
+  message: string;
+  accountDescription?: string;
+  containerIdentifier?: string;
+  databaseDescription?: string;
+  recordIdentifier?: string;
+  failedItems?: BackupFailedItem[];
+  backedUpRevision?: number;
+  backupDeviceName?: string;
+  backupDeviceIdentifier?: string;
+  currentDeviceName?: string;
+  currentDeviceIdentifier?: string;
+  contentFingerprint?: string;
+  conflictDetected?: boolean;
+};
+
+export type BackupFailedItem = {
+  id: string;
+  kind: "audio" | "photo" | "drawing" | "unknown";
+  reason: string;
+};
+
+export type MyWord = {
+  id: EntityId;
+  text: string;
+  category?: "people" | "places" | "activities" | "medical" | "other";
+  enabled: boolean;
+  correctionCount: number;
+  sample?: AssetRef;
 };
 
 export type JournalSnapshot = {
@@ -155,6 +377,7 @@ export type JournalSnapshot = {
   pages: Page[];
   sketchbooks: Sketchbook[];
   favourites: Favourite[];
+  stories: MyStory[];
   settings: JournalSettings;
   appliedOperationIds: EntityId[];
   revision: number;
@@ -205,13 +428,25 @@ export type DocumentOperation = OperationBase &
         pageIds: EntityId[];
       }
     | {
+        type: "page-delete";
+        pageId: EntityId;
+      }
+    | {
         type: "sketchbook-rename";
         sketchbookId: EntityId;
         name: string;
       }
     | {
+        type: "sketchbook-delete";
+        sketchbookId: EntityId;
+      }
+    | {
         type: "sketchbooks-reorder";
         sketchbookIds: EntityId[];
+      }
+    | {
+        type: "favourites-reorder";
+        favouriteIds: EntityId[];
       }
     | {
       type: "favourite-set";
@@ -223,6 +458,12 @@ export type DocumentOperation = OperationBase &
       type: "page-object-add";
       pageId: EntityId;
       object: PageObject;
+      renderIndex?: number;
+    }
+    | {
+      type: "page-drawing-grid-update";
+      pageId: EntityId;
+      grid: DrawingGridSettings;
     }
     | {
       type: "page-object-update";
@@ -247,13 +488,179 @@ export type DocumentOperation = OperationBase &
       objectId: EntityId;
     }
     | {
+      type: "page-objects-reorder";
+      pageId: EntityId;
+      objectIds: EntityId[];
+    }
+    | {
+      type: "page-text-stack-layout-update";
+      pageId: EntityId;
+      position: Position;
+      frame: Size;
+    }
+    | {
+      type: "page-text-stack-layer-update";
+      pageId: EntityId;
+      layer: "above-sketch" | "behind-sketch";
+    }
+    | {
+      type: "page-text-stack-dock-update";
+      pageId: EntityId;
+      dock: "free" | "left" | "right";
+    }
+    | {
+      type: "page-text-stack-appearance-update";
+      pageId: EntityId;
+      backgroundColor: string | null;
+      outlineColor?: string;
+      outlineWidth?: number;
+    }
+    | {
+      type: "page-text-stack-reorder";
+      pageId: EntityId;
+      memberIds: EntityId[];
+    }
+    | {
+      type: "page-text-stack-membership-update";
+      pageId: EntityId;
+      objectId: EntityId;
+      membership:
+        | { kind: "stack"; index?: number }
+        | { kind: "free"; position: Position; frame: Size };
+    }
+    | {
       type: "page-paper-update";
       pageId: EntityId;
       paperStyle: PaperStyle;
     }
     | {
+      type: "page-background-update";
+      pageId: EntityId;
+      backgroundColor?: string;
+    }
+    | {
       type: "settings-update";
       settings: Partial<JournalSettings>;
+    }
+    | {
+      type: "story-create";
+      story: MyStory;
+    }
+    | {
+      type: "story-rename";
+      storyId: EntityId;
+      name: string;
+    }
+    | {
+      type: "story-delete";
+      storyId: EntityId;
+    }
+    | {
+      type: "stories-reorder";
+      storyIds: EntityId[];
+    }
+    | {
+      type: "my-story-page-create";
+      storyId: EntityId;
+      page: MyStoryPage;
+    }
+    | {
+      type: "my-story-pages-reorder";
+      storyId: EntityId;
+      pageIds: EntityId[];
+    }
+    | {
+      type: "my-story-page-delete";
+      storyId: EntityId;
+      pageId: EntityId;
+    }
+    | {
+      type: "my-story-layout-update";
+      pageId: EntityId;
+      splitRatio?: number;
+      textSide?: "left" | "right";
+      textBackgroundColor?: string;
+      textColor?: string;
+    }
+    | {
+      type: "my-story-text-add";
+      pageId: EntityId;
+      block: MyStoryTextBlock;
+    }
+    | {
+      type: "my-story-text-update";
+      pageId: EntityId;
+      block: MyStoryTextBlock;
+    }
+    | {
+      type: "my-story-text-delete";
+      pageId: EntityId;
+      blockId: EntityId;
+    }
+    | {
+      type: "my-story-texts-reorder";
+      pageId: EntityId;
+      blockIds: EntityId[];
+    }
+    | {
+      type: "my-story-photo-add";
+      pageId: EntityId;
+      photo: MyStoryPhoto;
+    }
+    | {
+      type: "my-story-photo-update";
+      pageId: EntityId;
+      photo: MyStoryPhoto;
+    }
+    | {
+      type: "my-story-photo-delete";
+      pageId: EntityId;
+      photoId: EntityId;
+    }
+    | {
+      type: "my-story-photos-reorder";
+      pageId: EntityId;
+      photoIds: EntityId[];
+    }
+    | {
+      type: "my-story-recording-add";
+      pageId: EntityId;
+      recording: MyStoryVoiceRecording;
+    }
+    | {
+      type: "my-story-recording-update";
+      pageId: EntityId;
+      recording: MyStoryVoiceRecording;
+    }
+    | {
+      type: "my-story-recording-delete";
+      pageId: EntityId;
+      recordingId: EntityId;
+    }
+    | { type: "my-story-shape-add"; pageId: EntityId; shape: ShapeObject; renderIndex?: number }
+    | { type: "my-story-shape-update"; pageId: EntityId; shape: ShapeObject }
+    | { type: "my-story-shape-delete"; pageId: EntityId; shapeId: EntityId }
+    | { type: "my-story-shapes-reorder"; pageId: EntityId; shapeIds: EntityId[] }
+    | { type: "my-story-render-order-update"; pageId: EntityId; renderOrder: MyStoryRenderItemRef[] }
+    | {
+      type: "my-story-link-add";
+      pageId: EntityId;
+      link: MyStoryLink;
+    }
+    | {
+      type: "my-story-link-update";
+      pageId: EntityId;
+      link: MyStoryLink;
+    }
+    | {
+      type: "my-story-link-delete";
+      pageId: EntityId;
+      linkId: EntityId;
+    }
+    | {
+      type: "my-story-links-reorder";
+      pageId: EntityId;
+      linkIds: EntityId[];
     }
     | {
       type: "drawing-stroke-add";
@@ -273,3 +680,16 @@ type WithoutOperationMetadata<T> = T extends OperationBase
 
 export type DocumentOperationInput =
   WithoutOperationMetadata<DocumentOperation>;
+
+export type PageTextStackLayoutUpdateInput = Extract<
+  DocumentOperationInput,
+  { type: "page-text-stack-layout-update" }
+>;
+export type PageTextStackReorderInput = Extract<
+  DocumentOperationInput,
+  { type: "page-text-stack-reorder" }
+>;
+export type PageTextStackMembershipUpdateInput = Extract<
+  DocumentOperationInput,
+  { type: "page-text-stack-membership-update" }
+>;
